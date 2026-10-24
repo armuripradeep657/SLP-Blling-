@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore, useState } from 'react';
+import { useEffect, useSyncExternalStore, useState } from 'react';
 import { Header, BottomNav, DesktopTabs } from '@/components/Navigation';
 import BillTab from '@/components/BillTab';
 import ProductsView from '@/components/ProductsView';
@@ -23,6 +23,11 @@ export default function Home() {
 
   const [modalInvoice, setModalInvoice] = useState<Invoice | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+
+  // Rehydrate persisted store AFTER mount (skipHydration) — avoids SSR mismatch
+  useEffect(() => {
+    useStore.persist.rehydrate();
+  }, []);
 
   // true on client after hydration, false on the server (avoids SSR mismatch)
   const mounted = useSyncExternalStore(

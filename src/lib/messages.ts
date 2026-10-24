@@ -6,9 +6,10 @@ export function whatsappMessage(inv: Invoice, s: BusinessSettings): string {
   const d = new Date(inv.dateISO);
   const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const company = s.companyName || 'Cement Works';
 
   const lines: string[] = [];
-  lines.push(`*${s.companyName}*`);
+  lines.push(`*${company}*`);
   if (s.phone) lines.push(`Ph: ${s.phone}`);
   lines.push('');
   lines.push(`*INVOICE:* ${inv.no}`);
@@ -34,10 +35,26 @@ export function whatsappMessage(inv: Invoice, s: BusinessSettings): string {
   if (s.returnPolicy) lines.push(`${s.returnPolicy}`);
   lines.push('');
   lines.push(`Thank you! Visit Again \u{1F64F}`);
-  lines.push(`- ${s.ownerName}`);
-  lines.push(`Proprietor, ${s.companyName}`);
+  lines.push(`- ${s.ownerName || ''}`);
+  lines.push(`Proprietor, ${company}`);
   lines.push('');
   lines.push('_Bill image shared separately_');
+  return lines.join('\n');
+}
+
+/** Short caption sent TOGETHER WITH the bill image (WhatsApp share sheet / file share) */
+export function whatsappCaption(inv: Invoice, s: BusinessSettings): string {
+  const d = new Date(inv.dateISO);
+  const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const company = s.companyName || 'Cement Works';
+  const lines: string[] = [];
+  lines.push(`*${company}*`);
+  lines.push(`Invoice *${inv.no}* · ${dateStr}`);
+  if (inv.customer.name) lines.push(`Customer: ${inv.customer.name}`);
+  lines.push(`*Total: Rs. ${fmt(inv.totals.total)}*${inv.totals.balance > 0 ? ` (Balance: Rs. ${fmt(inv.totals.balance)})` : ' (Paid)'}`);
+  lines.push('');
+  lines.push('Bill image attached \u{1F9FE} — scan the UPI QR in it to pay \u{1F64F}');
+  lines.push(`- ${s.ownerName || ''}`);
   return lines.join('\n');
 }
 
@@ -45,10 +62,10 @@ export function whatsappMessage(inv: Invoice, s: BusinessSettings): string {
 export function smsMessage(inv: Invoice, s: BusinessSettings): string {
   const d = new Date(inv.dateISO);
   const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-  const head = `${s.companyName.split(' ').slice(0, 4).join(' ')} - Invoice ${inv.no} (${dateStr})`;
+  const company = (s.companyName || 'Cement Works').split(' ').slice(0, 4).join(' ');
   const cust = inv.customer.name ? ` Cust: ${inv.customer.name}.` : '';
   const items = inv.items.map((it) => `${it.name} ${it.size} x${it.qty}=${fmtShort(it.price * it.qty)}`).join('; ');
   const totals = ` Sub:${fmtShort(inv.totals.subtotal)}${inv.taxRate > 0 ? ` GST:${fmtShort(inv.totals.tax)}` : ''} TOTAL:Rs.${fmtShort(inv.totals.total)}. ${inv.paymentMode}, Paid:${fmtShort(inv.totals.paid)}, Bal:${fmtShort(inv.totals.balance)}.`;
-  const tail = ` Thank you! - ${s.ownerName}`;
-  return `${head}${cust}\n${items}\n${totals}${tail}`;
+  const tail = ` Thank you! - ${s.ownerName || ''}`;
+  return `${company}${inv.customer.name ? ` Cust: ${inv.customer.name}.` : ''} Inv ${inv.no} (${dateStr})\n${items}\n${totals}${tail}`;
 }

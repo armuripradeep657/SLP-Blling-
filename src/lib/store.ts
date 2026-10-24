@@ -187,6 +187,20 @@ export const useStore = create<BillingStore>()(
     {
       name: 'slp-cement-billing-v1',
       storage: createJSONStorage(() => localStorage),
+      // Rehydrate manually after mount (page.tsx) — prevents SSR hydration mismatch
+      skipHydration: true,
+      // Deep-merge persisted slices over defaults so partial/old saved data
+      // never wipes new fields (e.g. companyName, upiId)
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<BillingStore>;
+        return {
+          ...current,
+          ...p,
+          settings: { ...current.settings, ...(p.settings ?? {}) },
+          billConfig: { ...current.billConfig, ...(p.billConfig ?? {}) },
+          customer: { ...current.customer, ...(p.customer ?? {}) },
+        };
+      },
       partialize: (st) => ({
         settings: st.settings,
         products: st.products,

@@ -25,11 +25,22 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
     return upiUri(settings.upiId, settings.companyName, invoice.totals.balance > 0 ? invoice.totals.balance : invoice.totals.total, invoice.no);
   }, [settings.upiId, settings.companyName, invoice]);
 
+  /** Fallback QR: shop WhatsApp chat link (when no UPI ID is configured) */
+  const waString = useMemo(() => {
+    if (settings.upiId) return '';
+    const shop = (settings.whatsappNumber || settings.phone || '').replace(/\D/g, '');
+    const ten = shop.length > 10 ? shop.slice(-10) : shop;
+    return ten.length === 10 ? `https://wa.me/91${ten}?text=${encodeURIComponent(`Hi, regarding bill ${invoice.no}`)}` : '';
+  }, [settings.upiId, settings.whatsappNumber, settings.phone, invoice.no]);
+
+  const qrString = upiString || waString;
+  const isUpiQr = !!upiString;
+
   const [qr, setQr] = useState<string>('');
   useEffect(() => {
-    if (!upiString) return;
+    if (!qrString) return;
     let alive = true;
-    QRCode.toDataURL(upiString, {
+    QRCode.toDataURL(qrString, {
       margin: 1,
       width: 240,
       color: { dark: '#000000', light: '#ffffff' },
@@ -42,7 +53,7 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
     return () => {
       alive = false;
     };
-  }, [upiString]);
+  }, [qrString]);
 
   const dash: React.CSSProperties = {
     borderTop: '1.5px dashed #1a1a1a',
@@ -186,18 +197,18 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
         <div style={{ textAlign: 'center', fontWeight: 700, marginTop: 3 }}>* {invoice.status} *</div>
       ) : null}
 
-      {/* QR */}
-      {qr && upiString ? (
+      {/* QR — UPI payment (or shop WhatsApp contact when no UPI ID) */}
+      {qr && qrString ? (
         <div style={{ textAlign: 'center', marginTop: 7 }}>
           <img
             src={qr}
-            alt="UPI QR code"
+            alt={isUpiQr ? 'UPI QR code' : 'WhatsApp QR code'}
             width={w * 0.42}
             height={w * 0.42}
             style={{ display: 'block', margin: '0 auto', imageRendering: 'pixelated' }}
           />
           <div style={{ fontSize: baseFont - 1.2, marginTop: 2 }}>
-            Scan to Pay UPI: {settings.upiId}
+            {isUpiQr ? `Scan to Pay UPI: ${settings.upiId}` : 'Scan to chat on WhatsApp'}
           </div>
         </div>
       ) : null}

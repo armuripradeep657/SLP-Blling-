@@ -18,12 +18,14 @@ import {
   Share2,
   Copy,
   Loader2,
+  QrCode,
+  Image as ImageIcon,
 } from 'lucide-react';
 import ThermalSlip from './ThermalSlip';
 import { useStore } from '@/lib/store';
-import { captureSlipPng, downloadBlob, printImage, shareImage, slipFileName } from '@/lib/invoiceImage';
+import { captureSlipPng, downloadBlob, printImage, slipFileName } from '@/lib/invoiceImage';
 import { smsLink, waLink } from '@/lib/billing';
-import { smsMessage, whatsappMessage } from '@/lib/messages';
+import { smsMessage, whatsappCaption, whatsappMessage } from '@/lib/messages';
 import type { Invoice } from '@/lib/types';
 
 interface Props {
@@ -41,15 +43,20 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
   // Off-screen render node used for html-to-image capture
   const captureRef = useRef<HTMLDivElement | null>(null);
 
+  // Helper dialog state for browsers that cannot attach files to a share
+  const [waFallback, setWaFallback] = useState<{ url: string; fileName: string } | null>(null);
+
   const getCaptureTarget = useCallback((): HTMLElement | null => {
     return captureRef.current ?? slipRef.current;
   }, []);
 
   if (!invoice) return null;
 
+  const waCaption = whatsappCaption(invoice, settings);
   const waMsg = whatsappMessage(invoice, settings);
   const smsMsg = smsMessage(invoice, settings);
   const fileName = slipFileName(invoice.no);
+  const qrOnSlip = !!(settings.upiId || settings.whatsappNumber || settings.phone);
 
   const guard = async (key: string, fn: () => Promise<void> | void) => {
     try {
@@ -69,33 +76,40 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
     }
   };
 
+  const capture = async (pixelRatio = 3): Promise<Blob> => {
+    const node = getCaptureTarget();
+    if (!node) throw new Error('Slip not ready');
+    return captureSlipPng(node, pixelRatio);
+  };
+
   const onShare = () =>
     guard('share', async () => {
-      const node = getCaptureTarget();
-      if (!node) throw new Error('Slip not ready');
-      const blob = await captureSlipPng(node);
-      const result = await shareImage(blob, fileName, `Bill ${invoice.no} - ${settings.companyName}`);
-      if (result === 'unsupported') {
-        downloadBlob(blob, fileName);
-        toast({
-          title: 'Bill image downloaded',
-          description: 'Sharing not supported here — attach the downloaded image in any app.',
+      const blob = await capture();
+      const file = new File([blob], fileName, { type: 'image/png' });
+      // Direct native share WITH the image attached (WhatsApp, SMS, etc.)
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          text: waCaption,
+          title: `Bill ${invoice.no}`,
         });
+        return;
       }
+      // Fallback: download + open WhatsApp chat, guide the user to attach
+      downloadBlob(blob, fileName);
+      setWaFallback({ url: URL.createObjectURL(blob), fileName });
     });
 
   const onWhatsApp = () =>
     guard('wa', async () => {
-      const node = getCaptureTarget();
-      if (!node) throw new Error('Slip not ready');
-      const blob = await captureSlipPng(node);
+      const blob = await capture();
       const file = new File([blob], fileName, { type: 'image/png' });
-      // Prefer native share sheet (lets user pick WhatsApp WITH the image attached)
+      // 1st choice: share sheet WITH the bill image attached — user picks WhatsApp
       try {
         if (navigator.canShare?.({ files: [file] })) {
           await navigator.share({
             files: [file],
-            text: waMsg,
+            text: waCaption,
             title: `Bill ${invoice.no}`,
           });
           return;
@@ -103,36 +117,32 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
       } catch (e) {
         if ((e as DOMException)?.name === 'AbortError') return;
       }
-      // Fallback: download image + open WhatsApp chat with text
+      // 2nd choice: save the image + show step-by-step helper with preview
       downloadBlob(blob, fileName);
-      window.open(waLink(invoice.customer.phone, waMsg), '_blank');
-      toast({
-        title: 'Bill image downloaded',
-        description: 'Attach the downloaded image in the WhatsApp chat that just opened.',
-        duration: 6000,
-      });
+      setWaFallback({ url: URL.createObjectURL(blob), fileName });
     });
+
+  const openWaChat = () => {
+    window.open(waLink(invoice.customer.phone, waMsg), '_blank');
+    setWaFallback(null);
+  };
 
   const onSMS = () =>
     guard('sms', () => {
       window.location.href = smsLink(invoice.customer.phone, smsMsg);
-      toast({ title: 'Opening SMS app…', description: 'Bill text ready to send (SMS supports text only).' });
+      toast({ title: 'Opening SMS app…', description: 'SMS carries text — the bill image can be MMS-attached by your messaging app.' });
     });
 
   const onDownload = () =>
     guard('dl', async () => {
-      const node = getCaptureTarget();
-      if (!node) throw new Error('Slip not ready');
-      const blob = await captureSlipPng(node);
+      const blob = await capture();
       downloadBlob(blob, fileName);
-      toast({ title: 'Saved to downloads', description: fileName });
+      toast({ title: 'Bill image saved', description: fileName });
     });
 
   const onPrint = () =>
     guard('print', async () => {
-      const node = getCaptureTarget();
-      if (!node) throw new Error('Slip not ready');
-      const blob = await captureSlipPng(node, 3);
+      const blob = await capture(3);
       const ok = printImage(blob);
       if (!ok) throw new Error('Allow pop-ups to print the bill');
     });
@@ -151,8 +161,16 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
             Bill Generated — {invoice.no}
           </DialogTitle>
           <DialogDescription className="text-xs">
-            Thermal slip preview. Share as an image on WhatsApp/SMS with the UPI QR included.
+            Thermal-slip <b>image</b> with QR — WhatsApp sends this picture, not text.
           </DialogDescription>
+          {!qrOnSlip && (
+            <div className="mt-1 flex items-start gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] leading-snug text-amber-900">
+              <QrCode className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                No QR yet — add your <b>UPI ID</b> (or shop WhatsApp number) in <b>Settings</b> and the bill image gets a scan-to-pay QR.
+              </span>
+            </div>
+          )}
         </DialogHeader>
 
         <div className="min-h-0 overflow-y-auto overscroll-contain">
@@ -167,25 +185,25 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
 
         <div className="p-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-2">
           <Button
-            onClick={onShare}
+            onClick={onWhatsApp}
             disabled={busy !== null}
-            className="w-full h-12 text-base font-semibold bg-amber-600 hover:bg-amber-700 text-white"
+            className="w-full h-12 text-base font-semibold bg-[#25D366] hover:bg-[#1eb857] text-white"
           >
-            {busy === 'share' ? <Loader2 className="size-5 animate-spin" /> : <Share2 className="size-5" />}
-            Share Bill Image
+            {busy === 'wa' ? <Loader2 className="size-5 animate-spin" /> : <MessageCircle className="size-5" />}
+            Send Bill Image on WhatsApp
           </Button>
           <div className="grid grid-cols-2 gap-2">
-            <Button onClick={onWhatsApp} disabled={busy !== null} variant="outline" className="h-11 border-green-600 text-green-700 hover:bg-green-50 hover:text-green-800">
-              {busy === 'wa' ? <Loader2 className="size-4 animate-spin" /> : <MessageCircle className="size-4" />}
-              WhatsApp
-            </Button>
-            <Button onClick={onSMS} disabled={busy !== null} variant="outline" className="h-11">
-              {busy === 'sms' ? <Loader2 className="size-4 animate-spin" /> : <MessageSquare className="size-4" />}
-              SMS
+            <Button onClick={onShare} disabled={busy !== null} variant="outline" className="h-11">
+              {busy === 'share' ? <Loader2 className="size-4 animate-spin" /> : <Share2 className="size-4" />}
+              Share Image
             </Button>
             <Button onClick={onDownload} disabled={busy !== null} variant="outline" className="h-11">
               {busy === 'dl' ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
               Download
+            </Button>
+            <Button onClick={onSMS} disabled={busy !== null} variant="outline" className="h-11">
+              {busy === 'sms' ? <Loader2 className="size-4 animate-spin" /> : <MessageSquare className="size-4" />}
+              SMS
             </Button>
             <Button onClick={onPrint} disabled={busy !== null} variant="outline" className="h-11">
               {busy === 'print' ? <Loader2 className="size-4 animate-spin" /> : <Printer className="size-4" />}
@@ -197,6 +215,43 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
           </Button>
         </div>
       </DialogContent>
+
+      {/* Helper: browser can't attach the image automatically */}
+      <Dialog open={!!waFallback} onOpenChange={(o) => !o && setWaFallback(null)}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <ImageIcon className="size-4 text-amber-700" /> Bill image ready
+            </DialogTitle>
+            <DialogDescription asChild>
+              <ol className="list-decimal space-y-1.5 pl-4 pt-1 text-left text-xs">
+                <li>
+                  Image <b>{waFallback?.fileName}</b> was saved to your downloads / gallery.
+                </li>
+                <li>
+                  Tap <b>Open WhatsApp chat</b> — the customer chat opens.
+                </li>
+                <li>
+                  In WhatsApp tap the <b>attach 📎</b> button, pick the bill image, and send it.
+                </li>
+              </ol>
+            </DialogDescription>
+          </DialogHeader>
+          {waFallback && (
+            <div className="rounded-lg border bg-neutral-100 p-2">
+              <img src={waFallback.url} alt="Bill slip preview" className="mx-auto max-h-56 rounded shadow" />
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="outline" onClick={() => setWaFallback(null)} className="h-11">
+              Close
+            </Button>
+            <Button onClick={openWaChat} className="h-11 bg-[#25D366] hover:bg-[#1eb857] text-white">
+              <MessageCircle className="size-4" /> Open WhatsApp
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Off-screen capture target (never visible) */}
       <div aria-hidden style={{ position: 'fixed', left: -99999, top: 0, opacity: 1, pointerEvents: 'none', zIndex: -1 }}>

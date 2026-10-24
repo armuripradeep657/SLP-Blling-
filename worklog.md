@@ -17,3 +17,21 @@ Work Log:
 
 Stage Summary:
 - Browser-verified end-to-end on mobile 390x844 + desktop 1440x900: bill flow, invoice PNG capture (912x1401 @3x, QR + text pixels verified), wa.me deep link, history, settings UPI->QR, product CRUD with upload, offline mode. Lint clean, no runtime errors.
+
+---
+Task ID: 2
+Agent: main
+Task: WhatsApp share invoice as IMAGE (not text) + QR on invoice + fix all issues + keep app live
+
+Work Log:
+- ThermalSlip.tsx: QR now ALWAYS renders — UPI payment QR when upiId set, else shop WhatsApp chat QR (wa.me) when shop phone/whatsapp set; caption switches accordingly
+- messages.ts: added whatsappCaption() (short caption sent together with the image); guarded companyName/ownerName with fallbacks so missing settings never crash sms/whatsapp builders
+- InvoiceModal.tsx: rebuilt sharing flow — primary green "Send Bill Image on WhatsApp" captures PNG then uses Web Share API level 2 (files+caption); when file share unsupported (desktop), shows new helper dialog with captured slip preview, saved filename, 3-step attach instructions and "Open WhatsApp" button; added QR hint chip when no UPI/phone configured; capture() helper reused by print
+- store.ts: FIX hydration mismatch — persist skipHydration:true + page.tsx rehydrates after mount; added merge() deep-merging persisted settings/billConfig/customer over defaults (old partial saved data no longer wipes fields like companyName)
+- Navigation.tsx: online badge via useSyncExternalStore (fixes react-hooks/set-state-in-effect lint error)
+- Verified with Playwright (mobile 390x844 + desktop): slip renders with QR (UPI + WA fallback), captured image 912x1947 PNG, helper dialog preview works, download produces SLP-INV-1001.png, SW active + manifest linked, zero JS errors, no hydration overlay
+
+Stage Summary:
+- WhatsApp sends the thermal-slip IMAGE with UPI QR (not plain text) on mobile via share sheet; desktop gets image download + guided attach helper
+- App live on port 3000 (platform dev server, hot-reloaded); lint clean, production build passes
+

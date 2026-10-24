@@ -2,22 +2,22 @@
 
 import { Badge } from '@/components/ui/badge';
 import { WifiOff, ReceiptText, Package, History, Settings } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { useStore } from '@/lib/store';
+
+const subscribeOnline = (cb: () => void) => {
+  window.addEventListener('online', cb);
+  window.addEventListener('offline', cb);
+  return () => {
+    window.removeEventListener('online', cb);
+    window.removeEventListener('offline', cb);
+  };
+};
 
 export function Header() {
   const settings = useStore((s) => s.settings);
-  const [online, setOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
-  useEffect(() => {
-    const on = () => setOnline(true);
-    const off = () => setOnline(false);
-    window.addEventListener('online', on);
-    window.addEventListener('offline', off);
-    return () => {
-      window.removeEventListener('online', on);
-      window.removeEventListener('offline', off);
-    };
-  }, []);
+  // SSR snapshot true matches most clients; updates reactively after hydration
+  const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
 
   return (
     <header className="sticky top-0 z-50 border-b bg-gradient-to-r from-amber-700 to-amber-600 text-white shadow-md">
