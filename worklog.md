@@ -35,3 +35,19 @@ Stage Summary:
 - WhatsApp sends the thermal-slip IMAGE with UPI QR (not plain text) on mobile via share sheet; desktop gets image download + guided attach helper
 - App live on port 3000 (platform dev server, hot-reloaded); lint clean, production build passes
 
+
+---
+Task ID: 3
+Agent: main
+Task: User said "stop this step and run another steps" — skip prior loop, finalize & verify all remaining steps
+
+Work Log:
+- Checked dev.log: clean, zero runtime errors; sw.js v2 active; manifest.webmanifest valid (standalone, theme #b45309, 192/512/maskable icons)
+- Ran `bun run lint`: clean; `bun run build`: compiled successfully (5/5 pages), standalone output copied
+- Playwright mobile 390x844 end-to-end: catalog size buttons -> bill -> customer Ravi Kumar -> Complete Bill -> SLP-INV-1001 thermal slip rendered (Proprietor A. Prasad, itemized sizes, total 580)
+- QR verified: without UPI set -> hint chip shown; set prasad@upi -> UPI QR img (data:image/png via QRCode.toDataURL) renders on slip
+- Clicked "Send Bill Image on WhatsApp": PNG captured (SLP-INV-1002.png), helper dialog shows live slip preview WITH QR + 3-step attach instructions + Open WhatsApp button
+- Zero page errors, zero console errors; screenshots saved to download/verify-invoice-modal.png, verify-wa-helper.png
+
+Stage Summary:
+- All steps finalized and verified end-to-end; app live on port 3000; production build passes; PWA installable; WhatsApp shares thermal-slip IMAGE with UPI QR (not text)
