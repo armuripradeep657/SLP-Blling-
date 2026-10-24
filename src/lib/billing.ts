@@ -59,10 +59,11 @@ export function smsLink(phone: string, message: string): string {
   return p ? `sms:${p}?body=${body}` : `sms:?body=${body}`;
 }
 
-export function upiUri(upiId: string, payeeName: string, amount: number, note: string): string {
+export function upiUri(upiId: string, amount: number, note: string): string {
+  // QR is based on the UPI ID only — no payee name (company name) so every
+  // UPI app resolves the handle directly without name-mismatch warnings.
   const params = new URLSearchParams({
     pa: upiId,
-    pn: payeeName,
     am: fmtShort(amount),
     cu: 'INR',
   });

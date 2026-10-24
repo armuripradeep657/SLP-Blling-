@@ -23,11 +23,11 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
   /** Bill fully settled — show PAID stamp instead of any QR */
   const isFullyPaid = invoice.totals.balance <= 0;
 
-  /** UPI QR for the remaining BALANCE only (hidden once fully paid) */
+  /** UPI QR for the remaining BALANCE only (hidden once fully paid) — UPI ID only, no payee name */
   const upiString = useMemo(() => {
     if (isFullyPaid || !settings.upiId) return '';
-    return upiUri(settings.upiId, settings.companyName, invoice.totals.balance, invoice.no);
-  }, [isFullyPaid, settings.upiId, settings.companyName, invoice]);
+    return upiUri(settings.upiId, invoice.totals.balance, invoice.no);
+  }, [isFullyPaid, settings.upiId, invoice]);
 
   /** Fallback QR: shop WhatsApp chat link (when no UPI ID is configured) */
   const waString = useMemo(() => {

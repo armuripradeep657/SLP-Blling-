@@ -103,3 +103,18 @@ Work Log:
 
 Stage Summary:
 - Official company badge now used everywhere: app header, thermal slip, PWA home-screen icon, favicon; SW v5 pushes the new badge to installed phones; all prior behavior (blue theme, smart QR, labour/auto charges, PWA install) re-verified intact
+
+---
+Task ID: 7
+Agent: main
+Task: "enable pop up option to download in mobile phone and qr show in recept in using only upi id based not company name"
+
+Work Log:
+- QR UPI-ID only: billing.ts upiUri() dropped the pn (payee name) param — URI is now upi://pay?pa=<id>&am=<amt>&cu=INR&tn=<invno>; ThermalSlip call updated (no companyName dep); bun test output confirmed: upi://pay?pa=prasad%40upi&am=100&cu=INR&tn=SLP-INV-1002
+- Install popup: rewrote PwaInstall.tsx — small floating banner replaced by prominent bottom-sheet popup above the mobile bottom nav (sm: bottom-right card on desktop): company badge logo, "Install the Billing App" title, 3 benefit bullets (offline / full-screen / bills saved on device), blue Install App button (native beforeinstallprompt prompt) or How to Install (manual steps dialog covering Android Chrome + iPhone Safari), Not now + X dismiss with sessionStorage flag (re-appears next session until app installed)
+- Popup shows 1.2s after load on mobile devices (UA/maxTouchPoints) or whenever native install prompt fires, and only when app not already installed
+- sw.js CACHE v5 -> v6
+- Verified agent-browser iPhone 14 emulation: popup renders with badge + benefits + buttons above bottom nav; Not now dismisses (popup removed from DOM); UPI set -> Due bill advance 100 on 200 -> slip QR renders with caption "Scan to Pay Balance Rs. 100.00 · UPI: prasad@upi", no PAID stamp; zero page/console errors; lint clean
+
+Stage Summary:
+- Install popup now actively prompts download on mobile every session until installed/dismissed; receipt QR payload is UPI-ID only (no company name), so payer UPI apps resolve prasad@upi directly
