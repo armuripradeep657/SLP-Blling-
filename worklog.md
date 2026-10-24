@@ -87,3 +87,19 @@ Work Log:
 
 Stage Summary:
 - App 100% blue & white (no orange anywhere), fully-paid bills carry AMOUNT PAID stamp with NO QR, balance bills carry UPI QR for exact balance, and app download is discoverable via floating install banner + Settings "Get the App on Your Phone" section; SW v4 ensures user's phone picks up the new blue version on next visit/reload
+
+---
+Task ID: 6
+Agent: main
+Task: Replace logo with user-uploaded official company badge ("this is logo keep replace")
+
+Work Log:
+- User uploaded official circular badge (Narasimha deity + SRI LAKSHMI / PENCHILA NARASIMHA SWAMY / CEMENT WORK text, blue/red/gold, 1408x768 PNG) at upload/pasted_image_1792856288189.png
+- New scripts/make-logo-v2.js (sharp): trim white canvas -> 623x561 badge -> contain into 654x654 white square (badge ~95%, verified "PENCHILA" wing text stays inside the UI circular crop zone)
+- Regenerated with same filenames (zero code changes): narasimha-logo.jpg 512 (header + thermal slip), icon-192/512, icon-maskable-192/512 (badge in 80% safe zone), apple-touch-icon 180, favicon-32
+- sw.js CACHE v4 -> v5 so installed clients refresh to the new badge on next visit
+- Verified agent-browser mobile 390x844: header shows new badge in circular white ring crop; fresh bill SLP-INV-1001 slip shows new badge (circular, blue border) + AMOUNT PAID stamp + no QR (re-confirms Task 5 logic); icon-192 and maskable-192 visually checked
+- Zero page/console errors; lint clean
+
+Stage Summary:
+- Official company badge now used everywhere: app header, thermal slip, PWA home-screen icon, favicon; SW v5 pushes the new badge to installed phones; all prior behavior (blue theme, smart QR, labour/auto charges, PWA install) re-verified intact
