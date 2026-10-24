@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useStore } from '@/lib/store';
 import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from '@/lib/defaultData';
 import { normalizePhone } from '@/lib/billing';
+import InstallAppSection from '@/components/InstallAppSection';
 
 export default function SettingsView() {
   const settings = useStore((s) => s.settings);
@@ -82,6 +83,10 @@ export default function SettingsView() {
         <Field label="Thank-you note" value={settings.thankYouNote} onChange={(v) => set({ thankYouNote: v })} />
         <Field label="Terms / return policy" value={settings.returnPolicy} onChange={(v) => set({ returnPolicy: v })} />
       </section>
+
+      <Separator />
+
+      <InstallAppSection />
 
       <Separator />
 

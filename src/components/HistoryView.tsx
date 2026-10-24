@@ -114,7 +114,7 @@ export default function HistoryView({ onOpenInvoice }: { onOpenInvoice: (inv: In
                     inv.status === 'Paid'
                       ? 'bg-green-700 text-white'
                       : inv.status === 'Partial'
-                        ? 'bg-amber-500 text-white'
+                        ? 'bg-blue-600 text-white'
                         : 'bg-red-600 text-white'
                   }
                 >

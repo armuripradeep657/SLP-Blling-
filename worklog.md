@@ -69,3 +69,21 @@ Work Log:
 
 Stage Summary:
 - App is blue & white with Narasimha Swamy logo everywhere (header, slip, PWA icon); GST fully removed; Labour + Auto charges optional per bill; QR smart per payment state: fully paid = PAID stamp (no QR), balance due = UPI QR for exact balance; build + lint clean
+
+---
+Task ID: 5
+Agent: main
+Task: User follow-up — "change colour to blue, no QR when total bill paid, app downloadable to mobile" (with orange banner screenshot)
+
+Work Log:
+- Audited current state: Task 4 changes (blue theme, Narasimha logo, smart QR) already on disk; user likely saw stale cached PWA. Found 1 leftover orange element: HistoryView Partial badge bg-amber-500 -> bg-blue-600 (UI now 100% blue/white, zero amber/orange matches in src/)
+- New src/components/InstallAppSection.tsx: Settings section "Get the App on Your Phone" — native install button via beforeinstallprompt, standalone-detection ("App is installed"), Android (Chrome menu -> Install app) and iPhone (Safari Share -> Add to Home Screen) step-by-step instructions
+- SettingsView.tsx: wired InstallAppSection between Billing preferences and Data sections
+- public/sw.js: CACHE v3 -> v4 (forces clients with old cached v2/v3 shell to refresh to blue version after one reload; skipWaiting + clients.claim already clear old caches)
+- Verified Playwright/agent-browser mobile 390x844 fresh storage: header blue gradient + circular Narasimha logo img; Settings UPI prasad@upi saved; install section renders Android+iPhone instructions
+- Payment flow 1: Gagulu 2FT 200 + Labour 50 + Auto 30 = 280, Cash full -> SLP-INV-1001 slip: Labour/Auto lines, TOTAL 280, AMOUNT PAID stamp present, img[alt="UPI QR code"] count = 0
+- Payment flow 2: Gagulu 2FT 200, Due mode advance 100 -> SLP-INV-1002 slip: * Partial *, UPI QR rendered, caption "Scan to Pay Balance Rs. 100.00 · UPI: prasad@upi", no PAID stamp
+- Zero page errors, zero console errors; dev.log clean; manifest theme #1d4ed8 / 4 icons / standalone; sw.js v4 served; screenshots: verify-blue-home.png, verify-install-section.png, verify-paid-no-qr.png, verify-paid-stamp.png, verify-balance-qr.png (download/)
+
+Stage Summary:
+- App 100% blue & white (no orange anywhere), fully-paid bills carry AMOUNT PAID stamp with NO QR, balance bills carry UPI QR for exact balance, and app download is discoverable via floating install banner + Settings "Get the App on Your Phone" section; SW v4 ensures user's phone picks up the new blue version on next visit/reload
