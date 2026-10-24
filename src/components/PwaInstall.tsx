@@ -76,15 +76,15 @@ export default function PwaInstall() {
   return (
     <>
       <div className="fixed top-[3.6rem] left-1/2 z-40 w-[min(26rem,calc(100vw-1.5rem))] -translate-x-1/2">
-        <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50/95 px-3 py-2 shadow-lg backdrop-blur">
-          <Smartphone className="size-4 shrink-0 text-amber-700" />
-          <p className="flex-1 text-xs font-medium leading-snug text-amber-900">
+        <div className="flex items-center gap-2 rounded-xl border border-blue-300 bg-blue-50/95 px-3 py-2 shadow-lg backdrop-blur">
+          <Smartphone className="size-4 shrink-0 text-blue-700" />
+          <p className="flex-1 text-xs font-medium leading-snug text-blue-900">
             {deferred ? 'Install this billing app on your phone — works offline.' : 'Add this billing app to your Home Screen.'}
           </p>
-          <Button size="sm" onClick={onInstall} className="h-8 shrink-0 bg-amber-600 text-white hover:bg-amber-700">
+          <Button size="sm" onClick={onInstall} className="h-8 shrink-0 bg-blue-600 text-white hover:bg-blue-700">
             <Download className="size-3.5" /> Install
           </Button>
-          <button onClick={() => setShowBar(false)} aria-label="Dismiss install hint" className="shrink-0 rounded p-1 text-amber-700 hover:bg-amber-100">
+          <button onClick={() => setShowBar(false)} aria-label="Dismiss install hint" className="shrink-0 rounded p-1 text-blue-700 hover:bg-blue-100">
             <X className="size-3.5" />
           </button>
         </div>

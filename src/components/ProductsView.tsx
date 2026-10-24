@@ -61,7 +61,7 @@ export default function ProductsView() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search products…" className="h-11 pl-9 rounded-xl" aria-label="Search products" />
         </div>
-        <Button onClick={() => setEditing('new')} className="h-11 rounded-xl bg-amber-600 hover:bg-amber-700 text-white">
+        <Button onClick={() => setEditing('new')} className="h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white">
           <Plus className="size-4" /> Add
         </Button>
       </div>
@@ -258,7 +258,7 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
                 <button
                   key={src}
                   onClick={() => setImage(src)}
-                  className={`size-12 shrink-0 overflow-hidden rounded-md border-2 ${image === src ? 'border-amber-600' : 'border-transparent'}`}
+                  className={`size-12 shrink-0 overflow-hidden rounded-md border-2 ${image === src ? 'border-blue-600' : 'border-transparent'}`}
                   aria-label={`Use sample image ${src}`}
                 >
                   <img src={src} alt="Sample" className="size-full object-cover" />
@@ -353,7 +353,7 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
         </div>
 
         <DialogFooter>
-          <Button onClick={submit} className="w-full h-11 bg-amber-600 hover:bg-amber-700 text-white">
+          <Button onClick={submit} className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white">
             {p ? 'Save changes' : 'Add product'}
           </Button>
         </DialogFooter>

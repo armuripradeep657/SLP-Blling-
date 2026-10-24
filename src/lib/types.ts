@@ -6,11 +6,9 @@ export interface BusinessSettings {
   phone: string;
   whatsappNumber: string;
   address: string;
-  gstin: string;
   upiId: string;
   invoicePrefix: string;
   nextInvoiceNo: number;
-  defaultTaxRate: number;
   roundOffEnabled: boolean;
   slipWidthMm: 58 | 80;
   thankYouNote: string;
@@ -49,7 +47,8 @@ export type DiscountType = 'amount' | 'percent';
 export interface BillConfig {
   discountType: DiscountType;
   discountValue: number;
-  taxRate: number;
+  labourCharge: number;
+  autoCharge: number;
   roundOff: boolean;
   paymentMode: PaymentMode;
   paidAmount: number;
@@ -58,8 +57,8 @@ export interface BillConfig {
 export interface Totals {
   subtotal: number;
   discount: number;
-  taxable: number;
-  tax: number;
+  labourCharge: number;
+  autoCharge: number;
   roundOff: number;
   total: number;
   paid: number;
@@ -73,9 +72,10 @@ export interface Invoice {
   customer: Customer;
   items: CartItem[];
   totals: Totals;
-  taxRate: number;
   discountType: DiscountType;
   discountValue: number;
+  labourCharge: number;
+  autoCharge: number;
   roundOff: boolean;
   paymentMode: PaymentMode;
   status: 'Paid' | 'Due' | 'Partial';

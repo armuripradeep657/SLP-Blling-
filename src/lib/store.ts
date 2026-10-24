@@ -51,7 +51,8 @@ interface BillingStore {
 const DEFAULT_CONFIG: BillConfig = {
   discountType: 'amount',
   discountValue: 0,
-  taxRate: 0,
+  labourCharge: 0,
+  autoCharge: 0,
   roundOff: true,
   paymentMode: 'Cash',
   paidAmount: 0,
@@ -128,8 +129,8 @@ export const useStore = create<BillingStore>()(
       setBillConfig: (c) => set((st) => ({ billConfig: { ...st.billConfig, ...c } })),
 
       resetBillConfig: () =>
-        set((st) => ({
-          billConfig: { ...DEFAULT_CONFIG, taxRate: st.settings.defaultTaxRate ?? 0 },
+        set(() => ({
+          billConfig: { ...DEFAULT_CONFIG },
         })),
 
       completeInvoice: () => {
@@ -144,9 +145,10 @@ export const useStore = create<BillingStore>()(
           customer: { ...customer },
           items: cart.map((c) => ({ ...c })),
           totals,
-          taxRate: billConfig.taxRate,
           discountType: billConfig.discountType,
           discountValue: billConfig.discountValue,
+          labourCharge: billConfig.labourCharge || 0,
+          autoCharge: billConfig.autoCharge || 0,
           roundOff: billConfig.roundOff,
           paymentMode: billConfig.paymentMode,
           status: getStatus(totals.total, totals.paid),
@@ -162,6 +164,8 @@ export const useStore = create<BillingStore>()(
           products: updatedProducts,
           cart: [],
           lastInvoice: invoice,
+          // fresh config for the next bill (Cash mode, no leftover discount/charges)
+          billConfig: { ...DEFAULT_CONFIG },
           settings: { ...st.settings, nextInvoiceNo: st.settings.nextInvoiceNo + 1 },
         }));
         return invoice;

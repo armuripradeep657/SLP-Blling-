@@ -63,7 +63,7 @@ export default function ProductCatalog({ onOpenCustom }: { onOpenCustom: () => v
             aria-selected={cat === c}
             onClick={() => setCat(c)}
             className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-              cat === c ? 'bg-amber-600 text-white' : 'border bg-card hover:bg-accent'
+              cat === c ? 'bg-blue-600 text-white' : 'border bg-card hover:bg-accent'
             }`}
           >
             {c}
@@ -111,7 +111,7 @@ function ProductCard({ product, onAddSize }: { product: Product; onAddSize: (siz
         <div>
           <p className="text-[13px] font-semibold leading-tight line-clamp-2">{product.name}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            from <span className="font-bold text-amber-700">₹{product.price}</span>
+            from <span className="font-bold text-blue-700">₹{product.price}</span>
           </p>
         </div>
         <div className="flex flex-wrap gap-1 mt-auto">
@@ -123,7 +123,7 @@ function ProductCard({ product, onAddSize }: { product: Product; onAddSize: (siz
                 disabled={outOfStock}
                 onClick={() => onAddSize(s)}
                 title={`${s} — ₹${price}`}
-                className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-600 hover:text-white hover:border-amber-600 transition-colors disabled:opacity-40 disabled:hover:bg-amber-50 disabled:hover:text-amber-800"
+                className="rounded-md border border-blue-300 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-800 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-colors disabled:opacity-40 disabled:hover:bg-blue-50 disabled:hover:text-blue-800"
               >
                 +{s}
               </button>
@@ -168,7 +168,7 @@ export function CustomItemDialog({ open, onOpenChange }: { open: boolean; onOpen
           <Input placeholder="Quantity" type="number" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} className="h-11" />
         </div>
         <DialogFooter>
-          <Button onClick={submit} className="w-full h-11 bg-amber-600 hover:bg-amber-700 text-white">
+          <Button onClick={submit} className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white">
             Add to Bill
           </Button>
         </DialogFooter>

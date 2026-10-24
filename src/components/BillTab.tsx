@@ -26,13 +26,13 @@ export default function BillTab({ onCompleted }: { onCompleted: () => void }) {
         <div className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 px-4 lg:hidden">
           <button
             onClick={() => setSheetOpen(true)}
-            className="mx-auto flex w-full max-w-md items-center justify-between rounded-2xl bg-amber-600 px-4 py-3 text-white shadow-xl shadow-amber-900/25 active:scale-[0.99] transition-transform"
+            className="mx-auto flex w-full max-w-md items-center justify-between rounded-2xl bg-blue-600 px-4 py-3 text-white shadow-xl shadow-blue-900/25 active:scale-[0.99] transition-transform"
             aria-label="View bill"
           >
             <span className="flex items-center gap-2 font-semibold">
               <span className="relative">
                 <ShoppingCart className="size-5" />
-                <span className="absolute -right-2 -top-2 rounded-full bg-white text-amber-700 text-[10px] font-bold px-1.5 py-px">
+                <span className="absolute -right-2 -top-2 rounded-full bg-white text-blue-700 text-[10px] font-bold px-1.5 py-px">
                   {count}
                 </span>
               </span>

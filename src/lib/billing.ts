@@ -16,14 +16,14 @@ export function computeTotals(items: CartItem[], cfg: BillConfig): Totals {
     cfg.discountType === 'percent'
       ? Math.min(subtotal, (subtotal * (cfg.discountValue || 0)) / 100)
       : Math.min(subtotal, cfg.discountValue || 0);
-  const taxable = subtotal - discount;
-  const tax = (taxable * (cfg.taxRate || 0)) / 100;
-  const raw = taxable + tax;
+  const labourCharge = cfg.labourCharge || 0;
+  const autoCharge = cfg.autoCharge || 0;
+  const raw = subtotal - discount + labourCharge + autoCharge;
   const total = cfg.roundOff ? Math.round(raw) : Math.round(raw * 100) / 100;
   const roundOff = total - raw;
   const paid = Math.min(cfg.paidAmount || 0, total);
   const balance = Math.max(total - paid, 0);
-  return { subtotal, discount, taxable, tax, roundOff, total, paid, balance };
+  return { subtotal, discount, labourCharge, autoCharge, roundOff, total, paid, balance };
 }
 
 export function getStatus(total: number, paid: number): 'Paid' | 'Due' | 'Partial' {

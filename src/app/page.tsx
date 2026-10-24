@@ -49,7 +49,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-dvh bg-gradient-to-b from-amber-50/70 to-neutral-100">
+    <div className="min-h-dvh bg-gradient-to-b from-blue-50/70 to-neutral-100">
       <ServiceWorkerRegister />
       <Header />
       <PwaInstall />
@@ -107,7 +107,7 @@ export default function Home() {
       {activeTab !== 'bill' && cart.length > 0 && (
         <button
           onClick={() => setActiveTab('bill')}
-          className="fixed right-4 top-[4.5rem] z-40 rounded-full bg-amber-600 px-3.5 py-2 text-xs font-bold text-white shadow-lg lg:hidden"
+          className="fixed right-4 top-[4.5rem] z-40 rounded-full bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-lg lg:hidden"
         >
           {cart.length} items · ₹{fmt(totals.total)}
         </button>

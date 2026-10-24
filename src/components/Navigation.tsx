@@ -20,14 +20,16 @@ export function Header() {
   const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
 
   return (
-    <header className="sticky top-0 z-50 border-b bg-gradient-to-r from-amber-700 to-amber-600 text-white shadow-md">
+    <header className="sticky top-0 z-50 border-b bg-gradient-to-r from-blue-700 to-blue-600 text-white shadow-md">
       <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-lg font-black ring-1 ring-white/30">
-          ₹
-        </div>
+        <img
+          src="/narasimha-logo.jpg"
+          alt="Sri Lakshmi Penchil Narasimha Swamy logo"
+          className="size-10 shrink-0 rounded-full object-cover ring-2 ring-white/60"
+        />
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-bold leading-tight sm:text-base">{settings.companyName}</h1>
-          <p className="truncate text-[11px] text-amber-100">
+          <p className="truncate text-[11px] text-blue-100">
             Proprietor: {settings.ownerName}
             {settings.phone ? ` · ${settings.phone}` : ''}
           </p>
@@ -71,17 +73,17 @@ export function BottomNav() {
               onClick={() => setActiveTab(t.id)}
               aria-current={active ? 'page' : undefined}
               className={`relative flex h-16 flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors ${
-                active ? 'text-amber-700' : 'text-neutral-500'
+                active ? 'text-blue-700' : 'text-neutral-500'
               }`}
             >
               <Icon className="size-5" active={active} />
               {t.id === 'bill' && count > 0 && (
-                <span className="absolute right-[22%] top-2 rounded-full bg-amber-600 px-1.5 text-[10px] font-bold text-white">
+                <span className="absolute right-[22%] top-2 rounded-full bg-blue-600 px-1.5 text-[10px] font-bold text-white">
                   {count}
                 </span>
               )}
               {t.label}
-              {active && <span className="absolute top-0 h-0.5 w-10 rounded-full bg-amber-600" />}
+              {active && <span className="absolute top-0 h-0.5 w-10 rounded-full bg-blue-600" />}
             </button>
           );
         })}
@@ -109,7 +111,7 @@ export function DesktopTabs() {
           aria-selected={activeTab === t.id}
           onClick={() => setActiveTab(t.id)}
           className={`rounded-full px-5 py-2 text-sm font-semibold transition-colors ${
-            activeTab === t.id ? 'bg-amber-600 text-white shadow' : 'border bg-card hover:bg-accent'
+            activeTab === t.id ? 'bg-blue-600 text-white shadow' : 'border bg-card hover:bg-accent'
           }`}
         >
           {t.label}
@@ -121,14 +123,14 @@ export function DesktopTabs() {
 
 // tiny inline icon wrappers to keep this file self-contained
 function ReceiptIcon({ className, active }: { className?: string; active?: boolean }) {
-  return <ReceiptText className={`${className} ${active ? 'fill-amber-100' : ''}`} />;
+  return <ReceiptText className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
 }
 function PackageIcon({ className, active }: { className?: string; active?: boolean }) {
-  return <Package className={`${className} ${active ? 'fill-amber-100' : ''}`} />;
+  return <Package className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
 }
 function HistoryIcon({ className, active }: { className?: string; active?: boolean }) {
-  return <History className={`${className} ${active ? 'fill-amber-100' : ''}`} />;
+  return <History className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
 }
 function SettingsIcon({ className, active }: { className?: string; active?: boolean }) {
-  return <Settings className={`${className} ${active ? 'fill-amber-100' : ''}`} />;
+  return <Settings className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
 }

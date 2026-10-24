@@ -24,7 +24,8 @@ export function whatsappMessage(inv: Invoice, s: BusinessSettings): string {
   lines.push('------------------------------');
   lines.push(`Subtotal: ${fmt(inv.totals.subtotal)}`);
   if (inv.totals.discount > 0) lines.push(`Discount: -${fmt(inv.totals.discount)}`);
-  if (inv.taxRate > 0) lines.push(`GST (${inv.taxRate}%): ${fmt(inv.totals.tax)}`);
+  if ((inv.labourCharge || 0) > 0) lines.push(`Labour Charges: ${fmt(inv.labourCharge)}`);
+  if ((inv.autoCharge || 0) > 0) lines.push(`Auto Charges: ${fmt(inv.autoCharge)}`);
   if (inv.roundOff && inv.totals.roundOff !== 0) lines.push(`Round Off: ${fmt(inv.totals.roundOff)}`);
   lines.push(`*TOTAL: Rs. ${fmt(inv.totals.total)}*`);
   lines.push(`Payment: ${inv.paymentMode}`);
@@ -53,7 +54,11 @@ export function whatsappCaption(inv: Invoice, s: BusinessSettings): string {
   if (inv.customer.name) lines.push(`Customer: ${inv.customer.name}`);
   lines.push(`*Total: Rs. ${fmt(inv.totals.total)}*${inv.totals.balance > 0 ? ` (Balance: Rs. ${fmt(inv.totals.balance)})` : ' (Paid)'}`);
   lines.push('');
-  lines.push('Bill image attached \u{1F9FE} — scan the UPI QR in it to pay \u{1F64F}');
+  lines.push(
+    inv.totals.balance > 0
+      ? 'Bill image attached \u{1F9FE} — scan the UPI QR in it to pay the balance \u{1F64F}'
+      : 'Bill image attached \u{1F9FE} — amount fully paid, thank you \u{1F64F}'
+  );
   lines.push(`- ${s.ownerName || ''}`);
   return lines.join('\n');
 }
@@ -63,9 +68,12 @@ export function smsMessage(inv: Invoice, s: BusinessSettings): string {
   const d = new Date(inv.dateISO);
   const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
   const company = (s.companyName || 'Cement Works').split(' ').slice(0, 4).join(' ');
-  const cust = inv.customer.name ? ` Cust: ${inv.customer.name}.` : '';
   const items = inv.items.map((it) => `${it.name} ${it.size} x${it.qty}=${fmtShort(it.price * it.qty)}`).join('; ');
-  const totals = ` Sub:${fmtShort(inv.totals.subtotal)}${inv.taxRate > 0 ? ` GST:${fmtShort(inv.totals.tax)}` : ''} TOTAL:Rs.${fmtShort(inv.totals.total)}. ${inv.paymentMode}, Paid:${fmtShort(inv.totals.paid)}, Bal:${fmtShort(inv.totals.balance)}.`;
+  const extras =
+    (inv.labourCharge || 0) > 0 || (inv.autoCharge || 0) > 0
+      ? ` (L:${fmtShort(inv.labourCharge || 0)}, A:${fmtShort(inv.autoCharge || 0)})`
+      : '';
+  const totals = ` Sub:${fmtShort(inv.totals.subtotal)}${extras} TOTAL:Rs.${fmtShort(inv.totals.total)}. ${inv.paymentMode}, Paid:${fmtShort(inv.totals.paid)}, Bal:${fmtShort(inv.totals.balance)}.`;
   const tail = ` Thank you! - ${s.ownerName || ''}`;
   return `${company}${inv.customer.name ? ` Cust: ${inv.customer.name}.` : ''} Inv ${inv.no} (${dateStr})\n${items}\n${totals}${tail}`;
 }

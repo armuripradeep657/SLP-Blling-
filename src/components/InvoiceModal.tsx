@@ -56,7 +56,6 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
   const waMsg = whatsappMessage(invoice, settings);
   const smsMsg = smsMessage(invoice, settings);
   const fileName = slipFileName(invoice.no);
-  const qrOnSlip = !!(settings.upiId || settings.whatsappNumber || settings.phone);
 
   const guard = async (key: string, fn: () => Promise<void> | void) => {
     try {
@@ -161,13 +160,13 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
             Bill Generated — {invoice.no}
           </DialogTitle>
           <DialogDescription className="text-xs">
-            Thermal-slip <b>image</b> with QR — WhatsApp sends this picture, not text.
+            Thermal-slip <b>image</b> — WhatsApp sends this picture, not text. Paid bills carry a <b>PAID</b> stamp; balance bills carry the <b>UPI QR</b>.
           </DialogDescription>
-          {!qrOnSlip && (
-            <div className="mt-1 flex items-start gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] leading-snug text-amber-900">
+          {invoice.totals.balance > 0 && !settings.upiId && (
+            <div className="mt-1 flex items-start gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-2 text-[11px] leading-snug text-blue-900">
               <QrCode className="mt-0.5 size-3.5 shrink-0" />
               <span>
-                No QR yet — add your <b>UPI ID</b> (or shop WhatsApp number) in <b>Settings</b> and the bill image gets a scan-to-pay QR.
+                Balance is due — add your <b>UPI ID</b> in <b>Settings</b> and the bill image gets a scan-to-pay QR for the balance.
               </span>
             </div>
           )}
@@ -221,7 +220,7 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
         <DialogContent className="w-[calc(100vw-2rem)] max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
-              <ImageIcon className="size-4 text-amber-700" /> Bill image ready
+              <ImageIcon className="size-4 text-blue-700" /> Bill image ready
             </DialogTitle>
             <DialogDescription asChild>
               <ol className="list-decimal space-y-1.5 pl-4 pt-1 text-left text-xs">

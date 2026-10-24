@@ -18,7 +18,6 @@ import { useStore } from '@/lib/store';
 import { computeTotals, fmt, normalizePhone } from '@/lib/billing';
 import type { PaymentMode } from '@/lib/types';
 
-const TAX_RATES = [0, 5, 12, 18, 28];
 const MODES: PaymentMode[] = ['Cash', 'UPI', 'Card', 'Due'];
 
 export default function BillPanel({ onComplete }: { onComplete: () => void }) {
@@ -169,8 +168,8 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
 
       <Separator />
 
-      {/* Discount / tax / payment */}
-      <section aria-label="Discount and tax" className="space-y-3">
+      {/* Discount / extra charges / payment */}
+      <section aria-label="Discount and charges" className="space-y-3">
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Discount</Label>
@@ -196,28 +195,41 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">GST rate</Label>
-            <Select value={String(cfg.taxRate)} onValueChange={(v) => setBillConfig({ taxRate: Number(v) })}>
-              <SelectTrigger className="h-11" aria-label="GST rate">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TAX_RATES.map((r) => (
-                  <SelectItem key={r} value={String(r)}>
-                    {r}%
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label className="text-xs text-muted-foreground">Labour charges (if any)</Label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              value={cfg.labourCharge || ''}
+              onChange={(e) => setBillConfig({ labourCharge: Number(e.target.value) || 0 })}
+              placeholder="0"
+              className="h-11"
+              aria-label="Labour charges"
+            />
           </div>
         </div>
 
-        <div className="flex items-center justify-between rounded-lg border p-3">
-          <div>
-            <Label className="text-sm font-medium">Round off total</Label>
-            <p className="text-xs text-muted-foreground">Nearest rupee</p>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Auto charges (if any)</Label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              value={cfg.autoCharge || ''}
+              onChange={(e) => setBillConfig({ autoCharge: Number(e.target.value) || 0 })}
+              placeholder="0"
+              className="h-11"
+              aria-label="Auto charges"
+            />
           </div>
-          <Switch checked={cfg.roundOff} onCheckedChange={(v) => setBillConfig({ roundOff: v })} />
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <Label className="text-sm font-medium">Round off</Label>
+              <p className="text-xs text-muted-foreground">Nearest rupee</p>
+            </div>
+            <Switch checked={cfg.roundOff} onCheckedChange={(v) => setBillConfig({ roundOff: v })} />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-2">
@@ -271,10 +283,16 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
             <span className="tabular-nums">− ₹{fmt(totals.discount)}</span>
           </div>
         )}
-        {cfg.taxRate > 0 && (
+        {totals.labourCharge > 0 && (
           <div className="flex justify-between text-muted-foreground">
-            <span>GST ({cfg.taxRate}%)</span>
-            <span className="tabular-nums">₹{fmt(totals.tax)}</span>
+            <span>Labour charges</span>
+            <span className="tabular-nums">+ ₹{fmt(totals.labourCharge)}</span>
+          </div>
+        )}
+        {totals.autoCharge > 0 && (
+          <div className="flex justify-between text-muted-foreground">
+            <span>Auto charges</span>
+            <span className="tabular-nums">+ ₹{fmt(totals.autoCharge)}</span>
           </div>
         )}
         {cfg.roundOff && Math.abs(totals.roundOff) >= 0.005 && (
@@ -297,7 +315,7 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
 
       <Button
         onClick={onCompleteClick}
-        className="w-full h-14 text-base font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-lg shadow-amber-600/20"
+        className="w-full h-14 text-base font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20"
       >
         <ReceiptText className="size-5" />
         Complete Bill — Thermal Slip

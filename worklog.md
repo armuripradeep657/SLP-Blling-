@@ -51,3 +51,21 @@ Work Log:
 
 Stage Summary:
 - All steps finalized and verified end-to-end; app live on port 3000; production build passes; PWA installable; WhatsApp shares thermal-slip IMAGE with UPI QR (not text)
+
+---
+Task ID: 4
+Agent: main
+Task: Add Narasimha Swamy logo, blue & white theme, remove GST, add Labour + Auto charges, smart QR (PAID stamp vs balance QR)
+
+Work Log:
+- Image-searched Lord Narasimha Swamy; scripts/make-logo.js (sharp): square crop of deity -> public/narasimha-logo.jpg; regenerated icon-192/512, maskable 192/512, apple-touch, favicon with blue-700 circle background
+- Theme: all amber-* Tailwind classes -> blue-* (Navigation/BillPanel/BillTab/page/HistoryView/ProductCatalog/ProductsView/PwaInstall/InvoiceModal/SettingsView); layout themeColor #1d4ed8; manifest bg #ffffff theme #1d4ed8; globals.css --primary/--ring -> blue oklch
+- Logo: app header shows circular Narasimha logo; ThermalSlip shows logo (blue-ringed circle) above company name
+- GST removed: BillConfig/Invoice/Totals types dropped taxRate/tax/taxable; computeTotals = subtotal - discount + labour + auto (+round off); BillPanel GST select removed; slip GST/GSTIN lines removed; messages GST lines removed; Settings GSTIN + default-GST fields removed
+- Labour & Auto charges: BillConfig.labourCharge/autoCharge; two inputs in BillPanel ("if any"); slip lines "Labour Charges"/"Auto Charges"; WhatsApp/SMS messages include them; completeInvoice resets billConfig so charges never leak to next bill
+- Smart QR (ThermalSlip): balance <= 0 -> blue double-border "AMOUNT PAID / Received with thanks — Rs X (mode)" stamp, NO QR; balance > 0 -> UPI QR encoding the BALANCE amount (upiUri am=balance) with "Scan to Pay Balance Rs X · UPI: id" caption; WhatsApp chat-QR fallback kept when no UPI set; InvoiceModal hint now only when balance due && no UPI; caption text conditional (pay balance vs fully paid)
+- sw.js CACHE -> v3, precache += /narasimha-logo.jpg; eslint ignores += scripts/mini-services/download
+- Verified Playwright mobile 390x844, fresh storage: blue home + logo header; bill 780 + labour 50 + auto 30 = 860 Cash full -> slip shows logo, Labour/Auto lines, TOTAL 860, AMOUNT PAID stamp, NO QR (captured PNG via WA flow confirms); second bill Due advance 100 on 200 -> slip shows UPI QR + "Scan to Pay Balance Rs. 100.00 · UPI: prasad@upi", no stamp; settings UPI field works, zero GST remnants; lint clean, build passes, SW v3, zero console/page errors
+
+Stage Summary:
+- App is blue & white with Narasimha Swamy logo everywhere (header, slip, PWA icon); GST fully removed; Labour + Auto charges optional per bill; QR smart per payment state: fully paid = PAID stamp (no QR), balance due = UPI QR for exact balance; build + lint clean

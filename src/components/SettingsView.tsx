@@ -32,7 +32,7 @@ export default function SettingsView() {
   return (
     <div className="space-y-5">
       <section aria-label="Business identity" className="space-y-3">
-        <h3 className="text-sm font-bold text-amber-800">Business Identity</h3>
+        <h3 className="text-sm font-bold text-blue-800">Business Identity</h3>
         <Field label="Company name" value={settings.companyName} onChange={(v) => set({ companyName: v })} textarea />
         <Field label="Owner / Proprietor name" value={settings.ownerName} onChange={(v) => set({ ownerName: v })} placeholder="A. Prasad" />
         <div className="grid grid-cols-2 gap-2">
@@ -40,16 +40,13 @@ export default function SettingsView() {
           <Field label="WhatsApp number" value={settings.whatsappNumber} onChange={(v) => set({ whatsappNumber: v })} type="tel" placeholder="Used on bills" />
         </div>
         <Field label="Shop address" value={settings.address} onChange={(v) => set({ address: v })} textarea placeholder="Main Road, Village, District" />
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="GSTIN (optional)" value={settings.gstin} onChange={(v) => set({ gstin: v.toUpperCase() })} placeholder="37ABCDE1234F1Z5" />
-          <Field label="UPI ID (for QR)" value={settings.upiId} onChange={(v) => set({ upiId: v })} placeholder="name@upi" />
-        </div>
+        <Field label="UPI ID (for balance QR)" value={settings.upiId} onChange={(v) => set({ upiId: v })} placeholder="name@upi" />
       </section>
 
       <Separator />
 
       <section aria-label="Billing preferences" className="space-y-3">
-        <h3 className="text-sm font-bold text-amber-800">Billing & Slip</h3>
+        <h3 className="text-sm font-bold text-blue-800">Billing & Slip</h3>
         <div className="grid grid-cols-2 gap-2">
           <Field label="Invoice prefix" value={settings.invoicePrefix} onChange={(v) => set({ invoicePrefix: v })} placeholder="SLP-INV-" />
           <Field
@@ -57,16 +54,6 @@ export default function SettingsView() {
             value={String(settings.nextInvoiceNo)}
             onChange={(v) => set({ nextInvoiceNo: Math.max(1, Number(v.replace(/\D/g, '')) || 1) })}
             type="number"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Default GST rate (%)</Label>
-          <Input
-            type="number"
-            inputMode="decimal"
-            value={settings.defaultTaxRate}
-            onChange={(e) => set({ defaultTaxRate: Math.max(0, Number(e.target.value) || 0) })}
-            className="h-11"
           />
         </div>
         <div className="flex items-center justify-between rounded-lg border p-3">
@@ -84,7 +71,7 @@ export default function SettingsView() {
                 key={mm}
                 onClick={() => set({ slipWidthMm: mm })}
                 className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-semibold ${
-                  settings.slipWidthMm === mm ? 'border-amber-600 bg-amber-600 text-white' : 'bg-card hover:bg-accent'
+                  settings.slipWidthMm === mm ? 'border-blue-600 bg-blue-600 text-white' : 'bg-card hover:bg-accent'
                 }`}
               >
                 {mm} mm {mm === 58 ? '(small)' : '(standard)'}
@@ -99,7 +86,7 @@ export default function SettingsView() {
       <Separator />
 
       <section aria-label="Data management" className="space-y-2">
-        <h3 className="text-sm font-bold text-amber-800">Data</h3>
+        <h3 className="text-sm font-bold text-blue-800">Data</h3>
         <p className="text-xs text-muted-foreground">
           All data (products, bills, settings) is stored on this device only — the app works fully offline.
         </p>

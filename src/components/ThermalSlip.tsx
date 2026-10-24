@@ -20,18 +20,22 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
   const w = settings.slipWidthMm === 58 ? 220 : 304;
   const baseFont = settings.slipWidthMm === 58 ? 9.5 : 11;
 
+  /** Bill fully settled — show PAID stamp instead of any QR */
+  const isFullyPaid = invoice.totals.balance <= 0;
+
+  /** UPI QR for the remaining BALANCE only (hidden once fully paid) */
   const upiString = useMemo(() => {
-    if (!settings.upiId) return '';
-    return upiUri(settings.upiId, settings.companyName, invoice.totals.balance > 0 ? invoice.totals.balance : invoice.totals.total, invoice.no);
-  }, [settings.upiId, settings.companyName, invoice]);
+    if (isFullyPaid || !settings.upiId) return '';
+    return upiUri(settings.upiId, settings.companyName, invoice.totals.balance, invoice.no);
+  }, [isFullyPaid, settings.upiId, settings.companyName, invoice]);
 
   /** Fallback QR: shop WhatsApp chat link (when no UPI ID is configured) */
   const waString = useMemo(() => {
-    if (settings.upiId) return '';
+    if (isFullyPaid || settings.upiId) return '';
     const shop = (settings.whatsappNumber || settings.phone || '').replace(/\D/g, '');
     const ten = shop.length > 10 ? shop.slice(-10) : shop;
     return ten.length === 10 ? `https://wa.me/91${ten}?text=${encodeURIComponent(`Hi, regarding bill ${invoice.no}`)}` : '';
-  }, [settings.upiId, settings.whatsappNumber, settings.phone, invoice.no]);
+  }, [isFullyPaid, settings.upiId, settings.whatsappNumber, settings.phone, invoice.no]);
 
   const qrString = upiString || waString;
   const isUpiQr = !!upiString;
@@ -87,6 +91,19 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
     >
       {/* Header */}
       <div style={{ textAlign: 'center' }}>
+        <img
+          src="/narasimha-logo.jpg"
+          alt="Sri Lakshmi Penchil Narasimha Swamy"
+          width={Math.round(w * 0.24)}
+          height={Math.round(w * 0.24)}
+          style={{
+            display: 'block',
+            margin: '0 auto 5px',
+            borderRadius: '50%',
+            objectFit: 'cover',
+            border: '2px solid #1d4ed8',
+          }}
+        />
         <div style={{ fontWeight: 700, fontSize: baseFont + 2.5, textTransform: 'uppercase', letterSpacing: 0.2 }}>
           {settings.companyName}
         </div>
@@ -94,7 +111,6 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
           <div style={{ fontSize: baseFont - 1, whiteSpace: 'pre-wrap' }}>{settings.address}</div>
         ) : null}
         {settings.phone ? <div>Ph: {settings.phone}</div> : null}
-        {settings.gstin ? <div style={{ fontSize: baseFont - 1 }}>GSTIN: {settings.gstin}</div> : null}
         <div style={{ fontSize: baseFont - 0.5, marginTop: 2 }}>Proprietor: {settings.ownerName}</div>
       </div>
 
@@ -154,10 +170,16 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
           <span>- Rs. {fmt(invoice.totals.discount)}</span>
         </div>
       ) : null}
-      {invoice.taxRate > 0 ? (
+      {(invoice.labourCharge || 0) > 0 ? (
         <div style={row}>
-          <span>GST @ {invoice.taxRate}%</span>
-          <span>Rs. {fmt(invoice.totals.tax)}</span>
+          <span>Labour Charges</span>
+          <span>Rs. {fmt(invoice.labourCharge)}</span>
+        </div>
+      ) : null}
+      {(invoice.autoCharge || 0) > 0 ? (
+        <div style={row}>
+          <span>Auto Charges</span>
+          <span>Rs. {fmt(invoice.autoCharge)}</span>
         </div>
       ) : null}
       {invoice.roundOff && Math.abs(invoice.totals.roundOff) >= 0.005 ? (
@@ -197,8 +219,29 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
         <div style={{ textAlign: 'center', fontWeight: 700, marginTop: 3 }}>* {invoice.status} *</div>
       ) : null}
 
-      {/* QR — UPI payment (or shop WhatsApp contact when no UPI ID) */}
-      {qr && qrString ? (
+      {/* PAID stamp when fully settled — no QR after payment is complete */}
+      {isFullyPaid ? (
+        <div style={{ textAlign: 'center', marginTop: 8 }}>
+          <div
+            style={{
+              display: 'inline-block',
+              border: '3px double #1d4ed8',
+              color: '#1d4ed8',
+              borderRadius: 6,
+              padding: `${baseFont * 0.5}px ${baseFont * 2}px`,
+              fontWeight: 700,
+              fontSize: baseFont + 3.5,
+              letterSpacing: 2.5,
+            }}
+          >
+            AMOUNT PAID
+          </div>
+          <div style={{ fontSize: baseFont - 1, marginTop: 3, color: '#333' }}>
+            Received with thanks — Rs. {fmt(invoice.totals.paid)} ({invoice.paymentMode})
+          </div>
+        </div>
+      ) : qr && qrString ? (
+        /* Balance due — UPI QR for the balance (or WhatsApp chat QR when no UPI) */
         <div style={{ textAlign: 'center', marginTop: 7 }}>
           <img
             src={qr}
@@ -208,7 +251,9 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
             style={{ display: 'block', margin: '0 auto', imageRendering: 'pixelated' }}
           />
           <div style={{ fontSize: baseFont - 1.2, marginTop: 2 }}>
-            {isUpiQr ? `Scan to Pay UPI: ${settings.upiId}` : 'Scan to chat on WhatsApp'}
+            {isUpiQr
+              ? `Scan to Pay Balance Rs. ${fmt(invoice.totals.balance)} · UPI: ${settings.upiId}`
+              : 'Scan to chat on WhatsApp'}
           </div>
         </div>
       ) : null}

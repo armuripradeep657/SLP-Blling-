@@ -78,7 +78,7 @@ export default function HistoryView({ onOpenInvoice }: { onOpenInvoice: (inv: In
             aria-selected={statusFilter === s}
             onClick={() => setStatusFilter(s)}
             className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium ${
-              statusFilter === s ? 'bg-amber-600 text-white' : 'border bg-card hover:bg-accent'
+              statusFilter === s ? 'bg-blue-600 text-white' : 'border bg-card hover:bg-accent'
             }`}
           >
             {s}
