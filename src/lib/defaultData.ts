@@ -9,7 +9,6 @@ export const DEFAULT_SETTINGS: BusinessSettings = {
   upiId: '',
   invoicePrefix: 'SLP-INV-',
   nextInvoiceNo: 1001,
-  roundOffEnabled: true,
   slipWidthMm: 80,
   thankYouNote: 'Thank you! Visit Again',
   returnPolicy: 'Goods once sold will not be taken back',

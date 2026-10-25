@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,13 +55,6 @@ export default function SettingsView() {
             onChange={(v) => set({ nextInvoiceNo: Math.max(1, Number(v.replace(/\D/g, '')) || 1) })}
             type="number"
           />
-        </div>
-        <div className="flex items-center justify-between rounded-lg border p-3">
-          <div>
-            <Label className="text-sm font-medium">Round off totals</Label>
-            <p className="text-xs text-muted-foreground">Nearest rupee on every bill</p>
-          </div>
-          <Switch checked={settings.roundOffEnabled} onCheckedChange={(v) => set({ roundOffEnabled: v })} />
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Thermal slip width</Label>

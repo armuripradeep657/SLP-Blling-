@@ -9,7 +9,6 @@ export interface BusinessSettings {
   upiId: string;
   invoicePrefix: string;
   nextInvoiceNo: number;
-  roundOffEnabled: boolean;
   slipWidthMm: 58 | 80;
   thankYouNote: string;
   returnPolicy: string;
@@ -31,8 +30,9 @@ export interface CartItem {
   productId: string;
   name: string;
   size: string;
-  price: number; // unit price captured at add time
+  price: number; // unit price — editable per bill while billing
   qty: number;
+  discount?: number; // per-item flat ₹ discount for this line
 }
 
 export interface Customer {
@@ -49,17 +49,17 @@ export interface BillConfig {
   discountValue: number;
   labourCharge: number;
   autoCharge: number;
-  roundOff: boolean;
   paymentMode: PaymentMode;
   paidAmount: number;
 }
 
 export interface Totals {
   subtotal: number;
-  discount: number;
+  itemDiscounts: number; // sum of per-item discounts
+  discount: number; // bill-level discount
   labourCharge: number;
   autoCharge: number;
-  roundOff: number;
+  roundOff: number; // always 0 — round off removed
   total: number;
   paid: number;
   balance: number;
@@ -76,7 +76,6 @@ export interface Invoice {
   discountValue: number;
   labourCharge: number;
   autoCharge: number;
-  roundOff: boolean;
   paymentMode: PaymentMode;
   status: 'Paid' | 'Due' | 'Partial';
 }

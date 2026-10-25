@@ -152,6 +152,9 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
           <div style={{ color: '#333' }}>
             Size: {it.size} &nbsp;|&nbsp; {it.qty} x {fmtShort(it.price)}
           </div>
+          {(it.discount || 0) > 0 ? (
+            <div style={{ color: '#333' }}>&nbsp;&nbsp;less discount - Rs. {fmt(it.discount)}</div>
+          ) : null}
         </div>
       ))}
 
@@ -162,6 +165,12 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
         <span>Subtotal</span>
         <span>Rs. {fmt(invoice.totals.subtotal)}</span>
       </div>
+      {(invoice.totals.itemDiscounts || 0) > 0 ? (
+        <div style={row}>
+          <span>Item Discounts</span>
+          <span>- Rs. {fmt(invoice.totals.itemDiscounts)}</span>
+        </div>
+      ) : null}
       {invoice.totals.discount > 0 ? (
         <div style={row}>
           <span>
@@ -180,12 +189,6 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
         <div style={row}>
           <span>Auto Charges</span>
           <span>Rs. {fmt(invoice.autoCharge)}</span>
-        </div>
-      ) : null}
-      {invoice.roundOff && Math.abs(invoice.totals.roundOff) >= 0.005 ? (
-        <div style={row}>
-          <span>Round Off</span>
-          <span>{invoice.totals.roundOff >= 0 ? '+' : '-'} Rs. {fmt(Math.abs(invoice.totals.roundOff))}</span>
         </div>
       ) : null}
 

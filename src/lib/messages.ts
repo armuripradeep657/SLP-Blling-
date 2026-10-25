@@ -20,13 +20,14 @@ export function whatsappMessage(inv: Invoice, s: BusinessSettings): string {
   inv.items.forEach((it, i) => {
     lines.push(`${i + 1}. ${it.name}`);
     lines.push(`   Size: ${it.size} | ${it.qty} x ${fmtShort(it.price)} = *${fmt(it.price * it.qty)}*`);
+    if ((it.discount || 0) > 0) lines.push(`   Discount: -${fmt(it.discount)}`);
   });
   lines.push('------------------------------');
   lines.push(`Subtotal: ${fmt(inv.totals.subtotal)}`);
+  if ((inv.totals.itemDiscounts || 0) > 0) lines.push(`Item Discounts: -${fmt(inv.totals.itemDiscounts)}`);
   if (inv.totals.discount > 0) lines.push(`Discount: -${fmt(inv.totals.discount)}`);
   if ((inv.labourCharge || 0) > 0) lines.push(`Labour Charges: ${fmt(inv.labourCharge)}`);
   if ((inv.autoCharge || 0) > 0) lines.push(`Auto Charges: ${fmt(inv.autoCharge)}`);
-  if (inv.roundOff && inv.totals.roundOff !== 0) lines.push(`Round Off: ${fmt(inv.totals.roundOff)}`);
   lines.push(`*TOTAL: Rs. ${fmt(inv.totals.total)}*`);
   lines.push(`Payment: ${inv.paymentMode}`);
   lines.push(`Paid: ${fmt(inv.totals.paid)} | Balance: ${fmt(inv.totals.balance)}`);

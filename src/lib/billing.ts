@@ -10,20 +10,28 @@ export const fmtShort = (n: number): string => {
   return Number.isInteger(v) ? String(v) : v.toFixed(2);
 };
 
+/** Net amount of one cart line after its own per-item discount (never below 0) */
+export function lineNet(it: CartItem): number {
+  const gross = it.price * it.qty;
+  const d = Math.min(Math.max(it.discount || 0, 0), gross);
+  return Math.round((gross - d) * 100) / 100;
+}
+
 export function computeTotals(items: CartItem[], cfg: BillConfig): Totals {
   const subtotal = items.reduce((s, it) => s + it.price * it.qty, 0);
+  const itemDiscounts = items.reduce((s, it) => s + (it.price * it.qty - lineNet(it)), 0);
+  const base = subtotal - itemDiscounts;
   const discount =
     cfg.discountType === 'percent'
-      ? Math.min(subtotal, (subtotal * (cfg.discountValue || 0)) / 100)
-      : Math.min(subtotal, cfg.discountValue || 0);
+      ? Math.min(base, (base * (cfg.discountValue || 0)) / 100)
+      : Math.min(base, cfg.discountValue || 0);
   const labourCharge = cfg.labourCharge || 0;
   const autoCharge = cfg.autoCharge || 0;
-  const raw = subtotal - discount + labourCharge + autoCharge;
-  const total = cfg.roundOff ? Math.round(raw) : Math.round(raw * 100) / 100;
-  const roundOff = total - raw;
+  // Exact total — round off removed
+  const total = Math.round((base - discount + labourCharge + autoCharge) * 100) / 100;
   const paid = Math.min(cfg.paidAmount || 0, total);
   const balance = Math.max(total - paid, 0);
-  return { subtotal, discount, labourCharge, autoCharge, roundOff, total, paid, balance };
+  return { subtotal, itemDiscounts, discount, labourCharge, autoCharge, roundOff: 0, total, paid, balance };
 }
 
 export function getStatus(total: number, paid: number): 'Paid' | 'Due' | 'Partial' {

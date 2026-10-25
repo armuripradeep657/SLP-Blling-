@@ -149,3 +149,23 @@ Work Log:
 
 Stage Summary:
 - Custom items are now permanent catalog products (auto-saved with name/size/price, dedup+merge); Next.js dev N badge removed from the UI
+
+---
+Task ID: 10
+Agent: main
+Task: "while billing owner can change that product cost directly and apply discount for each product and remove that round off; share customer thermal slip to customer directly using customer number through whatsapp"
+
+Work Log:
+- types.ts: CartItem += discount?: number (per-line flat Rs); Totals += itemDiscounts; removed roundOff from BillConfig/Invoice and roundOffEnabled from BusinessSettings (roundOff kept in Totals as always-0 for old persisted data compat)
+- billing.ts: new lineNet(it) helper (gross - capped item discount); computeTotals now subtotal(gross) - itemDiscounts - bill-level discount + labour + auto = EXACT total (round-off logic deleted; percent bill discount now bases on after-item-discount amount)
+- store.ts: new updateCartItem(key, patch) action (price/discount/qty edits while billing; catalog untouched); DEFAULT_CONFIG + completeInvoice dropped roundOff
+- BillPanel.tsx: every cart line now has inline "Price Rs (unit)" + "Discount Rs" inputs (owner changes cost directly while billing; line total shows net after item discount instantly); removed Round off switch + totals row; new "Item discounts" totals row; layout regrouped (Discount|Labour / Auto|Payment mode / full-width Amount paid)
+- ThermalSlip.tsx: per-item "less discount - Rs X" line under item; "Item Discounts - Rs X" total row; Round Off row removed; old invoices guarded with || 0
+- messages.ts WhatsApp text: per-item Discount line + Item Discounts row; Round Off line removed
+- SettingsView.tsx: "Round off totals" toggle removed; defaultData.ts roundOffEnabled removed
+- sw.js CACHE v8 -> v9
+- Direct WhatsApp send (built in Task 8) re-verified: "Send Direct to <name>" -> clipboard image copy + gallery download + wa.me/<customer number> click-to-chat
+- Verified agent-browser iPhone 14, fresh storage: Gagulu price edited 200->225 inline (line total updates instantly); item discounts 25+20; totals = Subtotal 575 | Item discounts 45 | Labour 50 | Auto 30 | Grand Total 610.00 EXACT, no Round Off UI anywhere; slip shows "less discount" per item + Item Discounts row + AMOUNT PAID stamp, TOTAL Rs. 610.00; Send Direct captured https://wa.me/919000012345?text=*Sri%20Lakshmi... ; Due bill at decimal price 333.33 advance 100 -> balance 233.33 EXACT + UPI QR "Scan to Pay Balance Rs. 233.33 · UPI: prasad@upi" + * Partial *; zero page/console errors; lint clean
+
+Stage Summary:
+- Owner can now edit any item's price and give per-item discounts right inside the bill; round-off fully removed (exact totals to the paisa); thermal slip + WhatsApp text reflect edited prices and item discounts; direct-to-number WhatsApp slip sharing re-confirmed working

@@ -4,7 +4,6 @@ import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -13,9 +12,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Minus, Plus, Trash2, UserRound, ReceiptText } from 'lucide-react';
+import { Minus, Plus, Trash2, UserRound, ReceiptText, Tag } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { computeTotals, fmt, normalizePhone } from '@/lib/billing';
+import { computeTotals, fmt, lineNet, normalizePhone } from '@/lib/billing';
 import type { PaymentMode } from '@/lib/types';
 
 const MODES: PaymentMode[] = ['Cash', 'UPI', 'Card', 'Due'];
@@ -30,6 +29,7 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
   const setBillConfig = useStore((s) => s.setBillConfig);
   const incQty = useStore((s) => s.incQty);
   const decQty = useStore((s) => s.decQty);
+  const updateCartItem = useStore((s) => s.updateCartItem);
   const removeFromCart = useStore((s) => s.removeFromCart);
   const clearCart = useStore((s) => s.clearCart);
   const completeInvoice = useStore((s) => s.completeInvoice);
@@ -130,39 +130,78 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
           </Button>
         </div>
         <ul className="space-y-2">
-          {cart.map((it) => (
-            <li key={it.key} className="rounded-lg border bg-card p-2.5">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium leading-tight">{it.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Size: <span className="font-medium text-foreground">{it.size}</span> · ₹{fmt(it.price)}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => removeFromCart(it.key)}
-                  aria-label={`Remove ${it.name}`}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-              <div className="mt-2 flex items-center justify-between">
-                <div className="flex items-center gap-1">
-                  <Button variant="outline" size="icon" className="size-8" onClick={() => decQty(it.key)} aria-label="Decrease quantity">
-                    <Minus className="size-3.5" />
-                  </Button>
-                  <span className="w-10 text-center text-sm font-semibold tabular-nums">{it.qty}</span>
-                  <Button variant="outline" size="icon" className="size-8" onClick={() => incQty(it.key)} aria-label="Increase quantity">
-                    <Plus className="size-3.5" />
+          {cart.map((it) => {
+            const net = lineNet(it);
+            return (
+              <li key={it.key} className="rounded-lg border bg-card p-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium leading-tight">{it.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Size: <span className="font-medium text-foreground">{it.size}</span>
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeFromCart(it.key)}
+                    aria-label={`Remove ${it.name}`}
+                  >
+                    <Trash2 className="size-4" />
                   </Button>
                 </div>
-                <span className="text-sm font-bold tabular-nums">₹{fmt(it.price * it.qty)}</span>
-              </div>
-            </li>
-          ))}
+                {/* Owner can change the cost directly + discount for this item */}
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Price ₹ (unit)
+                    </Label>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      value={it.price || ''}
+                      onChange={(e) =>
+                        updateCartItem(it.key, { price: Math.max(0, Number(e.target.value) || 0) })
+                      }
+                      className="h-9"
+                      aria-label={`Unit price for ${it.name}`}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                      <Tag className="size-2.5" /> Discount ₹
+                    </Label>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      value={it.discount || ''}
+                      onChange={(e) =>
+                        updateCartItem(it.key, { discount: Math.max(0, Number(e.target.value) || 0) })
+                      }
+                      placeholder="0"
+                      className="h-9"
+                      aria-label={`Discount for ${it.name}`}
+                    />
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
+                  <div className="flex items-center gap-1">
+                    <Button variant="outline" size="icon" className="size-8" onClick={() => decQty(it.key)} aria-label="Decrease quantity">
+                      <Minus className="size-3.5" />
+                    </Button>
+                    <span className="w-10 text-center text-sm font-semibold tabular-nums">{it.qty}</span>
+                    <Button variant="outline" size="icon" className="size-8" onClick={() => incQty(it.key)} aria-label="Increase quantity">
+                      <Plus className="size-3.5" />
+                    </Button>
+                  </div>
+                  <span className="text-sm font-bold tabular-nums">₹{fmt(net)}</span>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </section>
 
@@ -223,16 +262,6 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
               aria-label="Auto charges"
             />
           </div>
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div>
-              <Label className="text-sm font-medium">Round off</Label>
-              <p className="text-xs text-muted-foreground">Nearest rupee</p>
-            </div>
-            <Switch checked={cfg.roundOff} onCheckedChange={(v) => setBillConfig({ roundOff: v })} />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Payment mode</Label>
             <Select value={cfg.paymentMode} onValueChange={(v) => setBillConfig({ paymentMode: v as PaymentMode, paidAmount: v === 'Due' ? 0 : computeTotals(cart, { ...cfg, paymentMode: v as PaymentMode }).total })}>
@@ -248,7 +277,10 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5">
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1.5 col-span-2">
             <Label className="text-xs text-muted-foreground">
               Amount paid {cfg.paymentMode === 'Due' ? '(advance)' : ''}
             </Label>
@@ -277,6 +309,12 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
           <span>Subtotal</span>
           <span className="tabular-nums">₹{fmt(totals.subtotal)}</span>
         </div>
+        {totals.itemDiscounts > 0 && (
+          <div className="flex justify-between text-muted-foreground">
+            <span>Item discounts</span>
+            <span className="tabular-nums">− ₹{fmt(totals.itemDiscounts)}</span>
+          </div>
+        )}
         {totals.discount > 0 && (
           <div className="flex justify-between text-muted-foreground">
             <span>Discount</span>
@@ -293,12 +331,6 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
           <div className="flex justify-between text-muted-foreground">
             <span>Auto charges</span>
             <span className="tabular-nums">+ ₹{fmt(totals.autoCharge)}</span>
-          </div>
-        )}
-        {cfg.roundOff && Math.abs(totals.roundOff) >= 0.005 && (
-          <div className="flex justify-between text-muted-foreground">
-            <span>Round off</span>
-            <span className="tabular-nums">{totals.roundOff >= 0 ? '+' : '−'} ₹{fmt(Math.abs(totals.roundOff))}</span>
           </div>
         )}
         <div className="flex justify-between items-baseline pt-1">

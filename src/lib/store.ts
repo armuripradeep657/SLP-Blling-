@@ -33,6 +33,7 @@ interface BillingStore {
 
   addToCart: (product: Product, size: string) => void;
   addCustomItem: (name: string, size: string, price: number, qty: number) => void;
+  updateCartItem: (key: string, patch: Partial<Pick<CartItem, 'price' | 'discount' | 'qty'>>) => void;
   incQty: (key: string) => void;
   decQty: (key: string) => void;
   removeFromCart: (key: string) => void;
@@ -53,7 +54,6 @@ const DEFAULT_CONFIG: BillConfig = {
   discountValue: 0,
   labourCharge: 0,
   autoCharge: 0,
-  roundOff: true,
   paymentMode: 'Cash',
   paidAmount: 0,
 };
@@ -139,6 +139,13 @@ export const useStore = create<BillingStore>()(
         });
       },
 
+      // Owner edits while billing: change the unit price directly on the line
+      // and/or apply a discount for that specific item (catalog stays untouched)
+      updateCartItem: (key, patch) =>
+        set((st) => ({
+          cart: st.cart.map((c) => (c.key === key ? { ...c, ...patch } : c)),
+        })),
+
       incQty: (key) =>
         set((st) => ({
           cart: st.cart.map((c) => (c.key === key ? { ...c, qty: c.qty + 1 } : c)),
@@ -180,7 +187,6 @@ export const useStore = create<BillingStore>()(
           discountValue: billConfig.discountValue,
           labourCharge: billConfig.labourCharge || 0,
           autoCharge: billConfig.autoCharge || 0,
-          roundOff: billConfig.roundOff,
           paymentMode: billConfig.paymentMode,
           status: getStatus(totals.total, totals.paid),
         };
