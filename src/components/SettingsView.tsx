@@ -21,6 +21,7 @@ import { useStore } from '@/lib/store';
 import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from '@/lib/defaultData';
 import { normalizePhone } from '@/lib/billing';
 import InstallAppSection from '@/components/InstallAppSection';
+import { RefreshCw } from 'lucide-react';
 
 export default function SettingsView() {
   const settings = useStore((s) => s.settings);
@@ -89,6 +90,10 @@ export default function SettingsView() {
 
       <Separator />
 
+      <AppUpdatesSection />
+
+      <Separator />
+
       <section aria-label="Data management" className="space-y-2">
         <h3 className="text-sm font-bold text-blue-800">Data</h3>
         <p className="text-xs text-muted-foreground">
@@ -150,6 +155,71 @@ export default function SettingsView() {
         </AlertDialog>
       </section>
     </div>
+  );
+}
+
+/**
+ * Every device runs the SAME app link — when the owner (or we) change anything,
+ * installed phones pick it up automatically: the app checks for updates while
+ * open (and on every open/focus/back-online) and refreshes itself. This button
+ * lets the owner force the check right now.
+ */
+function AppUpdatesSection() {
+  const { toast } = useToast();
+  const [checking, setChecking] = useState(false);
+
+  const checkNow = async () => {
+    if (!('serviceWorker' in navigator)) {
+      toast({ title: 'You are on the latest version' });
+      return;
+    }
+    setChecking(true);
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (!reg) {
+        toast({ title: 'You are on the latest version' });
+        return;
+      }
+      let found = false;
+      const onUpdateFound = () => {
+        found = true;
+      };
+      reg.addEventListener('updatefound', onUpdateFound, { once: true });
+      await reg.update();
+      // give a freshly found worker a moment to install (skipWaiting applies it)
+      await new Promise((r) => setTimeout(r, 1200));
+      reg.removeEventListener('updatefound', onUpdateFound);
+      if (found || reg.waiting || reg.installing) {
+        toast({
+          title: 'Update found',
+          description: 'The app refreshes to the latest version in a moment…',
+        });
+      } else {
+        toast({ title: 'You are on the latest version' });
+      }
+    } catch {
+      toast({
+        title: 'Cannot check right now',
+        description: 'Go online once and tap again — the app will update itself.',
+      });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <section aria-label="App updates" className="space-y-2">
+      <h3 className="text-sm font-bold text-blue-800">App updates</h3>
+      <p className="text-xs text-muted-foreground">
+        The same app link works on every phone. When anything is updated here, all installed
+        devices get the change automatically — no reinstall needed. Bills stay safe on each
+        device.
+      </p>
+      <Button variant="outline" className="w-full" onClick={checkNow} disabled={checking}>
+        {checking ? <RefreshCw className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+        Check for updates now
+      </Button>
+    </section>
   );
 }
 

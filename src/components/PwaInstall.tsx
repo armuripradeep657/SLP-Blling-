@@ -9,20 +9,111 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Download, Share2, PlusCircle, X, Smartphone, WifiOff, Zap, Save } from 'lucide-react';
+import { Download, Share2, PlusCircle, X, Smartphone, WifiOff, Zap, Save, RefreshCw } from 'lucide-react';
 
 interface BIPEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+const RELOAD_GUARD_KEY = 'slp-sw-reloaded-at';
+const RELOAD_GUARD_MS = 8000;
+
+/**
+ * Registers the service worker and keeps EVERY device on the latest version:
+ * - sw.js uses skipWaiting + clients.claim, so a newly detected worker takes
+ *   over immediately
+ * - this page polls reg.update() (interval / focus / online / visibility), and
+ *   when a new worker takes control the page auto-reloads ONCE — so phones
+ *   with the installed PWA pick up every change without reinstalling
+ */
 export function ServiceWorkerRegister() {
+  const [updating, setUpdating] = useState(false);
+
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => undefined);
-    }
+    if (!('serviceWorker' in navigator)) return;
+
+    let reg: ServiceWorkerRegistration | null = null;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let reloading = false;
+    // First install also fires controllerchange (clients.claim) — that is NOT
+    // an update, the page is already running the newest code.
+    let hadController = !!navigator.serviceWorker.controller;
+
+    const scheduleReload = () => {
+      if (reloading) return;
+      let last = 0;
+      try {
+        last = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) || 0);
+      } catch {
+        /* storage unavailable */
+      }
+      if (Date.now() - last < RELOAD_GUARD_MS) return; // just reloaded — skip
+      reloading = true;
+      try {
+        sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()));
+      } catch {
+        /* storage unavailable */
+      }
+      setUpdating(true);
+      // show the banner for a moment, then refresh onto the new version
+      setTimeout(() => window.location.reload(), 1200);
+    };
+
+    const onControllerChange = () => {
+      if (!hadController) {
+        hadController = true;
+        return;
+      }
+      scheduleReload();
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+
+    const check = async () => {
+      try {
+        reg = reg ?? (await navigator.serviceWorker.getRegistration());
+        await reg?.update();
+      } catch {
+        /* offline — the cached version keeps working; update happens next time online */
+      }
+    };
+
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then(async (r) => {
+        reg = r;
+        await check();
+      })
+      .catch(() => undefined);
+
+    // Poll while the app is open — installed devices update themselves
+    interval = setInterval(check, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') check();
+    };
+    const onOnline = () => check();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', check);
+    window.addEventListener('online', onOnline);
+
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', check);
+      window.removeEventListener('online', onOnline);
+      navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+    };
   }, []);
-  return null;
+
+  if (!updating) return null;
+  return (
+    <div
+      role="status"
+      className="fixed inset-x-0 top-0 z-[100] bg-blue-600 px-4 py-2 text-center text-xs font-semibold text-white shadow-lg"
+    >
+      Updating app to the latest version…
+    </div>
+  );
 }
 
 export function usePwaInstalled() {

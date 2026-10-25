@@ -214,3 +214,20 @@ Work Log:
 
 Stage Summary:
 - Bills are now FULLY Telugu when తెలుగు is selected — company name and product names included (both editable); History gives the owner BOTH the formal invoice and the thermal slip for every bill; both documents carry the Narasimha Swamy company logo as a faint background watermark; direct WhatsApp send stays image-only
+
+---
+Task ID: 13
+Agent: main
+Task: "this link can work any update — change here, updated details in mobiles also where installed this app; same link in all devices; any update change, remaining all devices also get that update" (auto-update on all installed devices)
+
+Work Log:
+- PwaInstall.tsx ServiceWorkerRegister rebuilt into a full auto-update engine:
+  * Polls registration.update() every 60s while the app is open, plus on tab visible, window focus and back-online events (offline devices just keep the cached version until next online check)
+  * sw.js already uses skipWaiting + clients.claim, so a newly detected worker activates immediately; the page listens for controllerchange and AUTO-RELOADS ONCE onto the new version (first-install controllerchange ignored via hadController guard; sessionStorage timestamp guard slp-sw-reloaded-at prevents reload loops)
+  * Blue "Updating app to the latest version…" banner shows for ~1.2s before the refresh; bills/cart are localStorage-persisted on every change so the reload never loses data
+- SettingsView.tsx: new "App updates" section — explains the same-link-everywhere auto-update behavior + "Check for updates now" button (calls reg.update(), listens updatefound once, toasts "Update found — app refreshes…" or "You are on the latest version", offline -> "go online once and tap again")
+- public/sw.js CACHE v11 -> v12 (then bumped v13/v14 during live update simulations; final source = v14)
+- Verified agent-browser iPhone 14: SW v12 activated + controlling; simulated a release by changing sw.js to v13 and calling reg.update() -> page AUTO-RELOADED (window.__marker gone), caches = [slp-billing-v13], new SW activated/controlling; repeated with v14 -> same result (reloaded true, v14 cache); Settings section + button render, button toast "You are on the latest version" when current; earlier duplicate useState import compile error fixed; zero runtime errors after fix; lint clean; production build passes
+
+Stage Summary:
+- The PWA is now self-updating on every device: the owner changes anything here (products, prices, labels, features) and every phone using the same link — browser or installed app — picks up the new version automatically within a minute (or instantly via Settings -> Check for updates), with no reinstall and no data loss
