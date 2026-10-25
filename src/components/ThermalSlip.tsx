@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
 import { fmt, fmtShort, upiUri } from '@/lib/billing';
+import { labels, fill, slipFontFamily } from '@/lib/i18n';
 import type { BusinessSettings, Invoice } from '@/lib/types';
 
 interface Props {
@@ -19,6 +20,11 @@ interface Props {
 export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
   const w = settings.slipWidthMm === 58 ? 220 : 304;
   const baseFont = settings.slipWidthMm === 58 ? 9.5 : 11;
+
+  /** Bill language — Telugu when selected, English otherwise */
+  const lang = invoice.language;
+  const L = labels(lang);
+  const isTe = lang === 'te';
 
   /** Bill fully settled — show PAID stamp instead of any QR */
   const isFullyPaid = invoice.totals.balance <= 0;
@@ -81,7 +87,7 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
         width: w,
         background: '#ffffff',
         color: '#111111',
-        fontFamily: '"Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontFamily: slipFontFamily(lang),
         fontSize: baseFont,
         lineHeight: 1.45,
         padding: '12px 10px 14px',
@@ -111,7 +117,7 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
           <div style={{ fontSize: baseFont - 1, whiteSpace: 'pre-wrap' }}>{settings.address}</div>
         ) : null}
         {settings.phone ? <div>Ph: {settings.phone}</div> : null}
-        <div style={{ fontSize: baseFont - 0.5, marginTop: 2 }}>Proprietor: {settings.ownerName}</div>
+        <div style={{ fontSize: baseFont - 0.5, marginTop: 2 }}>{L.proprietor}: {settings.ownerName}</div>
       </div>
 
       <div style={dash} />
@@ -125,11 +131,11 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
       </div>
       {invoice.customer.name ? (
         <div style={{ marginTop: 2 }}>
-          <span style={{ color: '#444' }}>Customer: </span>
+          <span style={{ color: '#444' }}>{L.mCustomer}: </span>
           <span style={{ fontWeight: 700 }}>{invoice.customer.name}</span>
         </div>
       ) : null}
-      {invoice.customer.phone ? <div>Mobile: {invoice.customer.phone}</div> : null}
+      {invoice.customer.phone ? <div>{L.mMobile}: {invoice.customer.phone}</div> : null}
       {invoice.customer.address ? (
         <div style={{ fontSize: baseFont - 1 }}>{invoice.customer.address}</div>
       ) : null}
@@ -138,8 +144,8 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
 
       {/* Items */}
       <div style={{ fontWeight: 700, display: 'flex', justifyContent: 'space-between' }}>
-        <span>ITEM / SIZE</span>
-        <span>AMOUNT</span>
+        <span>{L.itemSize}</span>
+        <span>{L.amount}</span>
       </div>
       {invoice.items.map((it, idx) => (
         <div key={idx} style={{ marginTop: idx === 0 ? 3 : 6 }}>
@@ -150,10 +156,10 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
             <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{fmt(it.price * it.qty)}</span>
           </div>
           <div style={{ color: '#333' }}>
-            Size: {it.size} &nbsp;|&nbsp; {it.qty} x {fmtShort(it.price)}
+            {L.size}: {it.size} &nbsp;|&nbsp; {it.qty} x {fmtShort(it.price)}
           </div>
           {(it.discount || 0) > 0 ? (
-            <div style={{ color: '#333' }}>&nbsp;&nbsp;less discount - Rs. {fmt(it.discount)}</div>
+            <div style={{ color: '#333' }}>&nbsp;&nbsp;{L.lessDiscount} - Rs. {fmt(it.discount)}</div>
           ) : null}
         </div>
       ))}
@@ -162,32 +168,32 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
 
       {/* Totals */}
       <div style={row}>
-        <span>Subtotal</span>
+        <span>{L.subtotal}</span>
         <span>Rs. {fmt(invoice.totals.subtotal)}</span>
       </div>
       {(invoice.totals.itemDiscounts || 0) > 0 ? (
         <div style={row}>
-          <span>Item Discounts</span>
+          <span>{L.itemDiscounts}</span>
           <span>- Rs. {fmt(invoice.totals.itemDiscounts)}</span>
         </div>
       ) : null}
       {invoice.totals.discount > 0 ? (
         <div style={row}>
           <span>
-            Discount{invoice.discountType === 'percent' ? ` (${invoice.discountValue}%)` : ''}
+            {L.discount}{invoice.discountType === 'percent' ? ` (${invoice.discountValue}%)` : ''}
           </span>
           <span>- Rs. {fmt(invoice.totals.discount)}</span>
         </div>
       ) : null}
       {(invoice.labourCharge || 0) > 0 ? (
         <div style={row}>
-          <span>Labour Charges</span>
+          <span>{L.labour}</span>
           <span>Rs. {fmt(invoice.labourCharge)}</span>
         </div>
       ) : null}
       {(invoice.autoCharge || 0) > 0 ? (
         <div style={row}>
-          <span>Auto Charges</span>
+          <span>{L.auto}</span>
           <span>Rs. {fmt(invoice.autoCharge)}</span>
         </div>
       ) : null}
@@ -202,24 +208,26 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
           fontSize: baseFont + 4.5,
         }}
       >
-        <span>TOTAL</span>
+        <span>{L.total}</span>
         <span>Rs. {fmt(invoice.totals.total)}</span>
       </div>
 
       <div style={{ ...row, marginTop: 4 }}>
-        <span>Payment</span>
-        <span style={{ fontWeight: 700 }}>{invoice.paymentMode}</span>
+        <span>{L.payment}</span>
+        <span style={{ fontWeight: 700 }}>{L.modes[invoice.paymentMode] || invoice.paymentMode}</span>
       </div>
       <div style={row}>
-        <span>Paid</span>
+        <span>{L.paid}</span>
         <span>Rs. {fmt(invoice.totals.paid)}</span>
       </div>
       <div style={{ ...row, fontWeight: 700 }}>
-        <span>{invoice.totals.balance > 0 ? 'Balance Due' : 'Balance'}</span>
+        <span>{invoice.totals.balance > 0 ? L.balanceDue : L.balance}</span>
         <span>Rs. {fmt(invoice.totals.balance)}</span>
       </div>
       {invoice.status !== 'Paid' ? (
-        <div style={{ textAlign: 'center', fontWeight: 700, marginTop: 3 }}>* {invoice.status} *</div>
+        <div style={{ textAlign: 'center', fontWeight: 700, marginTop: 3 }}>
+          * {invoice.status === 'Partial' ? L.statusPartial : L.statusDue} *
+        </div>
       ) : null}
 
       {/* PAID stamp when fully settled — no QR after payment is complete */}
@@ -231,16 +239,19 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
               border: '3px double #1d4ed8',
               color: '#1d4ed8',
               borderRadius: 6,
-              padding: `${baseFont * 0.5}px ${baseFont * 2}px`,
+              padding: `${baseFont * 0.5}px ${baseFont * (isTe ? 1.2 : 2)}px`,
               fontWeight: 700,
-              fontSize: baseFont + 3.5,
-              letterSpacing: 2.5,
+              fontSize: baseFont + (isTe ? 2.5 : 3.5),
+              letterSpacing: isTe ? 0.5 : 2.5,
             }}
           >
-            AMOUNT PAID
+            {L.amountPaid}
           </div>
           <div style={{ fontSize: baseFont - 1, marginTop: 3, color: '#333' }}>
-            Received with thanks — Rs. {fmt(invoice.totals.paid)} ({invoice.paymentMode})
+            {fill(L.receivedThanks, {
+              rs: fmt(invoice.totals.paid),
+              mode: L.modes[invoice.paymentMode] || invoice.paymentMode,
+            })}
           </div>
         </div>
       ) : qr && qrString ? (
@@ -255,8 +266,8 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
           />
           <div style={{ fontSize: baseFont - 1.2, marginTop: 2 }}>
             {isUpiQr
-              ? `Scan to Pay Balance Rs. ${fmt(invoice.totals.balance)} · UPI: ${settings.upiId}`
-              : 'Scan to chat on WhatsApp'}
+              ? fill(L.scanPay, { rs: fmt(invoice.totals.balance), upi: settings.upiId })
+              : L.scanChat}
           </div>
         </div>
       ) : null}
@@ -265,19 +276,21 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
 
       {/* Footer */}
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontWeight: 700, fontSize: baseFont + 1 }}>{settings.thankYouNote}</div>
-        {settings.returnPolicy ? (
-          <div style={{ fontSize: baseFont - 1.5, color: '#333', marginTop: 1 }}>{settings.returnPolicy}</div>
+        <div style={{ fontWeight: 700, fontSize: baseFont + 1 }}>
+          {isTe ? L.thankYou : settings.thankYouNote || L.thankYou}
+        </div>
+        {(isTe ? L.policy : settings.returnPolicy || L.policy) ? (
+          <div style={{ fontSize: baseFont - 1.5, color: '#333', marginTop: 1 }}>
+            {isTe ? L.policy : settings.returnPolicy || L.policy}
+          </div>
         ) : null}
         <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
           <div style={{ borderTop: '1px solid #111', paddingTop: 2, minWidth: 110, textAlign: 'center' }}>
             {settings.ownerName}
-            <div style={{ fontSize: baseFont - 1.5 }}>Proprietor</div>
+            <div style={{ fontSize: baseFont - 1.5 }}>{L.proprietor}</div>
           </div>
         </div>
-        <div style={{ fontSize: baseFont - 2, color: '#555', marginTop: 6 }}>
-          Powered by SLP Billing App
-        </div>
+        <div style={{ fontSize: baseFont - 2, color: '#555', marginTop: 6 }}>{L.powered}</div>
       </div>
     </div>
   );

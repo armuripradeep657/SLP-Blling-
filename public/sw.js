@@ -1,9 +1,11 @@
 /* Service worker for SLP Cement Works Billing PWA */
-const CACHE = 'slp-billing-v9';
+const CACHE = 'slp-billing-v10';
 
 const PRECACHE = [
   '/',
   '/narasimha-logo.jpg',
+  '/fonts/NotoSansTelugu-Regular.ttf',
+  '/fonts/NotoSansTelugu-Bold.ttf',
   '/icon-192.png',
   '/icon-512.png',
   '/icon-maskable-192.png',

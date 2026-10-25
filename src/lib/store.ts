@@ -6,6 +6,7 @@ import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from './defaultData';
 import { computeTotals, getStatus, priceForSize } from './billing';
 import type {
   BillConfig,
+  BillLanguage,
   BusinessSettings,
   CartItem,
   Customer,
@@ -47,6 +48,7 @@ interface BillingStore {
   clearLastInvoice: () => void;
   deleteInvoice: (id: string) => void;
   updateInvoiceStatus: (id: string, paidAmount: number) => void;
+  updateInvoiceLanguage: (id: string, language: BillLanguage) => void;
 }
 
 const DEFAULT_CONFIG: BillConfig = {
@@ -56,6 +58,7 @@ const DEFAULT_CONFIG: BillConfig = {
   autoCharge: 0,
   paymentMode: 'Cash',
   paidAmount: 0,
+  language: 'en',
 };
 
 export const useStore = create<BillingStore>()(
@@ -167,8 +170,9 @@ export const useStore = create<BillingStore>()(
       setBillConfig: (c) => set((st) => ({ billConfig: { ...st.billConfig, ...c } })),
 
       resetBillConfig: () =>
-        set(() => ({
-          billConfig: { ...DEFAULT_CONFIG },
+        set((st) => ({
+          // keep the chosen bill language sticky across bills
+          billConfig: { ...DEFAULT_CONFIG, language: st.billConfig.language },
         })),
 
       completeInvoice: () => {
@@ -188,6 +192,7 @@ export const useStore = create<BillingStore>()(
           labourCharge: billConfig.labourCharge || 0,
           autoCharge: billConfig.autoCharge || 0,
           paymentMode: billConfig.paymentMode,
+          language: billConfig.language,
           status: getStatus(totals.total, totals.paid),
         };
         // deduct stock where tracked
@@ -201,8 +206,9 @@ export const useStore = create<BillingStore>()(
           products: updatedProducts,
           cart: [],
           lastInvoice: invoice,
-          // fresh config for the next bill (Cash mode, no leftover discount/charges)
-          billConfig: { ...DEFAULT_CONFIG },
+          // fresh config for the next bill (Cash mode, no leftover discount/charges;
+          // chosen bill language stays sticky)
+          billConfig: { ...DEFAULT_CONFIG, language: billConfig.language },
           settings: { ...st.settings, nextInvoiceNo: st.settings.nextInvoiceNo + 1 },
         }));
         return invoice;
@@ -223,6 +229,15 @@ export const useStore = create<BillingStore>()(
               totals: { ...i.totals, paid, balance: Math.max(i.totals.total - paid, 0) },
             };
           }),
+        })),
+
+      // Flip the bill language (also from the invoice modal while sharing) —
+      // updates the saved invoice so History re-shares in the same language
+      updateInvoiceLanguage: (id, language) =>
+        set((st) => ({
+          invoices: st.invoices.map((i) => (i.id === id ? { ...i, language } : i)),
+          lastInvoice:
+            st.lastInvoice && st.lastInvoice.id === id ? { ...st.lastInvoice, language } : st.lastInvoice,
         })),
     }),
     {

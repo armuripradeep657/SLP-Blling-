@@ -25,9 +25,10 @@ import {
 import ThermalSlip from './ThermalSlip';
 import { useStore } from '@/lib/store';
 import { captureSlipPng, downloadBlob, printImage, slipFileName } from '@/lib/invoiceImage';
-import { normalizePhone, smsLink, waLink } from '@/lib/billing';
+import { normalizePhone, smsLink, waChatLink } from '@/lib/billing';
 import { smsMessage, whatsappCaption, whatsappMessage } from '@/lib/messages';
-import type { Invoice } from '@/lib/types';
+import { BILL_LANGUAGES } from '@/lib/i18n';
+import type { BillLanguage, Invoice } from '@/lib/types';
 
 interface Props {
   invoice: Invoice | null;
@@ -35,8 +36,13 @@ interface Props {
   onOpenChange: (open: boolean) => void;
 }
 
-export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
+export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange }: Props) {
   const settings = useStore((s) => s.settings);
+  const updateInvoiceLanguage = useStore((s) => s.updateInvoiceLanguage);
+  // Live copy from the store so a language switch re-renders the slip instantly
+  // (and the invoice saved in History keeps the chosen language)
+  const stored = useStore((s) => s.invoices.find((i) => i.id === invoiceProp?.id));
+  const invoice = stored ?? invoiceProp;
   const { toast } = useToast();
   const slipRef = useRef<HTMLDivElement | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -103,8 +109,8 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
   /**
    * DIRECT send: opens the customer's own WhatsApp chat using the number typed
    * in the bill — click-to-chat works even when the customer is brand new and
-   * not saved in contacts. The slip image is put on the clipboard AND saved to
-   * the gallery so attaching is a 2-tap job.
+   * not saved in contacts. The chat opens EMPTY (no text) so the bill goes as
+   * IMAGE only: the slip is on the clipboard AND saved to the gallery.
    */
   const onWhatsAppDirect = () =>
     guard('wa', async () => {
@@ -122,8 +128,8 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
       // 2) Save to gallery — reliable attach fallback on every phone
       downloadBlob(blob, fileName);
 
-      // 3) Open the customer's chat DIRECTLY with the bill text pre-filled
-      window.open(waLink(invoice.customer.phone, waMsg), '_blank');
+      // 3) Open the customer's chat DIRECTLY — no text pre-filled, image only
+      window.open(waChatLink(invoice.customer.phone), '_blank');
 
       toast({
         title: `Chat opened for ${invoice.customer.name || normalizePhone(invoice.customer.phone)}`,
@@ -157,7 +163,7 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
     });
 
   const openWaChat = () => {
-    window.open(waLink(invoice.customer.phone, waMsg), '_blank');
+    window.open(waChatLink(invoice.customer.phone), '_blank');
     setWaFallback(null);
   };
 
@@ -195,8 +201,32 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
             Bill Generated — {invoice.no}
           </DialogTitle>
           <DialogDescription className="text-xs">
-            Thermal-slip <b>image</b> — WhatsApp sends this picture, not text. Paid bills carry a <b>PAID</b> stamp; balance bills carry the <b>UPI QR</b>.
+            Thermal-slip <b>image</b> — WhatsApp sends this picture only. Paid bills carry a <b>PAID</b> stamp; balance bills carry the <b>UPI QR</b>.
           </DialogDescription>
+          {/* Bill language — flips the slip + bill text instantly, saved on the invoice */}
+          <div className="mt-2 flex items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground shrink-0">Bill language:</span>
+            <div className="flex gap-1">
+              {BILL_LANGUAGES.map((l) => (
+                <button
+                  key={l.value}
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    updateInvoiceLanguage(invoice.id, l.value as BillLanguage)
+                  }
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    (invoice.language ?? 'en') === l.value
+                      ? 'border-blue-600 bg-blue-600 text-white'
+                      : 'bg-card hover:bg-accent'
+                  }`}
+                  aria-pressed={(invoice.language ?? 'en') === l.value}
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
+          </div>
           {invoice.totals.balance > 0 && !settings.upiId && (
             <div className="mt-1 flex items-start gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-2 text-[11px] leading-snug text-blue-900">
               <QrCode className="mt-0.5 size-3.5 shrink-0" />

@@ -15,7 +15,8 @@ import { Separator } from '@/components/ui/separator';
 import { Minus, Plus, Trash2, UserRound, ReceiptText, Tag } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { computeTotals, fmt, lineNet, normalizePhone } from '@/lib/billing';
-import type { PaymentMode } from '@/lib/types';
+import { BILL_LANGUAGES } from '@/lib/i18n';
+import type { BillLanguage, PaymentMode } from '@/lib/types';
 
 const MODES: PaymentMode[] = ['Cash', 'UPI', 'Card', 'Due'];
 
@@ -117,6 +118,28 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
           onChange={(e) => setCustomer({ address: e.target.value })}
           className="h-10"
         />
+      </section>
+
+      {/* Bill language — Telugu or English (applies to slip image + bill text) */}
+      <section aria-label="Bill language" className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Bill language · బిల్లు భాష</Label>
+        <div className="grid grid-cols-2 gap-2">
+          {BILL_LANGUAGES.map((l) => (
+            <button
+              key={l.value}
+              type="button"
+              onClick={() => setBillConfig({ language: l.value as BillLanguage })}
+              className={`h-10 rounded-lg border text-sm font-semibold transition-colors ${
+                cfg.language === l.value
+                  ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                  : 'bg-card hover:bg-accent'
+              }`}
+              aria-pressed={cfg.language === l.value}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
       </section>
 
       <Separator />

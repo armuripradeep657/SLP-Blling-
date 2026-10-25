@@ -51,6 +51,7 @@ export interface BillConfig {
   autoCharge: number;
   paymentMode: PaymentMode;
   paidAmount: number;
+  language: BillLanguage; // bill language for slip image + text
 }
 
 export interface Totals {
@@ -77,7 +78,11 @@ export interface Invoice {
   labourCharge: number;
   autoCharge: number;
   paymentMode: PaymentMode;
+  language: BillLanguage; // saved per invoice — History re-share keeps it
   status: 'Paid' | 'Due' | 'Partial';
 }
 
 export type MainTab = 'bill' | 'products' | 'history' | 'settings';
+
+/** Language the bill (thermal slip image + bill text) is rendered in */
+export type BillLanguage = 'en' | 'te';

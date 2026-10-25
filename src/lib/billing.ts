@@ -58,6 +58,12 @@ export function waLink(phone: string, message: string): string {
   return p ? `https://wa.me/91${p}?text=${text}` : `https://wa.me/?text=${text}`;
 }
 
+/** Open the customer's WhatsApp chat with NO pre-filled text — bill goes as IMAGE only */
+export function waChatLink(phone: string): string {
+  const p = normalizePhone(phone);
+  return p ? `https://wa.me/91${p}` : 'https://wa.me/';
+}
+
 export function smsLink(phone: string, message: string): string {
   const p = normalizePhone(phone);
   const body = encodeURIComponent(message);

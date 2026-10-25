@@ -169,3 +169,24 @@ Work Log:
 
 Stage Summary:
 - Owner can now edit any item's price and give per-item discounts right inside the bill; round-off fully removed (exact totals to the paisa); thermal slip + WhatsApp text reflect edited prices and item discounts; direct-to-number WhatsApp slip sharing re-confirmed working
+
+---
+Task ID: 11
+Agent: main
+Task: "while send that thermal slip change language option on bill with all details into telugu language option enable; while i select telugu means send bill in telugu language otherwise normal english; send bill only image; and invoice also in history"
+
+Work Log:
+- Bundled Noto Sans Telugu webfont (public/fonts/NotoSansTelugu-Regular/Bold.ttf from notofonts.github.io) + @font-face in globals.css — html-to-image embeds it (skipFonts:false) so Telugu slip PNG captures correctly on ANY device; fonts precached in sw.js for offline
+- types.ts: BillLanguage 'en'|'te'; BillConfig.language + Invoice.language (saved per invoice)
+- store.ts: DEFAULT_CONFIG.language='en'; completeInvoice saves language on invoice; language STICKY across bills (resetBillConfig + post-complete reset keep chosen language); new updateInvoiceLanguage(id, lang) updates invoices + lastInvoice
+- New src/lib/i18n.ts: EN/TE label dictionaries (slip labels, payment modes Cash->నగదు/Card->కార్డ్/Due->బాకీ, status Partial->పాక్షికం, AMOUNT PAID->మొత్తం చెల్లించబడింది, scan captions, WhatsApp/SMS words) + fill() templates + slipFontFamily()
+- ThermalSlip.tsx: every label/customer/mobile/size/discount/totals/payment/status/stamp/QR caption/footer in Telugu when invoice.language='te' (Telugu font stack; tighter stamp padding/letter-spacing); old invoices without language default English
+- messages.ts: whatsappMessage + whatsappCaption + smsMessage language-aware (Telugu bill text, Telugu thank-you/policy defaults, "బిల్లు ఇమేజ్ విడిగా పంపబడుతుంది")
+- BillPanel.tsx: "Bill language · బిల్లు భాష" segmented toggle (English | తెలుగు) saved into billConfig
+- InvoiceModal.tsx: "Bill language:" chips in the modal header — flip live via updateInvoiceLanguage so the slip re-renders instantly and the invoice in HISTORY keeps the language; derived live invoice from store (stored ?? prop)
+- Image-only send: new billing.ts waChatLink(phone) -> https://wa.me/91<number> with NO ?text= — direct send now opens the customer's chat EMPTY, bill goes as image only (clipboard paste / gallery attach); fallback helper's Open WhatsApp also textless; full text still available via "Copy bill as text" (now in the invoice's language)
+- sw.js CACHE v9 -> v10 (+2 font precache entries)
+- Verified agent-browser iPhone 14: BillPanel toggle renders Telugu; Telugu bill -> slip fully Telugu (ఉపమొత్తం/చెల్లింపు/నగదు/బాకీ/మొత్తం చెల్లించబడింది stamp, zero English remnants, crisp Noto glyphs in captured PNG); modal English<->తెలుగు flip re-renders live both ways; direct send captured https://wa.me/919000012345 (no text=) and https://wa.me/919000098765 for English bill; copy-as-text contains Telugu bill; History re-open keeps Telugu (chip selected); new bill defaults sticky Telugu, English selectable; zero page/console errors; lint clean
+
+Stage Summary:
+- Owner picks bill language (English or Telugu) on the bill or right in the share modal; the thermal slip image + bill text render fully in the chosen language, the language is saved with the invoice (History re-shares keep it, sticky default for next bills), and WhatsApp direct send now carries the bill as IMAGE only
