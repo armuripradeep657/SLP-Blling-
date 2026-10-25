@@ -20,11 +20,12 @@ import {
   Loader2,
   QrCode,
   Image as ImageIcon,
+  Send,
 } from 'lucide-react';
 import ThermalSlip from './ThermalSlip';
 import { useStore } from '@/lib/store';
 import { captureSlipPng, downloadBlob, printImage, slipFileName } from '@/lib/invoiceImage';
-import { smsLink, waLink } from '@/lib/billing';
+import { normalizePhone, smsLink, waLink } from '@/lib/billing';
 import { smsMessage, whatsappCaption, whatsappMessage } from '@/lib/messages';
 import type { Invoice } from '@/lib/types';
 
@@ -99,6 +100,40 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
       setWaFallback({ url: URL.createObjectURL(blob), fileName });
     });
 
+  /**
+   * DIRECT send: opens the customer's own WhatsApp chat using the number typed
+   * in the bill — click-to-chat works even when the customer is brand new and
+   * not saved in contacts. The slip image is put on the clipboard AND saved to
+   * the gallery so attaching is a 2-tap job.
+   */
+  const onWhatsAppDirect = () =>
+    guard('wa', async () => {
+      const blob = await capture();
+
+      // 1) Put the bill image on the clipboard — paste straight into the chat
+      let copied = false;
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        copied = true;
+      } catch {
+        /* clipboard blocked — gallery copy below still works */
+      }
+
+      // 2) Save to gallery — reliable attach fallback on every phone
+      downloadBlob(blob, fileName);
+
+      // 3) Open the customer's chat DIRECTLY with the bill text pre-filled
+      window.open(waLink(invoice.customer.phone, waMsg), '_blank');
+
+      toast({
+        title: `Chat opened for ${invoice.customer.name || normalizePhone(invoice.customer.phone)}`,
+        description: copied
+          ? 'Bill image copied — long-press the WhatsApp message box, Paste, and Send. (Image also saved to gallery.)'
+          : `Bill image ${fileName} saved to gallery — tap 📎 in the chat, attach it, and Send.`,
+      });
+    });
+
+  /** Share-sheet send (used when no customer number is on the bill) */
   const onWhatsApp = () =>
     guard('wa', async () => {
       const blob = await capture();
@@ -183,14 +218,25 @@ export default function InvoiceModal({ invoice, open, onOpenChange }: Props) {
         </div>
 
         <div className="p-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-2">
-          <Button
-            onClick={onWhatsApp}
-            disabled={busy !== null}
-            className="w-full h-12 text-base font-semibold bg-[#25D366] hover:bg-[#1eb857] text-white"
-          >
-            {busy === 'wa' ? <Loader2 className="size-5 animate-spin" /> : <MessageCircle className="size-5" />}
-            Send Bill Image on WhatsApp
-          </Button>
+          {invoice.customer.phone ? (
+            <Button
+              onClick={onWhatsAppDirect}
+              disabled={busy !== null}
+              className="w-full h-12 text-base font-semibold bg-[#25D366] hover:bg-[#1eb857] text-white"
+            >
+              {busy === 'wa' ? <Loader2 className="size-5 animate-spin" /> : <Send className="size-5" />}
+              Send Direct to {invoice.customer.name || normalizePhone(invoice.customer.phone)}
+            </Button>
+          ) : (
+            <Button
+              onClick={onWhatsApp}
+              disabled={busy !== null}
+              className="w-full h-12 text-base font-semibold bg-[#25D366] hover:bg-[#1eb857] text-white"
+            >
+              {busy === 'wa' ? <Loader2 className="size-5 animate-spin" /> : <MessageCircle className="size-5" />}
+              Send Bill Image on WhatsApp
+            </Button>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <Button onClick={onShare} disabled={busy !== null} variant="outline" className="h-11">
               {busy === 'share' ? <Loader2 className="size-4 animate-spin" /> : <Share2 className="size-4" />}

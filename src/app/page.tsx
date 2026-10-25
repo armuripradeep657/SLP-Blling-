@@ -9,6 +9,7 @@ import SettingsView from '@/components/SettingsView';
 import BillPanel from '@/components/BillPanel';
 import InvoiceModal from '@/components/InvoiceModal';
 import PwaInstall, { ServiceWorkerRegister } from '@/components/PwaInstall';
+import ConnectivityToast from '@/components/ConnectivityToast';
 import { useStore } from '@/lib/store';
 import { computeTotals, fmt } from '@/lib/billing';
 import type { Invoice } from '@/lib/types';
@@ -53,6 +54,7 @@ export default function Home() {
       <ServiceWorkerRegister />
       <Header />
       <PwaInstall />
+      <ConnectivityToast />
 
       <main className="mx-auto max-w-5xl px-3 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-4 lg:pb-10">
         <DesktopTabs />

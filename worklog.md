@@ -118,3 +118,19 @@ Work Log:
 
 Stage Summary:
 - Install popup now actively prompts download on mobile every session until installed/dismissed; receipt QR payload is UPI-ID only (no company name), so payer UPI apps resolve prasad@upi directly
+
+---
+Task ID: 8
+Agent: main
+Task: "direct sent invoice image to customer mobile number directly using that customer number entered it is new also no problem; work this web application anywhere online without interrupt"
+
+Work Log:
+- InvoiceModal.tsx: new primary action onWhatsAppDirect() — captures slip PNG, tries clipboard image copy (ClipboardItem image/png, try/catch), downloads image to gallery as reliable fallback, then window.open(waLink(customer.phone, full bill text)) -> https://wa.me/91<digits>?text=... click-to-chat opens the customer's chat DIRECTLY (works for brand-new numbers, no contact saving); guidance toast tells user to long-press WhatsApp message box -> Paste -> Send (or attach from gallery via paperclip)
+- Primary button now: "Send Direct to <customer name>" when customer phone exists (Send icon), else legacy share-sheet "Send Bill Image on WhatsApp"; Share Image / Download / SMS / Print / Copy as text kept as secondary grid
+- New ConnectivityToast.tsx mounted in page.tsx: toast on offline ("keep billing as usual — bills saved on device") and back-online transitions; complements header offline badge
+- sw.js CACHE v6 -> v7
+- Note: true silent background image push needs WhatsApp Business Cloud API (paid Meta token) — not available; click-to-chat direct-open + clipboard/gallery is the strongest contactless flow without credentials
+- Verified agent-browser iPhone 14 emulation: bill for NEW customer Suresh Babu 9000012345 -> primary "Send Direct to Suresh Babu"; window.open stub captured https://wa.me/919000012345?text=*Sri%20Lakshmi... (direct number, bill text pre-filled); toast confirmed visible ("Chat opened for Suresh Babu" + paste/attach hint); set offline on -> "You are offline" toast + header badge, product billing still works offline; back online -> "Back online" toast; zero page/console errors; lint clean
+
+Stage Summary:
+- Direct-to-number WhatsApp send is now the primary action using the typed customer number (new numbers fine); app resilient online/offline anywhere (PWA + SW v7 + connectivity toasts)
