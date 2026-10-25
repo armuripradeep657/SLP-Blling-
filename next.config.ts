@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // Hide the Next.js dev-tools "N" badge that overlays the app UI
+  devIndicators: false,
 };
 
 export default nextConfig;

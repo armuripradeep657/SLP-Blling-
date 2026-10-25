@@ -102,10 +102,41 @@ export const useStore = create<BillingStore>()(
       },
 
       addCustomItem: (name, size, price, qty) => {
+        const norm = size.trim() || 'Standard';
         const key = `custom::${Date.now()}::${Math.random().toString(36).slice(2, 7)}`;
-        set((st) => ({
-          cart: [...st.cart, { key, productId: 'custom', name, size, price, qty }],
-        }));
+        set((st) => {
+          const cart = [...st.cart, { key, productId: 'custom', name, size: norm, price, qty }];
+
+          // Auto-save the custom item into the product catalog — matched by
+          // name (case-insensitive); new size/price merges into the product so
+          // it can be billed again with one tap from the catalog.
+          const nameL = name.trim().toLowerCase();
+          const idx = st.products.findIndex((p) => p.name.toLowerCase() === nameL);
+          let products = st.products;
+          if (idx >= 0) {
+            const p = st.products[idx];
+            const sizes = p.sizes.includes(norm) ? p.sizes : [...p.sizes, norm];
+            products = [...st.products];
+            products[idx] = {
+              ...p,
+              sizes,
+              sizePrices: { ...p.sizePrices, [norm]: price },
+            };
+          } else {
+            products = [
+              {
+                id: `p-${Date.now()}`,
+                name: name.trim(),
+                category: 'Custom',
+                price,
+                sizes: [norm],
+                sizePrices: { [norm]: price },
+              },
+              ...st.products,
+            ];
+          }
+          return { cart, products };
+        });
       },
 
       incQty: (key) =>

@@ -157,7 +157,9 @@ export function CustomItemDialog({ open, onOpenChange }: { open: boolean; onOpen
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Add custom item</DialogTitle>
-          <DialogDescription>For items not in the product list.</DialogDescription>
+          <DialogDescription>
+            Added to the bill now — and saved to your product list with this name, size &amp; price for next time.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <Input placeholder="Item name *" value={name} onChange={(e) => setName(e.target.value)} className="h-11" />

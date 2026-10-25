@@ -134,3 +134,18 @@ Work Log:
 
 Stage Summary:
 - Direct-to-number WhatsApp send is now the primary action using the typed customer number (new numbers fine); app resilient online/offline anywhere (PWA + SW v7 + connectivity toasts)
+
+---
+Task ID: 9
+Agent: main
+Task: "while add custom item that item will add in products with that size and price name in products. remove that pasted image" (dark N circle = Next.js dev-tools badge)
+
+Work Log:
+- store.ts addCustomItem: now ALSO auto-saves the custom item into the products catalog — case-insensitive name match; same name merges (new size + per-size price added to existing product), new name creates product {category: 'Custom', sizes: [size], sizePrices: {size: price}, price} at the top of the list
+- ProductCatalog CustomItemDialog description updated: "Added to the bill now — and saved to your product list with this name, size & price for next time."
+- next.config.ts: devIndicators: false — removes the dark Next.js "N" circle badge overlaying the app (verified #devtools-indicator now 0x0/invisible in shadow DOM, screenshot clean)
+- sw.js CACHE v7 -> v8
+- Verified agent-browser mobile: custom "Cool Brick" 6FT ₹350 -> cart + persisted to products + visible in Products tab (6FT: ₹350) + billable from catalog (+6FT button, cart 2x350=700); second custom "cool brick" 8FT ₹400 merged into the SAME product (productCount 1, sizes [6FT,8FT], sizePrices {6FT:350, 8FT:400}); zero page/console errors; lint clean
+
+Stage Summary:
+- Custom items are now permanent catalog products (auto-saved with name/size/price, dedup+merge); Next.js dev N badge removed from the UI
