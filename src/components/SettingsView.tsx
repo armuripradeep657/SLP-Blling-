@@ -34,6 +34,13 @@ export default function SettingsView() {
       <section aria-label="Business identity" className="space-y-3">
         <h3 className="text-sm font-bold text-blue-800">Business Identity</h3>
         <Field label="Company name" value={settings.companyName} onChange={(v) => set({ companyName: v })} textarea />
+        <Field
+          label="Company name in Telugu (బిల్లు పేరు — తెలుగు)"
+          value={settings.companyNameTe ?? ''}
+          onChange={(v) => set({ companyNameTe: v })}
+          textarea
+          placeholder="శ్రీ లక్ష్మీ పెంచిల నరసింహ స్వామి సిమెంట్ వర్క్స్"
+        />
         <Field label="Owner / Proprietor name" value={settings.ownerName} onChange={(v) => set({ ownerName: v })} placeholder="A. Prasad" />
         <div className="grid grid-cols-2 gap-2">
           <Field label="Phone" value={settings.phone} onChange={(v) => set({ phone: v })} type="tel" placeholder="98765 43210" />

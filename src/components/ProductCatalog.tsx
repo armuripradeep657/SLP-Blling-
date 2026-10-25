@@ -110,6 +110,7 @@ function ProductCard({ product, onAddSize }: { product: Product; onAddSize: (siz
       <div className="p-2.5 flex flex-col gap-2 flex-1">
         <div>
           <p className="text-[13px] font-semibold leading-tight line-clamp-2">{product.name}</p>
+          {product.nameTe ? <p className="text-[11px] text-blue-800 leading-tight line-clamp-1">{product.nameTe}</p> : null}
           <p className="text-xs text-muted-foreground mt-0.5">
             from <span className="font-bold text-blue-700">₹{product.price}</span>
           </p>
@@ -138,14 +139,16 @@ function ProductCard({ product, onAddSize }: { product: Product; onAddSize: (siz
 export function CustomItemDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const addCustomItem = useStore((s) => s.addCustomItem);
   const [name, setName] = useState('');
+  const [nameTe, setNameTe] = useState('');
   const [size, setSize] = useState('');
   const [price, setPrice] = useState('');
   const [qty, setQty] = useState('1');
 
   const submit = () => {
     if (!name.trim() || !Number(price)) return;
-    addCustomItem(name.trim(), size.trim() || 'Standard', Number(price), Math.max(1, Number(qty) || 1));
+    addCustomItem(name.trim(), size.trim() || 'Standard', Number(price), Math.max(1, Number(qty) || 1), nameTe.trim() || undefined);
     setName('');
+    setNameTe('');
     setSize('');
     setPrice('');
     setQty('1');
@@ -163,6 +166,12 @@ export function CustomItemDialog({ open, onOpenChange }: { open: boolean; onOpen
         </DialogHeader>
         <div className="space-y-3">
           <Input placeholder="Item name *" value={name} onChange={(e) => setName(e.target.value)} className="h-11" />
+          <Input
+            placeholder="Item name in Telugu (optional — తెలుగు పేరు)"
+            value={nameTe}
+            onChange={(e) => setNameTe(e.target.value)}
+            className="h-11"
+          />
           <div className="grid grid-cols-2 gap-2">
             <Input placeholder="Size (e.g. 10FT)" value={size} onChange={(e) => setSize(e.target.value)} className="h-11" />
             <Input placeholder="Price ₹ *" type="number" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} className="h-11" />

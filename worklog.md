@@ -190,3 +190,27 @@ Work Log:
 
 Stage Summary:
 - Owner picks bill language (English or Telugu) on the bill or right in the share modal; the thermal slip image + bill text render fully in the chosen language, the language is saved with the invoice (History re-shares keep it, sticky default for next bills), and WhatsApp direct send now carries the bill as IMAGE only
+
+---
+Task ID: 12
+Agent: main
+Task: "while billing change company name also telugu, enter bill in telugu only, product name also in telugu; in history show both invoice and thermal slip to owner; in that thermal slip and invoice background show company logo"
+
+Work Log:
+- types.ts: BusinessSettings += companyNameTe; Product += nameTe?; CartItem += nameTe? (snapshot per bill line)
+- defaultData.ts: default companyNameTe 'శ్రీ లక్ష్మీ పెంచిల నరసింహ స్వామి సిమెంట్ వర్క్స్' + Telugu names for all 14 default products (గగులు, గలులు బిళ్లాలు, గుంజ, కెటికెలు, సెలుపు రాళ్లు …)
+- i18n.ts: new companyNameFor() + itemLabel() helpers (Telugu name when set, English fallback); invoice-doc labels (billTo/tSno/tItem/tQty/tRate/sigFor/invoiceNoLabel EN+TE)
+- store.ts: addToCart snapshots nameTe; addCustomItem(name,size,price,qty,nameTe?) stores Telugu name on cart line + catalog product (merge keeps existing)
+- ThermalSlip.tsx: Telugu company name + Telugu item names when language='te'; company logo WATERMARK (absolute, 66% width, opacity 0.08, z -1) behind whole slip; QR logic refactored into shared hook
+- New src/hooks/use-qr.ts: useQrDataUrl() shared by slip + invoice
+- New src/components/InvoiceDoc.tsx: formal A4-style invoice (430px, inline styles for html-to-image) — logo header, INVOICE/బిల్లు title, Bill To, full table (S.No/Item/Size/Qty/Rate/Amount + per-item discount), totals block, smart PAID stamp / balance UPI QR, signature ("For company"/"తరఫున"), thank-you footer, Telugu font + Telugu company/product names + logo watermark (opacity 0.06)
+- InvoiceModal.tsx: view prop ('slip'|'invoice') + header View chips (Thermal slip | Invoice) — both documents viewable/capturable/shareable for the SAME bill; invoice preview zoom 0.7 to fit modal (off-screen capture node stays full-size); title/description adapt per view
+- HistoryView.tsx: each invoice row now has BOTH "Invoice" (FileText) and "Slip" (ReceiptText) buttons; row tap opens Invoice; page.tsx passes view through
+- messages.ts: WhatsApp message/caption/SMS use Telugu company name + Telugu item names when invoice.language='te'
+- SettingsView.tsx: "Company name in Telugu (బిల్లు పేరు — తెలుగు)" field
+- ProductsView.tsx: "Product name in Telugu" field in add/edit form + Telugu name shown in list; ProductCatalog.tsx: Telugu name input in Custom item dialog + Telugu subtitle on catalog cards; BillPanel.tsx: cart line shows Telugu product name (English beneath) when Telugu selected
+- sw.js CACHE v10 -> v11
+- Verified agent-browser iPhone 14 (fresh storage): Telugu bill -> cart line + slip + invoice ALL in Telugu (శ్రీ లక్ష్మీ పెంచిల నరసింహ స్వామి సిమెంట్ వర్క్స్, గగులు (బావి రింగ్)); watermark img (opacity .08/.06, z -1) present in both docs; English flip works live both ways (case-safe re-check); invoice preview fits modal (scrollW==clientW); History: Invoice + Slip buttons both open correct views, language kept per invoice (1002 reopens Telugu); Due bill 670 advance 100 -> invoice shows UPI QR + బాకీ రూ.570.00 + * పాక్షికం *; Download captured SLP-INV-1002.png (745KB) — Telugu glyphs crisp, watermark visible in PNG; custom item 'Cool Brick' with Telugu name కూల్ బ్రిక్ saved to products + billed in Telugu; direct send from invoice view -> https://wa.me/919000012345 (no text, image-only); Settings Telugu company field + Products Telugu name fields confirmed; zero page/console errors; lint clean; production build passes
+
+Stage Summary:
+- Bills are now FULLY Telugu when తెలుగు is selected — company name and product names included (both editable); History gives the owner BOTH the formal invoice and the thermal slip for every bill; both documents carry the Narasimha Swamy company logo as a faint background watermark; direct WhatsApp send stays image-only

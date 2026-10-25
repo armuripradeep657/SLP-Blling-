@@ -24,6 +24,7 @@ export default function Home() {
 
   const [modalInvoice, setModalInvoice] = useState<Invoice | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalView, setModalView] = useState<'slip' | 'invoice'>('slip');
 
   // Rehydrate persisted store AFTER mount (skipHydration) — avoids SSR mismatch
   useEffect(() => {
@@ -39,8 +40,9 @@ export default function Home() {
 
   const totals = computeTotals(cart, cfg);
 
-  const openInvoice = (inv: Invoice) => {
+  const openInvoice = (inv: Invoice, view: 'slip' | 'invoice' = 'slip') => {
     setModalInvoice(inv);
+    setModalView(view);
     setModalOpen(true);
   };
 
@@ -103,7 +105,7 @@ export default function Home() {
 
       <BottomNav />
 
-      <InvoiceModal invoice={modalInvoice} open={modalOpen} onOpenChange={setModalOpen} />
+      <InvoiceModal invoice={modalInvoice} open={modalOpen} view={modalView} onOpenChange={setModalOpen} />
 
       {/* mobile sticky total chip when scrolled in other tabs */}
       {activeTab !== 'bill' && cart.length > 0 && (

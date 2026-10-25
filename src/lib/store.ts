@@ -33,7 +33,7 @@ interface BillingStore {
   deleteProduct: (id: string) => void;
 
   addToCart: (product: Product, size: string) => void;
-  addCustomItem: (name: string, size: string, price: number, qty: number) => void;
+  addCustomItem: (name: string, size: string, price: number, qty: number, nameTe?: string) => void;
   updateCartItem: (key: string, patch: Partial<Pick<CartItem, 'price' | 'discount' | 'qty'>>) => void;
   incQty: (key: string) => void;
   decQty: (key: string) => void;
@@ -98,17 +98,18 @@ export const useStore = create<BillingStore>()(
           return {
             cart: [
               ...st.cart,
-              { key, productId: product.id, name: product.name, size, price, qty: 1 },
+              { key, productId: product.id, name: product.name, nameTe: product.nameTe, size, price, qty: 1 },
             ],
           };
         });
       },
 
-      addCustomItem: (name, size, price, qty) => {
+      addCustomItem: (name, size, price, qty, nameTe) => {
         const norm = size.trim() || 'Standard';
         const key = `custom::${Date.now()}::${Math.random().toString(36).slice(2, 7)}`;
+        const teName = nameTe?.trim() || undefined;
         set((st) => {
-          const cart = [...st.cart, { key, productId: 'custom', name, size: norm, price, qty }];
+          const cart = [...st.cart, { key, productId: 'custom', name, nameTe: teName, size: norm, price, qty }];
 
           // Auto-save the custom item into the product catalog — matched by
           // name (case-insensitive); new size/price merges into the product so
@@ -122,6 +123,7 @@ export const useStore = create<BillingStore>()(
             products = [...st.products];
             products[idx] = {
               ...p,
+              nameTe: p.nameTe ?? teName,
               sizes,
               sizePrices: { ...p.sizePrices, [norm]: price },
             };
@@ -130,6 +132,7 @@ export const useStore = create<BillingStore>()(
               {
                 id: `p-${Date.now()}`,
                 name: name.trim(),
+                nameTe: teName,
                 category: 'Custom',
                 price,
                 sizes: [norm],

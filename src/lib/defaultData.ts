@@ -2,6 +2,7 @@ import type { BusinessSettings, Product } from './types';
 
 export const DEFAULT_SETTINGS: BusinessSettings = {
   companyName: 'Sri Lakshmi Penchil Narasimha Swamy Cement Works',
+  companyNameTe: 'శ్రీ లక్ష్మీ పెంచిల నరసింహ స్వామి సిమెంట్ వర్క్స్',
   ownerName: 'A. Prasad',
   phone: '',
   whatsappNumber: '',
@@ -24,6 +25,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-gagulu',
     name: 'Gagulu (Well Ring)',
+    nameTe: 'గగులు (బావి రింగ్)',
     category: 'Well Rings & Lids',
     price: 200,
     sizes: ['2FT', '2.5FT', '3FT', '3.5FT', '4FT', '5FT'],
@@ -34,6 +36,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-billalu',
     name: 'Galulu Billalu (Well Lid)',
+    nameTe: 'గలులు బిళ్లాలు (బావి మూత)',
     category: 'Well Rings & Lids',
     price: 220,
     sizes: ['2FT', '2.5FT', '3FT', '4FT'],
@@ -44,6 +47,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-gunja-pole',
     name: 'Gunja (Fencing Pole)',
+    nameTe: 'గుంజ (కంచె స్తంభం)',
     category: 'Poles & Fencing',
     price: 560,
     sizes: ft(8, 12),
@@ -54,6 +58,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-gunja-cement-pool',
     name: 'Gunja Cement Pool',
+    nameTe: 'గుంజ సిమెంట్ పోల్',
     category: 'Poles & Fencing',
     price: 420,
     sizes: ft(8, 12),
@@ -64,6 +69,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-gunja-pool',
     name: 'Gunja Pool',
+    nameTe: 'గుంజ పోల్',
     category: 'Poles & Fencing',
     price: 470,
     sizes: ft(8, 12),
@@ -74,6 +80,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-gunja-8ft',
     name: 'Gunja 8FT Pole',
+    nameTe: 'గుంజ 8FT పోల్',
     category: 'Poles & Fencing',
     price: 380,
     sizes: ft(8, 12),
@@ -84,6 +91,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-heavy-pool',
     name: 'Heavy Duty Pool 12FT',
+    nameTe: 'హెవీ డ్యూటీ పోల్ 12FT',
     category: 'Poles & Fencing',
     price: 620,
     sizes: ft(8, 12),
@@ -94,6 +102,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-keti-double',
     name: 'Ketikelu - Double Frame 4x3',
+    nameTe: 'కెటికెలు - డబుల్ ఫ్రేమ్ 4x3',
     category: 'Ketikelu Frames',
     price: 1450,
     sizes: ['4x3 FT', '3x4 FT', '4x4 FT', '5x3 FT'],
@@ -104,6 +113,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-keti-single',
     name: 'Ketikelu - Single Frame 3x4',
+    nameTe: 'కెటికెలు - సింగిల్ ఫ్రేమ్ 3x4',
     category: 'Ketikelu Frames',
     price: 1100,
     sizes: ['3x4 FT', '3x3 FT', '2.5x4 FT'],
@@ -114,6 +124,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-keti-vent',
     name: 'Ketikelu - Ventilator 2x2',
+    nameTe: 'కెటికెలు - వెంటిలేటర్ 2x2',
     category: 'Ketikelu Frames',
     price: 550,
     sizes: ['2x2 FT', '2.5x1.5 FT', '2x1.5 FT'],
@@ -124,6 +135,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-selupu-cupboard',
     name: 'Selupu Ralu - Cupboard Slab 3x1.5',
+    nameTe: 'సెలుపు రాళ్లు - కప్పుబోర్డు స్లాబ్ 3x1.5',
     category: 'Selupu Ralu Slabs',
     price: 320,
     sizes: ['3x1.5 FT', '4x1.5 FT', '5x1.5 FT'],
@@ -134,6 +146,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-selupu-standard',
     name: 'Selupu Ralu - Standard Slab 4x1.5',
+    nameTe: 'సెలుపు రాళ్లు - స్టాండర్డ్ స్లాబ్ 4x1.5',
     category: 'Selupu Ralu Slabs',
     price: 420,
     sizes: ['3x1.5 FT', '4x1.5 FT', '5x1.5 FT'],
@@ -144,6 +157,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-selupu-kitchen',
     name: 'Selupu Ralu - Kitchen Slab 4x2',
+    nameTe: 'సెలుపు రాళ్లు - కిచెన్ స్లాబ్ 4x2',
     category: 'Selupu Ralu Slabs',
     price: 580,
     sizes: ['3x2 FT', '4x2 FT', '5x2 FT'],
@@ -154,6 +168,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'p-selupu-heavy',
     name: 'Selupu Ralu - Heavy Slab 5x1.5',
+    nameTe: 'సెలుపు రాళ్లు - హెవీ స్లాబ్ 5x1.5',
     category: 'Selupu Ralu Slabs',
     price: 540,
     sizes: ['4x1.5 FT', '5x1.5 FT', '6x1.5 FT'],

@@ -1,5 +1,5 @@
 import { fmtShort, fmt } from './billing';
-import { labels, fill } from './i18n';
+import { labels, fill, companyNameFor, itemLabel } from './i18n';
 import type { Invoice, BusinessSettings } from './types';
 
 /** Detailed message used for WhatsApp (emojis + itemized list with sizes) */
@@ -7,7 +7,7 @@ export function whatsappMessage(inv: Invoice, s: BusinessSettings): string {
   const d = new Date(inv.dateISO);
   const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  const company = s.companyName || 'Cement Works';
+  const company = companyNameFor(s, inv.language);
   const L = labels(inv.language);
   const te = inv.language === 'te';
   const mode = L.modes[inv.paymentMode] || inv.paymentMode;
@@ -22,7 +22,7 @@ export function whatsappMessage(inv: Invoice, s: BusinessSettings): string {
   if (inv.customer.phone) lines.push(`${L.mMobile}: ${inv.customer.phone}`);
   lines.push('------------------------------');
   inv.items.forEach((it, i) => {
-    lines.push(`${i + 1}. ${it.name}`);
+    lines.push(`${i + 1}. ${itemLabel(it, inv.language)}`);
     lines.push(`   ${L.size}: ${it.size} | ${it.qty} x ${fmtShort(it.price)} = *${fmt(it.price * it.qty)}*`);
     if ((it.discount || 0) > 0) lines.push(`   ${L.mDiscount}: -${fmt(it.discount)}`);
   });
@@ -52,7 +52,7 @@ export function whatsappMessage(inv: Invoice, s: BusinessSettings): string {
 export function whatsappCaption(inv: Invoice, s: BusinessSettings): string {
   const d = new Date(inv.dateISO);
   const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  const company = s.companyName || 'Cement Works';
+  const company = companyNameFor(s, inv.language);
   const L = labels(inv.language);
   const te = inv.language === 'te';
   const lines: string[] = [];
@@ -82,9 +82,10 @@ export function smsMessage(inv: Invoice, s: BusinessSettings): string {
   const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
   const L = labels(inv.language);
   const te = inv.language === 'te';
-  const company = (s.companyName || 'Cement Works').split(' ').slice(0, 4).join(' ');
+  const companyFull = companyNameFor(s, inv.language);
+  const company = companyFull.split(' ').slice(0, 4).join(' ');
   const items = inv.items
-    .map((it) => `${it.name} ${it.size} x${it.qty}=${fmtShort(it.price * it.qty)}`)
+    .map((it) => `${itemLabel(it, inv.language)} ${it.size} x${it.qty}=${fmtShort(it.price * it.qty)}`)
     .join('; ');
   const extras =
     (inv.totals.itemDiscounts || 0) > 0 || (inv.labourCharge || 0) > 0 || (inv.autoCharge || 0) > 0

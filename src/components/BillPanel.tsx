@@ -155,11 +155,15 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
         <ul className="space-y-2">
           {cart.map((it) => {
             const net = lineNet(it);
+            const shownName = cfg.language === 'te' && it.nameTe ? it.nameTe : it.name;
             return (
               <li key={it.key} className="rounded-lg border bg-card p-2.5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium leading-tight">{it.name}</p>
+                    <p className="truncate text-sm font-medium leading-tight">{shownName}</p>
+                    {cfg.language === 'te' && it.nameTe ? (
+                      <p className="truncate text-[11px] text-muted-foreground leading-tight">{it.name}</p>
+                    ) : null}
                     <p className="text-xs text-muted-foreground mt-0.5">
                       Size: <span className="font-medium text-foreground">{it.size}</span>
                     </p>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -21,8 +21,11 @@ import {
   QrCode,
   Image as ImageIcon,
   Send,
+  ReceiptText,
+  FileText,
 } from 'lucide-react';
 import ThermalSlip from './ThermalSlip';
+import InvoiceDoc from './InvoiceDoc';
 import { useStore } from '@/lib/store';
 import { captureSlipPng, downloadBlob, printImage, slipFileName } from '@/lib/invoiceImage';
 import { normalizePhone, smsLink, waChatLink } from '@/lib/billing';
@@ -34,9 +37,13 @@ interface Props {
   invoice: Invoice | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** which document to show first — thermal slip or formal invoice */
+  view?: 'slip' | 'invoice';
 }
 
-export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange }: Props) {
+type DocView = 'slip' | 'invoice';
+
+export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange, view = 'slip' }: Props) {
   const settings = useStore((s) => s.settings);
   const updateInvoiceLanguage = useStore((s) => s.updateInvoiceLanguage);
   // Live copy from the store so a language switch re-renders the slip instantly
@@ -45,7 +52,14 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange 
   const invoice = stored ?? invoiceProp;
   const { toast } = useToast();
   const slipRef = useRef<HTMLDivElement | null>(null);
+  const invoiceRef = useRef<HTMLDivElement | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+
+  // Which document is shown / captured — thermal slip or formal invoice
+  const [mode, setMode] = useState<DocView>(view);
+  useEffect(() => {
+    if (open) setMode(view);
+  }, [view, open]);
 
   // Off-screen render node used for html-to-image capture
   const captureRef = useRef<HTMLDivElement | null>(null);
@@ -54,8 +68,8 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange 
   const [waFallback, setWaFallback] = useState<{ url: string; fileName: string } | null>(null);
 
   const getCaptureTarget = useCallback((): HTMLElement | null => {
-    return captureRef.current ?? slipRef.current;
-  }, []);
+    return captureRef.current ?? (mode === 'invoice' ? invoiceRef.current : slipRef.current);
+  }, [mode]);
 
   if (!invoice) return null;
 
@@ -198,11 +212,45 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange 
       <DialogContent className="max-h-[92dvh] w-[calc(100vw-1.5rem)] max-w-md overflow-hidden p-0 gap-0 grid grid-rows-[auto_minmax(0,1fr)_auto]">
         <DialogHeader className="px-4 pt-4 pb-2">
           <DialogTitle className="flex items-center gap-2 text-base">
-            Bill Generated — {invoice.no}
+            {mode === 'invoice' ? 'Invoice' : 'Bill Generated'} — {invoice.no}
           </DialogTitle>
           <DialogDescription className="text-xs">
-            Thermal-slip <b>image</b> — WhatsApp sends this picture only. Paid bills carry a <b>PAID</b> stamp; balance bills carry the <b>UPI QR</b>.
+            {mode === 'invoice' ? (
+              <>
+                Full <b>invoice</b> image — WhatsApp sends this picture only. Paid bills carry a <b>PAID</b> stamp; balance bills carry the <b>UPI QR</b>.
+              </>
+            ) : (
+              <>
+                Thermal-slip <b>image</b> — WhatsApp sends this picture only. Paid bills carry a <b>PAID</b> stamp; balance bills carry the <b>UPI QR</b>.
+              </>
+            )}
           </DialogDescription>
+          {/* View switch — the owner sees BOTH the formal invoice and the thermal slip */}
+          <div className="mt-2 flex items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground shrink-0">View:</span>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => setMode('slip')}
+                className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                  mode === 'slip' ? 'border-blue-600 bg-blue-600 text-white' : 'bg-card hover:bg-accent'
+                }`}
+                aria-pressed={mode === 'slip'}
+              >
+                <ReceiptText className="size-3" /> Thermal slip
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('invoice')}
+                className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                  mode === 'invoice' ? 'border-blue-600 bg-blue-600 text-white' : 'bg-card hover:bg-accent'
+                }`}
+                aria-pressed={mode === 'invoice'}
+              >
+                <FileText className="size-3" /> Invoice
+              </button>
+            </div>
+          </div>
           {/* Bill language — flips the slip + bill text instantly, saved on the invoice */}
           <div className="mt-2 flex items-center gap-1.5">
             <span className="text-[11px] text-muted-foreground shrink-0">Bill language:</span>
@@ -240,8 +288,14 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange 
         <div className="min-h-0 overflow-y-auto overscroll-contain">
           <div className="mx-4 rounded-lg border bg-neutral-100">
             <div className="flex justify-center py-4">
-              <div className="shadow-md bg-white">
-                <ThermalSlip invoice={invoice} settings={settings} rootRef={(n) => (slipRef.current = n)} />
+              {/* Invoice doc is 430px wide — zoom the PREVIEW to fit the modal;
+                  the off-screen capture node below stays full-size */}
+              <div className="shadow-md bg-white" style={mode === 'invoice' ? { zoom: 0.7 } : undefined}>
+                {mode === 'invoice' ? (
+                  <InvoiceDoc invoice={invoice} settings={settings} rootRef={(n) => (invoiceRef.current = n)} />
+                ) : (
+                  <ThermalSlip invoice={invoice} settings={settings} rootRef={(n) => (slipRef.current = n)} />
+                )}
               </div>
             </div>
           </div>
@@ -331,7 +385,11 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange 
       {/* Off-screen capture target (never visible) */}
       <div aria-hidden style={{ position: 'fixed', left: -99999, top: 0, opacity: 1, pointerEvents: 'none', zIndex: -1 }}>
         <div ref={captureRef}>
-          <ThermalSlip invoice={invoice} settings={settings} />
+          {mode === 'invoice' ? (
+            <InvoiceDoc invoice={invoice} settings={settings} />
+          ) : (
+            <ThermalSlip invoice={invoice} settings={settings} />
+          )}
         </div>
       </div>
     </Dialog>

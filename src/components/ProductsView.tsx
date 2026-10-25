@@ -78,6 +78,7 @@ export default function ProductsView() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">{p.name}</p>
+              {p.nameTe ? <p className="truncate text-xs text-blue-800">{p.nameTe}</p> : null}
               <p className="text-xs text-muted-foreground">{p.category}</p>
               <div className="mt-1 flex flex-wrap gap-1">
                 {p.sizes.slice(0, 6).map((s) => (
@@ -138,6 +139,7 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
   const p = isNew || !product ? null : product;
 
   const [name, setName] = useState('');
+  const [nameTe, setNameTe] = useState('');
   const [category, setCategory] = useState('Custom');
   const [price, setPrice] = useState('');
   const [stock, setStock] = useState('');
@@ -154,6 +156,7 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
     setLoadedId(targetKey);
     if (p) {
       setName(p.name);
+      setNameTe(p.nameTe ?? '');
       setCategory(p.category);
       setPrice(String(p.price));
       setStock(p.stock !== undefined ? String(p.stock) : '');
@@ -162,6 +165,7 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
       setImage(p.image);
     } else if (isNew) {
       setName('');
+      setNameTe('');
       setCategory('Custom');
       setPrice('');
       setStock('');
@@ -201,6 +205,7 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
     const payload: Product = {
       id: p?.id ?? `p-${Date.now()}`,
       name: name.trim(),
+      nameTe: nameTe.trim() || undefined,
       category: category.trim() || 'Custom',
       price: Number(price),
       sizes: sizes.length ? sizes : ['Standard'],
@@ -268,6 +273,16 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
           </div>
 
           <Input placeholder="Product name *" value={name} onChange={(e) => setName(e.target.value)} className="h-11 min-w-0" />
+
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Product name in Telugu (తెలుగు పేరు) — printed on Telugu bills</Label>
+            <Input
+              placeholder="ఉదా: గగులు (బావి రింగ్)"
+              value={nameTe}
+              onChange={(e) => setNameTe(e.target.value)}
+              className="h-11 min-w-0"
+            />
+          </div>
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">

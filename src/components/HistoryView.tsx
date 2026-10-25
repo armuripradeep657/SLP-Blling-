@@ -15,12 +15,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Search, Trash2, ReceiptText, IndianRupee } from 'lucide-react';
+import { Search, Trash2, ReceiptText, FileText, IndianRupee } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { fmt } from '@/lib/billing';
 import type { Invoice } from '@/lib/types';
 
-export default function HistoryView({ onOpenInvoice }: { onOpenInvoice: (inv: Invoice) => void }) {
+export default function HistoryView({
+  onOpenInvoice,
+}: {
+  onOpenInvoice: (inv: Invoice, view?: 'slip' | 'invoice') => void;
+}) {
   const invoices = useStore((s) => s.invoices);
   const updateInvoiceStatus = useStore((s) => s.updateInvoiceStatus);
   const deleteInvoice = useStore((s) => s.deleteInvoice);
@@ -89,7 +93,7 @@ export default function HistoryView({ onOpenInvoice }: { onOpenInvoice: (inv: In
       <ul className="space-y-2">
         {filtered.map((inv) => (
           <li key={inv.id} className="rounded-xl border bg-card p-3">
-            <button className="w-full text-left" onClick={() => onOpenInvoice(inv)} aria-label={`Open invoice ${inv.no}`}>
+            <button className="w-full text-left" onClick={() => onOpenInvoice(inv, 'invoice')} aria-label={`Open invoice ${inv.no}`}>
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm font-bold">{inv.no}</p>
@@ -135,7 +139,10 @@ export default function HistoryView({ onOpenInvoice }: { onOpenInvoice: (inv: In
                     <IndianRupee className="size-3" /> Mark Paid
                   </Button>
                 )}
-                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpenInvoice(inv)}>
+                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpenInvoice(inv, 'invoice')} aria-label={`Open invoice ${inv.no}`}>
+                  <FileText className="size-3" /> Invoice
+                </Button>
+                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpenInvoice(inv, 'slip')} aria-label={`Open thermal slip ${inv.no}`}>
                   <ReceiptText className="size-3" /> Slip
                 </Button>
                 <AlertDialog>

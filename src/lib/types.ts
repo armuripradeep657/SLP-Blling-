@@ -2,6 +2,8 @@
 
 export interface BusinessSettings {
   companyName: string;
+  /** Company name printed on Telugu bills (తెలుగు బిల్లు పేరు) */
+  companyNameTe: string;
   ownerName: string;
   phone: string;
   whatsappNumber: string;
@@ -17,6 +19,8 @@ export interface BusinessSettings {
 export interface Product {
   id: string;
   name: string;
+  /** Product name in Telugu — printed on Telugu bills when set */
+  nameTe?: string;
   category: string;
   price: number; // default unit price
   sizes: string[];
@@ -29,6 +33,8 @@ export interface CartItem {
   key: string; // productId + '::' + size
   productId: string;
   name: string;
+  /** Telugu name snapshot (from product) — used when bill language is Telugu */
+  nameTe?: string;
   size: string;
   price: number; // unit price — editable per bill while billing
   qty: number;

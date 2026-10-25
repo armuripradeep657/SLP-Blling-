@@ -39,6 +39,14 @@ export interface SlipLabels {
   mImageSeparately: string;
   capAttachedDue: string;
   capAttachedPaid: string;
+  // formal invoice document
+  billTo: string;
+  tSno: string;
+  tItem: string;
+  tQty: string;
+  tRate: string;
+  sigFor: string; // template "{company}"
+  invoiceNoLabel: string;
 }
 
 export const EN_LABELS: SlipLabels = {
@@ -78,6 +86,13 @@ export const EN_LABELS: SlipLabels = {
   mImageSeparately: 'Bill image shared separately',
   capAttachedDue: 'Bill image attached — scan the UPI QR in it to pay the balance',
   capAttachedPaid: 'Bill image attached — amount fully paid, thank you',
+  billTo: 'Bill To',
+  tSno: 'S.No',
+  tItem: 'Item',
+  tQty: 'Qty',
+  tRate: 'Rate',
+  sigFor: 'For {company}',
+  invoiceNoLabel: 'Invoice No.',
 };
 
 export const TE_LABELS: SlipLabels = {
@@ -117,10 +132,30 @@ export const TE_LABELS: SlipLabels = {
   mImageSeparately: 'బిల్లు ఇమేజ్ విడిగా పంపబడుతుంది',
   capAttachedDue: 'బిల్లు ఇమేజ్ జోడించబడింది — బాకీ చెల్లించడానికి UPI QR స్కాన్ చేయండి',
   capAttachedPaid: 'బిల్లు ఇమేజ్ జోడించబడింది — మొత్తం చెల్లింపు పూర్తి, ధన్యవాదాలు',
+  billTo: 'కస్టమర్ వివరాలు',
+  tSno: 'వరుస',
+  tItem: 'వస్తువు',
+  tQty: 'సంఖ్య',
+  tRate: 'రేటు',
+  sigFor: '{company} తరఫున',
+  invoiceNoLabel: 'బిల్లు నంబర్',
 };
 
 export function labels(lang: BillLanguage | undefined): SlipLabels {
   return lang === 'te' ? TE_LABELS : EN_LABELS;
+}
+
+/** Company name in the bill language — Telugu name when set, English otherwise */
+export function companyNameFor(
+  s: { companyName: string; companyNameTe?: string },
+  lang: BillLanguage | undefined
+): string {
+  return lang === 'te' && s.companyNameTe && s.companyNameTe.trim() ? s.companyNameTe : s.companyName;
+}
+
+/** Item name in the bill language — Telugu product name when set, otherwise the English one */
+export function itemLabel(it: { name: string; nameTe?: string }, lang: BillLanguage | undefined): string {
+  return lang === 'te' && it.nameTe && it.nameTe.trim() ? it.nameTe : it.name;
 }
 
 /** Fill {tokens} in a label template */

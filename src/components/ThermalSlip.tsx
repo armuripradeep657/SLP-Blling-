@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import QRCode from 'qrcode';
+import { useMemo } from 'react';
 import { fmt, fmtShort, upiUri } from '@/lib/billing';
-import { labels, fill, slipFontFamily } from '@/lib/i18n';
+import { labels, fill, slipFontFamily, companyNameFor, itemLabel } from '@/lib/i18n';
+import { useQrDataUrl } from '@/hooks/use-qr';
 import type { BusinessSettings, Invoice } from '@/lib/types';
 
 interface Props {
@@ -46,24 +46,7 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
   const qrString = upiString || waString;
   const isUpiQr = !!upiString;
 
-  const [qr, setQr] = useState<string>('');
-  useEffect(() => {
-    if (!qrString) return;
-    let alive = true;
-    QRCode.toDataURL(qrString, {
-      margin: 1,
-      width: 240,
-      color: { dark: '#000000', light: '#ffffff' },
-      errorCorrectionLevel: 'M',
-    })
-      .then((url) => {
-        if (alive) setQr(url);
-      })
-      .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, [qrString]);
+  const qr = useQrDataUrl(qrString);
 
   const dash: React.CSSProperties = {
     borderTop: '1.5px dashed #1a1a1a',
@@ -93,8 +76,32 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
         padding: '12px 10px 14px',
         boxSizing: 'border-box',
         WebkitFontSmoothing: 'antialiased',
+        position: 'relative',
+        zIndex: 0,
+        overflow: 'hidden',
       }}
     >
+      {/* Company logo watermark — faint, behind the whole slip */}
+      <img
+        src="/narasimha-logo.jpg"
+        alt=""
+        aria-hidden
+        width={Math.round(w * 0.66)}
+        height={Math.round(w * 0.66)}
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: `${Math.round(w * 0.66)}px`,
+          height: `${Math.round(w * 0.66)}px`,
+          objectFit: 'cover',
+          borderRadius: '50%',
+          opacity: 0.08,
+          zIndex: -1,
+          pointerEvents: 'none',
+        }}
+      />
       {/* Header */}
       <div style={{ textAlign: 'center' }}>
         <img
@@ -111,7 +118,7 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
           }}
         />
         <div style={{ fontWeight: 700, fontSize: baseFont + 2.5, textTransform: 'uppercase', letterSpacing: 0.2 }}>
-          {settings.companyName}
+          {companyNameFor(settings, lang)}
         </div>
         {settings.address ? (
           <div style={{ fontSize: baseFont - 1, whiteSpace: 'pre-wrap' }}>{settings.address}</div>
@@ -151,7 +158,7 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
         <div key={idx} style={{ marginTop: idx === 0 ? 3 : 6 }}>
           <div style={row}>
             <span style={{ fontWeight: 700 }}>
-              {idx + 1}. {it.name}
+              {idx + 1}. {itemLabel(it, lang)}
             </span>
             <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{fmt(it.price * it.qty)}</span>
           </div>
