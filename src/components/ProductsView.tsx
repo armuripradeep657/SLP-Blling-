@@ -23,9 +23,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Pencil, Plus, Search, Trash2, X, Camera } from 'lucide-react';
+import { Pencil, Plus, Search, Trash2, X, Camera, ImageUp } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { fileToResizedDataUrl } from '@/lib/imageResize';
+import { useT } from '@/hooks/use-app-lang';
 import { PRODUCT_CATEGORIES } from '@/lib/defaultData';
 import { fmtShort } from '@/lib/billing';
 import type { Product } from '@/lib/types';
@@ -45,6 +46,7 @@ const SAMPLE_IMAGES = [
 const SIZE_PRESETS = ['2FT', '2.5FT', '3FT', '4FT', '5FT', '6FT', '8FT', '9FT', '10FT', '11FT', '12FT'];
 
 export default function ProductsView() {
+  const t = useT();
   const products = useStore((s) => s.products);
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<Product | 'new' | null>(null);
@@ -59,10 +61,10 @@ export default function ProductsView() {
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search products…" className="h-11 pl-9 rounded-xl" aria-label="Search products" />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('cat.search')} className="h-11 pl-9 rounded-xl" aria-label="Search products" />
         </div>
         <Button onClick={() => setEditing('new')} className="h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white">
-          <Plus className="size-4" /> Add
+          <Plus className="size-4" /> {t('products.add')}
         </Button>
       </div>
 
@@ -98,7 +100,7 @@ export default function ProductsView() {
           </li>
         ))}
         {filtered.length === 0 && (
-          <li className="py-10 text-center text-sm text-muted-foreground">No products yet — tap Add to create your first product.</li>
+          <li className="py-10 text-center text-sm text-muted-foreground">{t('products.noProductsYet')}</li>
         )}
       </ul>
 
@@ -133,6 +135,7 @@ function DeleteProductButton({ id, name }: { id: string; name: string }) {
 }
 
 function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new' | null; onOpenChange: (v: boolean) => void }) {
+  const t = useT();
   const addProduct = useStore((s) => s.addProduct);
   const updateProduct = useStore((s) => s.updateProduct);
   const isNew = product === 'new';
@@ -148,6 +151,7 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
   const [sizePrices, setSizePrices] = useState<Record<string, number>>({});
   const [image, setImage] = useState<string | undefined>(undefined);
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   // sync form state when target changes
   const [loadedId, setLoadedId] = useState<string | null>(null);
@@ -222,12 +226,12 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="w-[calc(100%-2rem)] max-w-sm max-h-[90dvh] overflow-y-auto overflow-x-hidden [&>*]:min-w-0">
         <DialogHeader>
-          <DialogTitle>{p ? 'Edit product' : 'Add product'}</DialogTitle>
-          <DialogDescription>Set name, image, price, sizes & stock.</DialogDescription>
+          <DialogTitle>{p ? t('products.editProduct') : t('products.addProduct')}</DialogTitle>
+          <DialogDescription>{t('products.formDesc')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
-          {/* Image */}
+          {/* Image — upload from gallery OR capture with the camera */}
           <div className="flex items-center gap-3">
             <div className="size-20 shrink-0 overflow-hidden rounded-lg border bg-neutral-100">
               {image ? (
@@ -244,12 +248,26 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
                 className="hidden"
                 onChange={(e) => onFile(e.target.files?.[0])}
               />
-              <Button variant="outline" size="sm" className="w-full" onClick={() => fileRef.current?.click()}>
-                <Camera className="size-3.5" /> Upload photo
-              </Button>
+              {/* capture=environment opens the phone camera directly */}
+              <input
+                ref={cameraRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => onFile(e.target.files?.[0])}
+              />
+              <div className="grid grid-cols-2 gap-1.5">
+                <Button variant="outline" size="sm" className="w-full" onClick={() => fileRef.current?.click()}>
+                  <ImageUp className="size-3.5" /> {t('products.uploadPhoto')}
+                </Button>
+                <Button variant="outline" size="sm" className="w-full" onClick={() => cameraRef.current?.click()}>
+                  <Camera className="size-3.5" /> {t('products.takePhoto')}
+                </Button>
+              </div>
               {image && (
                 <Button variant="ghost" size="sm" className="w-full text-destructive" onClick={() => setImage(undefined)}>
-                  <X className="size-3.5" /> Remove photo
+                  <X className="size-3.5" /> {t('products.removePhoto')}
                 </Button>
               )}
             </div>
@@ -257,7 +275,7 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
 
           {/* Sample images */}
           <div>
-            <Label className="text-xs text-muted-foreground">Or pick a sample image</Label>
+            <Label className="text-xs text-muted-foreground">{t('products.sampleImage')}</Label>
             <div className="mt-1.5 flex gap-1.5 overflow-x-auto pb-1">
               {SAMPLE_IMAGES.map((src) => (
                 <button
@@ -272,10 +290,10 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
             </div>
           </div>
 
-          <Input placeholder="Product name *" value={name} onChange={(e) => setName(e.target.value)} className="h-11 min-w-0" />
+          <Input placeholder={t('products.name')} value={name} onChange={(e) => setName(e.target.value)} className="h-11 min-w-0" />
 
           <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Product name in Telugu (తెలుగు పేరు) — printed on Telugu bills</Label>
+            <Label className="text-xs text-muted-foreground">{t('products.nameTe')}</Label>
             <Input
               placeholder="ఉదా: గగులు (బావి రింగ్)"
               value={nameTe}
@@ -286,7 +304,7 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Category</Label>
+              <Label className="text-xs text-muted-foreground">{t('products.category')}</Label>
               <Input
                 list="product-categories"
                 value={category}
@@ -301,14 +319,14 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
               </datalist>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Base price ₹ *</Label>
+              <Label className="text-xs text-muted-foreground">{t('products.basePrice')}</Label>
               <Input type="number" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} className="h-11" placeholder="0" />
             </div>
           </div>
 
           {/* Sizes */}
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Sizes (tap to add or type custom)</Label>
+            <Label className="text-xs text-muted-foreground">{t('products.sizes')}</Label>
             <div className="flex flex-wrap gap-1">
               {SIZE_PRESETS.map((s) => (
                 <button
@@ -331,7 +349,7 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
                     addSize(sizeInput);
                   }
                 }}
-                placeholder="Custom size (e.g. 4x3 FT)"
+                placeholder={t('products.customSize')}
                 className="h-10 min-w-0 flex-1"
               />
               <Button variant="outline" className="h-10 px-3" onClick={() => addSize(sizeInput)}>
@@ -362,14 +380,14 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Stock (optional)</Label>
+            <Label className="text-xs text-muted-foreground">{t('products.stock')}</Label>
             <Input type="number" inputMode="numeric" value={stock} onChange={(e) => setStock(e.target.value)} className="h-11" placeholder="Leave empty to hide" />
           </div>
         </div>
 
         <DialogFooter>
           <Button onClick={submit} className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white">
-            {p ? 'Save changes' : 'Add product'}
+            {p ? t('products.saveChanges') : t('products.addProduct')}
           </Button>
         </DialogFooter>
       </DialogContent>

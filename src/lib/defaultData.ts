@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS: BusinessSettings = {
   slipWidthMm: 80,
   thankYouNote: 'Thank you! Visit Again',
   returnPolicy: 'Goods once sold will not be taken back',
+  appLang: 'en',
 };
 
 const ft = (from: number, to: number): string[] => {

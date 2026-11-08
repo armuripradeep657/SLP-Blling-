@@ -9,7 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Download, Share2, PlusCircle, X, Smartphone, WifiOff, Zap, Save, RefreshCw } from 'lucide-react';
+import { Download, Share2, PlusCircle, X, Smartphone, WifiOff, Zap, Save, BellRing, RefreshCw } from 'lucide-react';
+import { APP_VERSION } from '@/lib/version';
 
 interface BIPEvent extends Event {
   prompt: () => Promise<void>;
@@ -131,9 +132,15 @@ export function usePwaInstalled() {
   return installed;
 }
 
-const DISMISS_KEY = 'slp-install-popup-dismissed';
+const NOTICE_SEEN_KEY = 'slp-update-notice-seen';
 
-/** Install popup (mobile-first bottom sheet): native prompt when available, manual steps otherwise */
+/**
+ * ONE-TIME install notification after an app update:
+ * every time a new version lands on a device (APP_VERSION changes), a popup
+ * asks the user to install the app on that device. Once the user CLOSES it,
+ * the version is remembered and the popup never shows again for this version
+ * — it only returns when the next update ships.
+ */
 export default function PwaInstall() {
   const [deferred, setDeferred] = useState<BIPEvent | null>(null);
   const [showPopup, setShowPopup] = useState(false);
@@ -143,7 +150,9 @@ export default function PwaInstall() {
 
   useEffect(() => {
     const isMobile =
-      /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || navigator.maxTouchPoints > 1;
+      /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      navigator.maxTouchPoints > 1 ||
+      window.matchMedia('(pointer: coarse)').matches;
     const handler = (e: Event) => {
       e.preventDefault();
       deferredRef.current = e as BIPEvent;
@@ -151,14 +160,16 @@ export default function PwaInstall() {
     };
     window.addEventListener('beforeinstallprompt', handler);
 
-    let dismissed = false;
+    // one-time-per-version flag in localStorage — closing it means it NEVER
+    // comes back for this version (only the next update re-shows it)
+    let seen = '';
     try {
-      dismissed = sessionStorage.getItem(DISMISS_KEY) === '1';
+      seen = localStorage.getItem(NOTICE_SEEN_KEY) ?? '';
     } catch {
       /* storage unavailable */
     }
     const timer = setTimeout(() => {
-      if (!installed && !dismissed && (deferredRef.current || isMobile)) {
+      if (!installed && seen !== APP_VERSION && (deferredRef.current || isMobile)) {
         setShowPopup(true);
       }
     }, 1200);
@@ -172,7 +183,7 @@ export default function PwaInstall() {
   const dismiss = () => {
     setShowPopup(false);
     try {
-      sessionStorage.setItem(DISMISS_KEY, '1');
+      localStorage.setItem(NOTICE_SEEN_KEY, APP_VERSION);
     } catch {
       /* storage unavailable */
     }
@@ -194,16 +205,16 @@ export default function PwaInstall() {
 
   return (
     <>
-      {/* Bottom-sheet install popup (above mobile bottom nav) */}
+      {/* Bottom-sheet one-time update/install popup (above mobile bottom nav) */}
       <div
         role="dialog"
-        aria-label="Install app popup"
+        aria-label="Install app notification"
         className="fixed inset-x-3 bottom-[4.75rem] z-50 sm:bottom-6 sm:left-auto sm:right-6 sm:w-96"
       >
         <div className="relative rounded-2xl border border-blue-200 bg-white p-4 shadow-2xl">
           <button
             onClick={dismiss}
-            aria-label="Close install popup"
+            aria-label="Close install notification"
             className="absolute right-2 top-2 rounded-full p-1.5 text-blue-700 hover:bg-blue-50"
           >
             <X className="size-4" />
@@ -216,27 +227,28 @@ export default function PwaInstall() {
               className="size-12 shrink-0 rounded-full object-cover ring-2 ring-blue-200"
             />
             <div className="min-w-0 pr-5">
-              <p className="text-sm font-bold leading-tight text-blue-900">
-                Install the Billing App
+              <p className="flex items-center gap-1.5 text-sm font-bold leading-tight text-blue-900">
+                <BellRing className="size-4 shrink-0 text-blue-600" />
+                App updated — Install it on your phone
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Download Sri Lakshmi Penchil Narasimha Swamy Cement Works app on your phone — free.
+              <p className="text-sm font-bold leading-tight text-blue-800">
+                యాప్ అప్‌డేట్ అయ్యింది — ఇన్‌స్టాల్ చేయండి
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                యాప్ ఇప్పుడే కొత్త వెర్షన్‌కు అప్‌డేట్ అయ్యింది — మీ ఫోన్‌లో ఇన్‌స్టాల్ చేయండి (ఉచితం, ఆఫ్‌లైన్‌లో పనిచేస్తుంది).
               </p>
             </div>
           </div>
 
           <ul className="mt-3 space-y-1.5 text-xs text-blue-900">
             <li className="flex items-center gap-2">
-              <WifiOff className="size-3.5 shrink-0 text-blue-600" /> Works offline — no internet
-              needed to bill
+              <WifiOff className="size-3.5 shrink-0 text-blue-600" /> ఆఫ్‌లైన్‌లో పనిచేస్తుంది — Works offline
             </li>
             <li className="flex items-center gap-2">
-              <Zap className="size-3.5 shrink-0 text-blue-600" /> Opens instantly, full-screen like
-              a real app
+              <Zap className="size-3.5 shrink-0 text-blue-600" /> వెంటనే తెరుచుకుంటుంది — Opens instantly
             </li>
             <li className="flex items-center gap-2">
-              <Save className="size-3.5 shrink-0 text-blue-600" /> All bills saved safely on this
-              device
+              <Save className="size-3.5 shrink-0 text-blue-600" /> బిల్లులు డివైస్‌లో సురక్షితం — Bills saved on device
             </li>
           </ul>
 
@@ -247,18 +259,21 @@ export default function PwaInstall() {
             >
               {deferred ? (
                 <>
-                  <Download className="size-4" /> Install App
+                  <Download className="size-4" /> Install App · ఇన్‌స్టాల్
                 </>
               ) : (
                 <>
-                  <Smartphone className="size-4" /> How to Install
+                  <Smartphone className="size-4" /> How to Install · ఎలా?
                 </>
               )}
             </Button>
             <Button variant="outline" onClick={dismiss} className="h-10">
-              Not now
+              Close · మూసివేయి
             </Button>
           </div>
+          <p className="mt-2 flex items-center justify-center gap-1 text-[10px] text-muted-foreground">
+            <RefreshCw className="size-3" /> v{APP_VERSION} — ఈ పాప్-అప్ మీరు మూసేయగానే మళ్ళీ రాదు · closed = never again
+          </p>
         </div>
       </div>
 

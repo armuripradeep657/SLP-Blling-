@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { fmt, fmtShort, upiUri } from '@/lib/billing';
-import { labels, fill, slipFontFamily, companyNameFor, itemLabel } from '@/lib/i18n';
+import { labels, fill, slipFontFamily, companyLines, itemLabel } from '@/lib/i18n';
 import { useQrDataUrl } from '@/hooks/use-qr';
 import type { BusinessSettings, Invoice } from '@/lib/types';
 
@@ -21,10 +21,10 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
   const w = settings.slipWidthMm === 58 ? 220 : 304;
   const baseFont = settings.slipWidthMm === 58 ? 9.5 : 11;
 
-  /** Bill language — Telugu when selected, English otherwise */
+  /** Bill language — Telugu when selected, English otherwise, Both = bilingual */
   const lang = invoice.language;
   const L = labels(lang);
-  const isTe = lang === 'te';
+  const isTe = lang !== 'en'; // tighter spacing when Telugu glyphs are on the slip
 
   /** Bill fully settled — show PAID stamp instead of any QR */
   const isFullyPaid = invoice.totals.balance <= 0;
@@ -117,9 +117,19 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
             border: '2px solid #1d4ed8',
           }}
         />
-        <div style={{ fontWeight: 700, fontSize: baseFont + 2.5, textTransform: 'uppercase', letterSpacing: 0.2 }}>
-          {companyNameFor(settings, lang)}
-        </div>
+        {companyLines(settings, lang).map((line, i) => (
+          <div
+            key={i}
+            style={{
+              fontWeight: 700,
+              fontSize: i === 0 ? baseFont + 2.5 : baseFont + 1,
+              textTransform: i === 0 ? 'uppercase' : 'none',
+              letterSpacing: 0.2,
+            }}
+          >
+            {line}
+          </div>
+        ))}
         {settings.address ? (
           <div style={{ fontSize: baseFont - 1, whiteSpace: 'pre-wrap' }}>{settings.address}</div>
         ) : null}

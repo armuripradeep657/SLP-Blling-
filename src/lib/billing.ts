@@ -1,4 +1,4 @@
-import type { BillConfig, CartItem, Totals } from './types';
+import type { BillConfig, CartItem, Invoice, PaymentMode, PaymentRecord, Totals } from './types';
 
 export const fmt = (n: number): string => {
   const v = Math.round(n * 100) / 100;
@@ -83,4 +83,71 @@ export function upiUri(upiId: string, amount: number, note: string): string {
   });
   if (note) params.set('tn', note);
   return `upi://pay?${params.toString()}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Money-in ledger helpers — income = payments actually received       */
+/* ------------------------------------------------------------------ */
+
+/** Local (not UTC) YYYY-MM-DD key for grouping income / expenses by day */
+export function localDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate()
+  ).padStart(2, '0')}`;
+}
+
+/** Local YYYY-MM key for grouping by month */
+export function localMonthKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * All money-in records for an invoice. Old invoices saved before payments
+ * tracking existed get their paid amount synthesized as one payment on the
+ * bill date (mode Due advances were received in cash).
+ */
+export function paymentsOf(inv: Invoice): PaymentRecord[] {
+  if (inv.payments && inv.payments.length > 0) return inv.payments;
+  if (inv.totals.paid > 0) {
+    return [
+      {
+        id: 'init',
+        dateISO: inv.dateISO,
+        amount: inv.totals.paid,
+        mode: inv.paymentMode === 'Due' ? 'Cash' : inv.paymentMode,
+      },
+    ];
+  }
+  return [];
+}
+
+/**
+ * Add a payment against an invoice's balance — returns a NEW invoice or null
+ * when nothing to apply. Updates paid/balance/status and appends the record.
+ */
+export function applyPayment(
+  inv: Invoice,
+  amount: number,
+  mode: PaymentMode,
+  dateISO: string,
+  pid?: string
+): Invoice | null {
+  const add = Math.round(Math.min(Math.max(amount, 0), inv.totals.balance) * 100) / 100;
+  if (add <= 0) return null;
+  const paid = Math.round((inv.totals.paid + add) * 100) / 100;
+  const payments = [
+    ...paymentsOf(inv),
+    {
+      id: pid ?? `pay-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      dateISO,
+      amount: add,
+      mode,
+    },
+  ];
+  return {
+    ...inv,
+    status: getStatus(inv.totals.total, paid),
+    totals: { ...inv.totals, paid, balance: Math.max(inv.totals.total - paid, 0) },
+    payments,
+  };
 }

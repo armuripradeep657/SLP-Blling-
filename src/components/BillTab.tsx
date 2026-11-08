@@ -6,9 +6,11 @@ import BillPanel from './BillPanel';
 import ProductCatalog, { CustomItemDialog } from './ProductCatalog';
 import { useStore } from '@/lib/store';
 import { computeTotals, fmt } from '@/lib/billing';
+import { useT } from '@/hooks/use-app-lang';
 import { ShoppingCart } from 'lucide-react';
 
 export default function BillTab({ onCompleted }: { onCompleted: () => void }) {
+  const t = useT();
   const cart = useStore((s) => s.cart);
   const cfg = useStore((s) => s.billConfig);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -36,7 +38,7 @@ export default function BillTab({ onCompleted }: { onCompleted: () => void }) {
                   {count}
                 </span>
               </span>
-              View Bill
+              {t('page.viewBill')}
             </span>
             <span className="text-lg font-extrabold tabular-nums">₹{fmt(totals.total)}</span>
           </button>
@@ -52,10 +54,8 @@ export default function BillTab({ onCompleted }: { onCompleted: () => void }) {
           className="h-[92dvh] max-w-md mx-auto rounded-t-2xl p-0 flex flex-col w-full sm:max-w-md"
         >
           <SheetHeader className="px-4 pt-4 pb-1 shrink-0">
-            <SheetTitle className="text-left">Current Bill</SheetTitle>
-            <SheetDescription className="text-left text-xs">
-              Review items, customer & payment — then generate the thermal slip.
-            </SheetDescription>
+            <SheetTitle className="text-left">{t('page.currentBill')}</SheetTitle>
+            <SheetDescription className="text-left text-xs">{t('page.viewBillDesc')}</SheetDescription>
           </SheetHeader>
           <div className="overflow-y-auto px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] min-h-0 flex-1">
             <BillPanel

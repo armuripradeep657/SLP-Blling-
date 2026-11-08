@@ -14,6 +14,8 @@ export interface BusinessSettings {
   slipWidthMm: 58 | 80;
   thankYouNote: string;
   returnPolicy: string;
+  /** App UI language — the whole app (nav, buttons, panels) switches between English and Telugu */
+  appLang: AppLanguage;
 }
 
 export interface Product {
@@ -50,6 +52,11 @@ export interface Customer {
 export type PaymentMode = 'Cash' | 'UPI' | 'Card' | 'Due';
 export type DiscountType = 'amount' | 'percent';
 
+/** Language the bill (thermal slip image + bill text) is rendered in — 'both' = bilingual */
+export type BillLanguage = 'en' | 'te' | 'both';
+/** Language of the app UI itself (navigation, panels, buttons) */
+export type AppLanguage = 'en' | 'te';
+
 export interface BillConfig {
   discountType: DiscountType;
   discountValue: number;
@@ -58,6 +65,26 @@ export interface BillConfig {
   paymentMode: PaymentMode;
   paidAmount: number;
   language: BillLanguage; // bill language for slip image + text
+  /** Delivery details — tick "Delivered" while billing to attach driver info */
+  delivery: DeliveryInfo;
+}
+
+/** Delivery / driver details attached to a bill when it is delivered */
+export interface DeliveryInfo {
+  delivered: boolean;
+  driver: string;
+  vehicle: string;
+  address: string;
+  /** set when the bill is completed */
+  dateISO?: string;
+}
+
+/** One money-in record on an invoice (initial payment or a later dues receipt) */
+export interface PaymentRecord {
+  id: string;
+  dateISO: string;
+  amount: number;
+  mode: PaymentMode;
 }
 
 export interface Totals {
@@ -86,9 +113,21 @@ export interface Invoice {
   paymentMode: PaymentMode;
   language: BillLanguage; // saved per invoice — History re-share keeps it
   status: 'Paid' | 'Due' | 'Partial';
+  /** Driver / delivery details — set when the bill was marked Delivered */
+  delivery?: DeliveryInfo;
+  /** Money received against this invoice (bill date + dues receipts) */
+  payments?: PaymentRecord[];
 }
 
-export type MainTab = 'bill' | 'products' | 'history' | 'settings';
+/** Ledger expense categories */
+export type ExpenseCategory = 'Labour wages' | 'Diesel' | 'Raw material' | 'Other';
 
-/** Language the bill (thermal slip image + bill text) is rendered in */
-export type BillLanguage = 'en' | 'te';
+export interface Expense {
+  id: string;
+  dateISO: string;
+  category: ExpenseCategory;
+  amount: number;
+  note?: string;
+}
+
+export type MainTab = 'bill' | 'products' | 'ledger' | 'history' | 'settings';

@@ -15,16 +15,19 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Search, Trash2, ReceiptText, FileText, IndianRupee } from 'lucide-react';
+import { Search, Trash2, ReceiptText, FileText, IndianRupee, Truck } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { fmt } from '@/lib/billing';
+import { useT } from '@/hooks/use-app-lang';
 import type { Invoice } from '@/lib/types';
+import type { DocView } from './InvoiceModal';
 
 export default function HistoryView({
   onOpenInvoice,
 }: {
-  onOpenInvoice: (inv: Invoice, view?: 'slip' | 'invoice') => void;
+  onOpenInvoice: (inv: Invoice, view?: DocView) => void;
 }) {
+  const t = useT();
   const invoices = useStore((s) => s.invoices);
   const updateInvoiceStatus = useStore((s) => s.updateInvoiceStatus);
   const deleteInvoice = useStore((s) => s.deleteInvoice);
@@ -47,19 +50,26 @@ export default function HistoryView({
   const totalSales = invoices.reduce((s, i) => s + i.totals.total, 0);
   const totalDue = invoices.reduce((s, i) => s + i.totals.balance, 0);
 
+  const statusLabel = (s: 'Paid' | 'Due' | 'Partial') =>
+    s === 'Paid' ? t('status.paid') : s === 'Partial' ? t('status.partial') : t('status.due');
+
   return (
     <div className="space-y-3">
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-xl border bg-card p-3">
-          <p className="text-xs text-muted-foreground">Total billed</p>
+          <p className="text-xs text-muted-foreground">{t('history.totalBilled')}</p>
           <p className="text-xl font-extrabold tabular-nums">₹{fmt(totalSales)}</p>
-          <p className="text-[11px] text-muted-foreground">{invoices.length} invoices</p>
+          <p className="text-[11px] text-muted-foreground">
+            {invoices.length} {t('history.invoices')}
+          </p>
         </div>
         <div className="rounded-xl border bg-card p-3">
-          <p className="text-xs text-muted-foreground">Balance due</p>
+          <p className="text-xs text-muted-foreground">{t('history.balanceDue')}</p>
           <p className="text-xl font-extrabold tabular-nums text-red-600">₹{fmt(totalDue)}</p>
-          <p className="text-[11px] text-muted-foreground">{invoices.filter((i) => i.status !== 'Paid').length} pending</p>
+          <p className="text-[11px] text-muted-foreground">
+            {invoices.filter((i) => i.status !== 'Paid').length} {t('history.pending')}
+          </p>
         </div>
       </div>
 
@@ -68,7 +78,7 @@ export default function HistoryView({
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by invoice, customer or phone…"
+          placeholder={t('history.search')}
           className="h-11 pl-9 rounded-xl"
           aria-label="Search invoices"
         />
@@ -85,7 +95,7 @@ export default function HistoryView({
               statusFilter === s ? 'bg-blue-600 text-white' : 'border bg-card hover:bg-accent'
             }`}
           >
-            {s}
+            {s === 'All' ? 'All' : statusLabel(s)}
           </button>
         ))}
       </div>
@@ -98,14 +108,14 @@ export default function HistoryView({
                 <div className="min-w-0">
                   <p className="text-sm font-bold">{inv.no}</p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {inv.customer.name || 'Walk-in customer'}
+                    {inv.customer.name || t('history.walkin')}
                     {inv.customer.phone ? ` · ${inv.customer.phone}` : ''}
                   </p>
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-base font-extrabold tabular-nums">₹{fmt(inv.totals.total)}</p>
                   <p className="text-[11px] text-muted-foreground">
-                    {new Date(inv.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })} · {inv.items.length} items
+                    {new Date(inv.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })} · {inv.items.length} {t('history.items')}
                   </p>
                 </div>
               </div>
@@ -122,13 +132,13 @@ export default function HistoryView({
                         : 'bg-red-600 text-white'
                   }
                 >
-                  {inv.status}
+                  {statusLabel(inv.status)}
                 </Badge>
                 <span className="text-[11px] text-muted-foreground">
                   {inv.paymentMode} · Bal ₹{fmt(inv.totals.balance)}
                 </span>
               </div>
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1 justify-end">
                 {inv.status !== 'Paid' && (
                   <Button
                     variant="outline"
@@ -136,15 +146,20 @@ export default function HistoryView({
                     className="h-8 text-xs text-green-700 hover:text-green-800"
                     onClick={() => updateInvoiceStatus(inv.id, inv.totals.total)}
                   >
-                    <IndianRupee className="size-3" /> Mark Paid
+                    <IndianRupee className="size-3" /> {t('history.markPaid')}
                   </Button>
                 )}
                 <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpenInvoice(inv, 'invoice')} aria-label={`Open invoice ${inv.no}`}>
-                  <FileText className="size-3" /> Invoice
+                  <FileText className="size-3" /> {t('history.invoice')}
                 </Button>
                 <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpenInvoice(inv, 'slip')} aria-label={`Open thermal slip ${inv.no}`}>
-                  <ReceiptText className="size-3" /> Slip
+                  <ReceiptText className="size-3" /> {t('history.slip')}
                 </Button>
+                {inv.delivery?.delivered && (
+                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpenInvoice(inv, 'driver')} aria-label={`Open driver slip ${inv.no}`}>
+                    <Truck className="size-3" /> {t('history.driver')}
+                  </Button>
+                )}
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button variant="outline" size="icon" className="size-8 text-destructive hover:text-destructive" aria-label={`Delete ${inv.no}`}>
@@ -153,13 +168,15 @@ export default function HistoryView({
                   </AlertDialogTrigger>
                   <AlertDialogContent className="max-w-xs">
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Delete invoice?</AlertDialogTitle>
-                      <AlertDialogDescription>{inv.no} will be removed permanently.</AlertDialogDescription>
+                      <AlertDialogTitle>{t('history.deleteTitle')}</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {inv.no} {t('history.deleteDesc')}
+                      </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogCancel>{t('history.cancel')}</AlertDialogCancel>
                       <AlertDialogAction onClick={() => deleteInvoice(inv.id)} className="bg-destructive text-white hover:bg-destructive/90">
-                        Delete
+                        {t('history.delete')}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
@@ -170,7 +187,7 @@ export default function HistoryView({
         ))}
         {filtered.length === 0 && (
           <li className="py-12 text-center text-sm text-muted-foreground">
-            {invoices.length === 0 ? 'No bills yet. Complete your first bill from the Bill tab.' : 'No invoices match your search.'}
+            {invoices.length === 0 ? t('history.noBills') : t('history.noMatch')}
           </li>
         )}
       </ul>

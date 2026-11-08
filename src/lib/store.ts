@@ -3,15 +3,17 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from './defaultData';
-import { computeTotals, getStatus, priceForSize } from './billing';
+import { computeTotals, getStatus, priceForSize, applyPayment } from './billing';
 import type {
   BillConfig,
   BillLanguage,
   BusinessSettings,
   CartItem,
   Customer,
+  Expense,
   Invoice,
   MainTab,
+  PaymentMode,
   Product,
 } from './types';
 
@@ -25,6 +27,8 @@ interface BillingStore {
   customer: Customer;
   activeTab: MainTab;
   lastInvoice: Invoice | null;
+
+  expenses: Expense[];
 
   setActiveTab: (t: MainTab) => void;
   saveSettings: (s: Partial<BusinessSettings>) => void;
@@ -49,6 +53,10 @@ interface BillingStore {
   deleteInvoice: (id: string) => void;
   updateInvoiceStatus: (id: string, paidAmount: number) => void;
   updateInvoiceLanguage: (id: string, language: BillLanguage) => void;
+  /** Receive a dues payment — recorded as income on the day received */
+  receiveDuePayment: (id: string, amount: number, mode: PaymentMode) => void;
+  addExpense: (e: Omit<Expense, 'id'>) => void;
+  deleteExpense: (id: string) => void;
 }
 
 const DEFAULT_CONFIG: BillConfig = {
@@ -59,6 +67,7 @@ const DEFAULT_CONFIG: BillConfig = {
   paymentMode: 'Cash',
   paidAmount: 0,
   language: 'en',
+  delivery: { delivered: false, driver: '', vehicle: '', address: '' },
 };
 
 export const useStore = create<BillingStore>()(
@@ -73,6 +82,7 @@ export const useStore = create<BillingStore>()(
       customer: { name: '', phone: '', address: '' },
       activeTab: 'bill',
       lastInvoice: null,
+      expenses: [],
 
       setActiveTab: (t) => set({ activeTab: t }),
 
@@ -174,7 +184,7 @@ export const useStore = create<BillingStore>()(
 
       resetBillConfig: () =>
         set((st) => ({
-          // keep the chosen bill language sticky across bills
+          // keep the chosen bill language sticky across bills; delivery details reset
           billConfig: { ...DEFAULT_CONFIG, language: st.billConfig.language },
         })),
 
@@ -183,10 +193,29 @@ export const useStore = create<BillingStore>()(
         if (cart.length === 0) return null;
         const totals = computeTotals(cart, billConfig);
         const no = `${settings.invoicePrefix}${settings.nextInvoiceNo}`;
+        const dateISO = new Date().toISOString();
+        // Delivery / driver details only when the bill is marked Delivered
+        const delivery =
+          billConfig.delivery?.delivered
+            ? { ...billConfig.delivery, dateISO }
+            : undefined;
+        // Money received at bill time counts as income on the bill date
+        // (Due-mode advances were received in cash)
+        const payments =
+          totals.paid > 0
+            ? [
+                {
+                  id: `pay-${Date.now()}`,
+                  dateISO,
+                  amount: totals.paid,
+                  mode: (billConfig.paymentMode === 'Due' ? 'Cash' : billConfig.paymentMode) as PaymentMode,
+                },
+              ]
+            : undefined;
         const invoice: Invoice = {
           id: `inv-${Date.now()}`,
           no,
-          dateISO: new Date().toISOString(),
+          dateISO,
           customer: { ...customer },
           items: cart.map((c) => ({ ...c })),
           totals,
@@ -197,6 +226,8 @@ export const useStore = create<BillingStore>()(
           paymentMode: billConfig.paymentMode,
           language: billConfig.language,
           status: getStatus(totals.total, totals.paid),
+          delivery,
+          payments,
         };
         // deduct stock where tracked
         const updatedProducts = products.map((p) => {
@@ -221,18 +252,23 @@ export const useStore = create<BillingStore>()(
 
       deleteInvoice: (id) => set((st) => ({ invoices: st.invoices.filter((i) => i.id !== id) })),
 
+      // Marking paid records the newly-received amount as income today
       updateInvoiceStatus: (id, paidAmount) =>
-        set((st) => ({
-          invoices: st.invoices.map((i) => {
+        set((st) => {
+          const patchOne = (i: Invoice): Invoice => {
             if (i.id !== id) return i;
             const paid = Math.min(paidAmount, i.totals.total);
-            return {
-              ...i,
-              status: getStatus(i.totals.total, paid),
-              totals: { ...i.totals, paid, balance: Math.max(i.totals.total - paid, 0) },
-            };
-          }),
-        })),
+            const added = Math.round((paid - i.totals.paid) * 100) / 100;
+            if (added <= 0) return i;
+            return (
+              applyPayment(i, added, 'Cash', new Date().toISOString()) ?? i
+            );
+          };
+          return {
+            invoices: st.invoices.map(patchOne),
+            lastInvoice: st.lastInvoice ? patchOne(st.lastInvoice) : st.lastInvoice,
+          };
+        }),
 
       // Flip the bill language (also from the invoice modal while sharing) —
       // updates the saved invoice so History re-shares in the same language
@@ -242,6 +278,29 @@ export const useStore = create<BillingStore>()(
           lastInvoice:
             st.lastInvoice && st.lastInvoice.id === id ? { ...st.lastInvoice, language } : st.lastInvoice,
         })),
+
+      // Dues list: receive a balance payment — counts as income TODAY
+      receiveDuePayment: (id, amount, mode) =>
+        set((st) => {
+          const now = new Date().toISOString();
+          const patchOne = (i: Invoice): Invoice =>
+            i.id === id ? (applyPayment(i, amount, mode, now) ?? i) : i;
+          return {
+            invoices: st.invoices.map(patchOne),
+            lastInvoice: st.lastInvoice ? patchOne(st.lastInvoice) : st.lastInvoice,
+          };
+        }),
+
+      addExpense: (e) =>
+        set((st) => ({
+          expenses: [
+            { ...e, id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` },
+            ...st.expenses,
+          ],
+        })),
+
+      deleteExpense: (id) =>
+        set((st) => ({ expenses: st.expenses.filter((x) => x.id !== id) })),
     }),
     {
       name: 'slp-cement-billing-v1',
@@ -268,6 +327,7 @@ export const useStore = create<BillingStore>()(
         billConfig: st.billConfig,
         customer: st.customer,
         activeTab: st.activeTab,
+        expenses: st.expenses,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) state.hydrated = true;

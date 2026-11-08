@@ -1,5 +1,5 @@
 import { fmtShort, fmt } from './billing';
-import { labels, fill, companyNameFor, itemLabel } from './i18n';
+import { labels, fill, companyNameFor, companyLines, itemLabel, cur } from './i18n';
 import type { Invoice, BusinessSettings } from './types';
 
 /** Detailed message used for WhatsApp (emojis + itemized list with sizes) */
@@ -7,14 +7,15 @@ export function whatsappMessage(inv: Invoice, s: BusinessSettings): string {
   const d = new Date(inv.dateISO);
   const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  const company = companyNameFor(s, inv.language);
   const L = labels(inv.language);
-  const te = inv.language === 'te';
-  const mode = L.modes[inv.paymentMode] || inv.paymentMode;
+  const rupee = cur(inv.language);
 
   const lines: string[] = [];
-  lines.push(`*${company}*`);
-  if (s.phone) lines.push(`${te ? 'ఫోన్' : 'Ph'}: ${s.phone}`);
+  // Company name — Telugu bills print the Telugu name, "Both" prints both lines
+  companyLines(s, inv.language).forEach((line, i) => {
+    lines.push(i === 0 ? `*${line}*` : line);
+  });
+  if (s.phone) lines.push(`${inv.language === 'te' ? 'ఫోన్' : 'Ph'}: ${s.phone}`);
   lines.push('');
   lines.push(`*${L.mInvoice}:* ${inv.no}`);
   lines.push(`${L.mDate}: ${dateStr}, ${timeStr}`);
@@ -32,17 +33,17 @@ export function whatsappMessage(inv: Invoice, s: BusinessSettings): string {
   if (inv.totals.discount > 0) lines.push(`${L.mDiscount}: -${fmt(inv.totals.discount)}`);
   if ((inv.labourCharge || 0) > 0) lines.push(`${L.labour}: ${fmt(inv.labourCharge)}`);
   if ((inv.autoCharge || 0) > 0) lines.push(`${L.auto}: ${fmt(inv.autoCharge)}`);
-  lines.push(`*${L.total}: ${te ? 'రూ.' : 'Rs.'} ${fmt(inv.totals.total)}*`);
-  lines.push(`${L.payment}: ${mode}`);
+  lines.push(`*${L.total}: ${rupee} ${fmt(inv.totals.total)}*`);
+  lines.push(`${L.payment}: ${L.modes[inv.paymentMode] || inv.paymentMode}`);
   lines.push(fill(L.mPaidBal, { paid: fmt(inv.totals.paid), balance: fmt(inv.totals.balance) }));
   if (inv.status === 'Paid') lines.push('');
   lines.push('');
   if (s.upiId) lines.push(`UPI ID: ${s.upiId}`);
-  lines.push(te ? L.policy : s.returnPolicy || L.policy);
+  lines.push(inv.language === 'en' ? s.returnPolicy || L.policy : L.policy);
   lines.push('');
   lines.push(`${L.mThanks} \u{1F64F}`);
   lines.push(`- ${s.ownerName || ''}`);
-  lines.push(`${te ? L.proprietor : 'Proprietor'}, ${company}`);
+  lines.push(`${inv.language === 'en' ? 'Proprietor' : L.proprietor}, ${companyNameFor(s, inv.language)}`);
   lines.push('');
   lines.push(`_${L.mImageSeparately}_`);
   return lines.join('\n');
@@ -52,17 +53,19 @@ export function whatsappMessage(inv: Invoice, s: BusinessSettings): string {
 export function whatsappCaption(inv: Invoice, s: BusinessSettings): string {
   const d = new Date(inv.dateISO);
   const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  const company = companyNameFor(s, inv.language);
   const L = labels(inv.language);
+  const rupee = cur(inv.language);
   const te = inv.language === 'te';
   const lines: string[] = [];
-  lines.push(`*${company}*`);
+  companyLines(s, inv.language).forEach((line, i) => {
+    lines.push(i === 0 ? `*${line}*` : line);
+  });
   lines.push(`${L.mInvoice} *${inv.no}* · ${L.mDate} ${dateStr}`);
   if (inv.customer.name) lines.push(`${L.mCustomer}: ${inv.customer.name}`);
   lines.push(
-    `*${L.total}: ${te ? 'రూ.' : 'Rs.'} ${fmt(inv.totals.total)}*${
+    `*${L.total}: ${rupee} ${fmt(inv.totals.total)}*${
       inv.totals.balance > 0
-        ? ` (${te ? 'బాకీ' : 'Balance'}: ${te ? 'రూ.' : 'Rs.'} ${fmt(inv.totals.balance)})`
+        ? ` (${te ? 'బాకీ' : 'Balance'}: ${rupee} ${fmt(inv.totals.balance)})`
         : ` (${te ? 'చెల్లించారు' : 'Paid'})`
     }`
   );
@@ -82,6 +85,7 @@ export function smsMessage(inv: Invoice, s: BusinessSettings): string {
   const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
   const L = labels(inv.language);
   const te = inv.language === 'te';
+  const rupee = cur(inv.language);
   const companyFull = companyNameFor(s, inv.language);
   const company = companyFull.split(' ').slice(0, 4).join(' ');
   const items = inv.items
@@ -95,7 +99,7 @@ export function smsMessage(inv: Invoice, s: BusinessSettings): string {
       : '';
   const totals = ` ${te ? 'ఉప' : 'Sub'}:${fmtShort(inv.totals.subtotal)}${extras} ${
     te ? 'మొత్తం' : 'TOTAL'
-  }:${te ? 'రూ.' : 'Rs.'}${fmtShort(inv.totals.total)}. ${L.modes[inv.paymentMode] || inv.paymentMode}, ${
+  }:${rupee}${fmtShort(inv.totals.total)}. ${L.modes[inv.paymentMode] || inv.paymentMode}, ${
     te ? 'చెల్లించినది' : 'Paid'
   }:${fmtShort(inv.totals.paid)}, ${te ? 'బాకీ' : 'Bal'}:${fmtShort(inv.totals.balance)}.`;
   const tail = ` ${L.mThanks} - ${s.ownerName || ''}`;

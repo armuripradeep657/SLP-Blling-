@@ -21,9 +21,12 @@ import { useStore } from '@/lib/store';
 import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from '@/lib/defaultData';
 import { normalizePhone } from '@/lib/billing';
 import InstallAppSection from '@/components/InstallAppSection';
+import { useT, useAppLang } from '@/hooks/use-app-lang';
 import { RefreshCw } from 'lucide-react';
 
 export default function SettingsView() {
+  const t = useT();
+  const appLang = useAppLang();
   const settings = useStore((s) => s.settings);
   const saveSettings = useStore((s) => s.saveSettings);
   const { toast } = useToast();
@@ -32,40 +35,68 @@ export default function SettingsView() {
 
   return (
     <div className="space-y-5">
+      {/* App language — the whole app switches between English and తెలుగు */}
+      <section aria-label="App language" className="space-y-2">
+        <h3 className="text-sm font-bold text-blue-800">{t('settings.appLang')}</h3>
+        <p className="text-xs text-muted-foreground">{t('settings.appLangDesc')}</p>
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            { id: 'en', label: 'English' },
+            { id: 'te', label: 'తెలుగు' },
+          ] as const).map((l) => (
+            <button
+              key={l.id}
+              type="button"
+              onClick={() => set({ appLang: l.id })}
+              className={`h-11 rounded-lg border text-sm font-semibold transition-colors ${
+                appLang === l.id
+                  ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                  : 'bg-card hover:bg-accent'
+              }`}
+              aria-pressed={appLang === l.id}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <Separator />
+
       <section aria-label="Business identity" className="space-y-3">
-        <h3 className="text-sm font-bold text-blue-800">Business Identity</h3>
-        <Field label="Company name" value={settings.companyName} onChange={(v) => set({ companyName: v })} textarea />
+        <h3 className="text-sm font-bold text-blue-800">{t('settings.businessIdentity')}</h3>
+        <Field label={t('settings.companyName')} value={settings.companyName} onChange={(v) => set({ companyName: v })} textarea />
         <Field
-          label="Company name in Telugu (బిల్లు పేరు — తెలుగు)"
+          label={t('settings.companyNameTe')}
           value={settings.companyNameTe ?? ''}
           onChange={(v) => set({ companyNameTe: v })}
           textarea
           placeholder="శ్రీ లక్ష్మీ పెంచిల నరసింహ స్వామి సిమెంట్ వర్క్స్"
         />
-        <Field label="Owner / Proprietor name" value={settings.ownerName} onChange={(v) => set({ ownerName: v })} placeholder="A. Prasad" />
+        <Field label={t('settings.ownerName')} value={settings.ownerName} onChange={(v) => set({ ownerName: v })} placeholder="A. Prasad" />
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Phone" value={settings.phone} onChange={(v) => set({ phone: v })} type="tel" placeholder="98765 43210" />
-          <Field label="WhatsApp number" value={settings.whatsappNumber} onChange={(v) => set({ whatsappNumber: v })} type="tel" placeholder="Used on bills" />
+          <Field label={t('settings.phone')} value={settings.phone} onChange={(v) => set({ phone: v })} type="tel" placeholder="98765 43210" />
+          <Field label={t('settings.whatsapp')} value={settings.whatsappNumber} onChange={(v) => set({ whatsappNumber: v })} type="tel" placeholder="Used on bills" />
         </div>
-        <Field label="Shop address" value={settings.address} onChange={(v) => set({ address: v })} textarea placeholder="Main Road, Village, District" />
-        <Field label="UPI ID (for balance QR)" value={settings.upiId} onChange={(v) => set({ upiId: v })} placeholder="name@upi" />
+        <Field label={t('settings.address')} value={settings.address} onChange={(v) => set({ address: v })} textarea placeholder="Main Road, Village, District" />
+        <Field label={t('settings.upi')} value={settings.upiId} onChange={(v) => set({ upiId: v })} placeholder="name@upi" />
       </section>
 
       <Separator />
 
       <section aria-label="Billing preferences" className="space-y-3">
-        <h3 className="text-sm font-bold text-blue-800">Billing & Slip</h3>
+        <h3 className="text-sm font-bold text-blue-800">{t('settings.billingSlip')}</h3>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Invoice prefix" value={settings.invoicePrefix} onChange={(v) => set({ invoicePrefix: v })} placeholder="SLP-INV-" />
+          <Field label={t('settings.invoicePrefix')} value={settings.invoicePrefix} onChange={(v) => set({ invoicePrefix: v })} placeholder="SLP-INV-" />
           <Field
-            label="Next invoice no."
+            label={t('settings.nextInvoiceNo')}
             value={String(settings.nextInvoiceNo)}
             onChange={(v) => set({ nextInvoiceNo: Math.max(1, Number(v.replace(/\D/g, '')) || 1) })}
             type="number"
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Thermal slip width</Label>
+          <Label className="text-xs text-muted-foreground">{t('settings.slipWidth')}</Label>
           <div className="flex gap-2">
             {([58, 80] as const).map((mm) => (
               <button
@@ -80,8 +111,8 @@ export default function SettingsView() {
             ))}
           </div>
         </div>
-        <Field label="Thank-you note" value={settings.thankYouNote} onChange={(v) => set({ thankYouNote: v })} />
-        <Field label="Terms / return policy" value={settings.returnPolicy} onChange={(v) => set({ returnPolicy: v })} />
+        <Field label={t('settings.thankYouNote')} value={settings.thankYouNote} onChange={(v) => set({ thankYouNote: v })} />
+        <Field label={t('settings.returnPolicy')} value={settings.returnPolicy} onChange={(v) => set({ returnPolicy: v })} />
       </section>
 
       <Separator />
@@ -95,14 +126,14 @@ export default function SettingsView() {
       <Separator />
 
       <section aria-label="Data management" className="space-y-2">
-        <h3 className="text-sm font-bold text-blue-800">Data</h3>
+        <h3 className="text-sm font-bold text-blue-800">{t('settings.data')}</h3>
         <p className="text-xs text-muted-foreground">
           All data (products, bills, settings) is stored on this device only — the app works fully offline.
         </p>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="outline" className="w-full text-destructive hover:text-destructive">
-              Reset products to factory catalog
+              {t('settings.resetCatalog')}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent className="max-w-xs">
@@ -129,7 +160,7 @@ export default function SettingsView() {
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="outline" className="w-full text-destructive hover:text-destructive">
-              Erase all data
+              {t('settings.eraseAll')}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent className="max-w-xs">

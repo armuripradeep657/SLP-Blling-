@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -12,15 +13,17 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Minus, Plus, Trash2, UserRound, ReceiptText, Tag } from 'lucide-react';
+import { Minus, Plus, Trash2, UserRound, ReceiptText, Tag, Truck } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { computeTotals, fmt, lineNet, normalizePhone } from '@/lib/billing';
 import { BILL_LANGUAGES } from '@/lib/i18n';
-import type { BillLanguage, PaymentMode } from '@/lib/types';
+import { useT } from '@/hooks/use-app-lang';
+import type { BillLanguage, DeliveryInfo, PaymentMode } from '@/lib/types';
 
 const MODES: PaymentMode[] = ['Cash', 'UPI', 'Card', 'Due'];
 
 export default function BillPanel({ onComplete }: { onComplete: () => void }) {
+  const t = useT();
   const cart = useStore((s) => s.cart);
   const customer = useStore((s) => s.customer);
   const cfg = useStore((s) => s.billConfig);
@@ -34,6 +37,11 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
   const removeFromCart = useStore((s) => s.removeFromCart);
   const clearCart = useStore((s) => s.clearCart);
   const completeInvoice = useStore((s) => s.completeInvoice);
+
+  // Delivery draft — old persisted configs may not have it
+  const delivery: DeliveryInfo = cfg.delivery ?? { delivered: false, driver: '', vehicle: '', address: '' };
+  const setDelivery = (patch: Partial<DeliveryInfo>) =>
+    setBillConfig({ delivery: { ...delivery, ...patch } });
 
   // Auto-paid full amount for non-Due modes unless user is doing partial
   useEffect(() => {
@@ -67,8 +75,8 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-14 text-center text-muted-foreground">
         <ReceiptText className="size-10 opacity-40" />
-        <p className="font-medium">No items in the bill</p>
-        <p className="text-sm">Tap a size button on any product to add it.</p>
+        <p className="font-medium">{t('bill.noItems')}</p>
+        <p className="text-sm">{t('bill.noItemsHint')}</p>
       </div>
     );
   }
@@ -79,7 +87,7 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
       <section aria-label="Customer details" className="space-y-2">
         <div className="flex items-center justify-between">
           <Label className="text-sm font-semibold flex items-center gap-1.5">
-            <UserRound className="size-4" /> Customer
+            <UserRound className="size-4" /> {t('bill.customer')}
           </Label>
           {recent.length > 0 && (
             <div className="flex gap-1.5 overflow-x-auto max-w-[65%]">
@@ -97,13 +105,13 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <Input
-            placeholder="Customer name"
+            placeholder={t('bill.customerName')}
             value={customer.name}
             onChange={(e) => setCustomer({ name: e.target.value })}
             className="h-11"
           />
           <Input
-            placeholder="Mobile / WhatsApp"
+            placeholder={t('bill.mobile')}
             type="tel"
             inputMode="numeric"
             value={customer.phone}
@@ -113,17 +121,17 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
           />
         </div>
         <Input
-          placeholder="Address (optional)"
+          placeholder={t('bill.addressOptional')}
           value={customer.address ?? ''}
           onChange={(e) => setCustomer({ address: e.target.value })}
           className="h-10"
         />
       </section>
 
-      {/* Bill language — Telugu or English (applies to slip image + bill text) */}
+      {/* Bill language — English / తెలుగు / Both (applies to slip image + bill text) */}
       <section aria-label="Bill language" className="space-y-1.5">
-        <Label className="text-xs text-muted-foreground">Bill language · బిల్లు భాష</Label>
-        <div className="grid grid-cols-2 gap-2">
+        <Label className="text-xs text-muted-foreground">{t('bill.language')}</Label>
+        <div className="grid grid-cols-3 gap-2">
           {BILL_LANGUAGES.map((l) => (
             <button
               key={l.value}
@@ -147,9 +155,11 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
       {/* Items */}
       <section aria-label="Bill items" className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-semibold">Items ({cart.length})</Label>
+          <Label className="text-sm font-semibold">
+            {t('bill.items')} ({cart.length})
+          </Label>
           <Button variant="ghost" size="sm" onClick={clearCart} className="h-8 text-xs text-destructive hover:text-destructive">
-            <Trash2 className="size-3.5" /> Clear
+            <Trash2 className="size-3.5" /> {t('bill.clear')}
           </Button>
         </div>
         <ul className="space-y-2">
@@ -165,7 +175,7 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
                       <p className="truncate text-[11px] text-muted-foreground leading-tight">{it.name}</p>
                     ) : null}
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Size: <span className="font-medium text-foreground">{it.size}</span>
+                      {t('bill.size')}: <span className="font-medium text-foreground">{it.size}</span>
                     </p>
                   </div>
                   <Button
@@ -182,7 +192,7 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                      Price ₹ (unit)
+                      {t('bill.priceUnit')}
                     </Label>
                     <Input
                       type="number"
@@ -198,7 +208,7 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
-                      <Tag className="size-2.5" /> Discount ₹
+                      <Tag className="size-2.5" /> {t('bill.discountItem')}
                     </Label>
                     <Input
                       type="number"
@@ -238,7 +248,7 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
       <section aria-label="Discount and charges" className="space-y-3">
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Discount</Label>
+            <Label className="text-xs text-muted-foreground">{t('bill.discount')}</Label>
             <div className="flex gap-1.5">
               <Select value={cfg.discountType} onValueChange={(v) => setBillConfig({ discountType: v as 'amount' | 'percent' })}>
                 <SelectTrigger className="w-[72px] h-11 shrink-0" aria-label="Discount type">
@@ -261,7 +271,7 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Labour charges (if any)</Label>
+            <Label className="text-xs text-muted-foreground">{t('bill.labour')}</Label>
             <Input
               type="number"
               inputMode="decimal"
@@ -277,7 +287,7 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
 
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Auto charges (if any)</Label>
+            <Label className="text-xs text-muted-foreground">{t('bill.auto')}</Label>
             <Input
               type="number"
               inputMode="decimal"
@@ -290,7 +300,7 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Payment mode</Label>
+            <Label className="text-xs text-muted-foreground">{t('bill.paymentMode')}</Label>
             <Select value={cfg.paymentMode} onValueChange={(v) => setBillConfig({ paymentMode: v as PaymentMode, paidAmount: v === 'Due' ? 0 : computeTotals(cart, { ...cfg, paymentMode: v as PaymentMode }).total })}>
               <SelectTrigger className="h-11" aria-label="Payment mode">
                 <SelectValue />
@@ -309,7 +319,7 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1.5 col-span-2">
             <Label className="text-xs text-muted-foreground">
-              Amount paid {cfg.paymentMode === 'Due' ? '(advance)' : ''}
+              {t('bill.amountPaid')} {cfg.paymentMode === 'Due' ? t('bill.advance') : ''}
             </Label>
             <div className="flex gap-1.5">
               <Input
@@ -319,13 +329,60 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
                 value={cfg.paidAmount || ''}
                 onChange={(e) => setBillConfig({ paidAmount: Number(e.target.value) || 0 })}
                 className="h-11"
+                aria-label="Amount paid"
               />
               <Button variant="outline" className="h-11 shrink-0 px-3 text-xs" onClick={() => setBillConfig({ paidAmount: totals.total })}>
-                Full
+                {t('bill.full')}
               </Button>
             </div>
           </div>
         </div>
+      </section>
+
+      {/* Delivery — tick Delivered to add driver, vehicle & address */}
+      <section aria-label="Delivery details" className="rounded-xl border bg-card p-3 space-y-2.5">
+        <Label className="text-sm font-semibold flex items-center gap-1.5">
+          <Truck className="size-4" /> {t('delivery.title')}
+        </Label>
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <Checkbox
+            checked={delivery.delivered}
+            onCheckedChange={(v) => setDelivery({ delivered: v === true })}
+            className="mt-0.5"
+            aria-label="Delivered"
+          />
+          <span className="text-xs leading-snug text-muted-foreground">{t('delivery.delivered')}</span>
+        </label>
+        {delivery.delivered && (
+          <div className="space-y-2 pt-0.5">
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                placeholder={t('delivery.driver')}
+                value={delivery.driver}
+                onChange={(e) => setDelivery({ driver: e.target.value })}
+                className="h-10"
+                aria-label="Driver name"
+              />
+              <Input
+                placeholder={t('delivery.vehicle')}
+                value={delivery.vehicle}
+                onChange={(e) => setDelivery({ vehicle: e.target.value })}
+                className="h-10"
+                aria-label="Vehicle number"
+              />
+            </div>
+            <Input
+              placeholder={t('delivery.address')}
+              value={delivery.address}
+              onChange={(e) => setDelivery({ address: e.target.value })}
+              className="h-10"
+              aria-label="Delivery address"
+            />
+            <p className="text-[11px] text-blue-800 bg-blue-50 border border-blue-200 rounded-md px-2 py-1.5">
+              {t('delivery.driverSlipNote')}
+            </p>
+          </div>
+        )}
       </section>
 
       <Separator />
@@ -333,39 +390,39 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
       {/* Totals */}
       <section aria-label="Bill totals" className="space-y-1.5 text-sm">
         <div className="flex justify-between text-muted-foreground">
-          <span>Subtotal</span>
+          <span>{t('bill.subtotal')}</span>
           <span className="tabular-nums">₹{fmt(totals.subtotal)}</span>
         </div>
         {totals.itemDiscounts > 0 && (
           <div className="flex justify-between text-muted-foreground">
-            <span>Item discounts</span>
+            <span>{t('bill.itemDiscounts')}</span>
             <span className="tabular-nums">− ₹{fmt(totals.itemDiscounts)}</span>
           </div>
         )}
         {totals.discount > 0 && (
           <div className="flex justify-between text-muted-foreground">
-            <span>Discount</span>
+            <span>{t('bill.discount')}</span>
             <span className="tabular-nums">− ₹{fmt(totals.discount)}</span>
           </div>
         )}
         {totals.labourCharge > 0 && (
           <div className="flex justify-between text-muted-foreground">
-            <span>Labour charges</span>
+            <span>{t('bill.labour')}</span>
             <span className="tabular-nums">+ ₹{fmt(totals.labourCharge)}</span>
           </div>
         )}
         {totals.autoCharge > 0 && (
           <div className="flex justify-between text-muted-foreground">
-            <span>Auto charges</span>
+            <span>{t('bill.auto')}</span>
             <span className="tabular-nums">+ ₹{fmt(totals.autoCharge)}</span>
           </div>
         )}
         <div className="flex justify-between items-baseline pt-1">
-          <span className="font-semibold">Grand Total</span>
+          <span className="font-semibold">{t('bill.grandTotal')}</span>
           <span className="text-2xl font-extrabold tabular-nums">₹{fmt(totals.total)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-muted-foreground">Balance due</span>
+          <span className="text-muted-foreground">{t('bill.balanceDue')}</span>
           <span className={`font-semibold tabular-nums ${totals.balance > 0 ? 'text-red-600' : 'text-green-700'}`}>
             ₹{fmt(totals.balance)}
           </span>
@@ -377,10 +434,10 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
         className="w-full h-14 text-base font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20"
       >
         <ReceiptText className="size-5" />
-        Complete Bill — Thermal Slip
+        {t('bill.complete')}
       </Button>
       <p className="text-center text-[11px] text-muted-foreground">
-        Invoice will be numbered {settings.invoicePrefix}
+        {t('bill.invoiceNumbered')} {settings.invoicePrefix}
         {settings.nextInvoiceNo}
       </p>
     </div>

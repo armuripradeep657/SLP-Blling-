@@ -23,9 +23,11 @@ import {
   Send,
   ReceiptText,
   FileText,
+  Truck,
 } from 'lucide-react';
 import ThermalSlip from './ThermalSlip';
 import InvoiceDoc from './InvoiceDoc';
+import DriverSlip from './DriverSlip';
 import { useStore } from '@/lib/store';
 import { captureSlipPng, downloadBlob, printImage, slipFileName } from '@/lib/invoiceImage';
 import { normalizePhone, smsLink, waChatLink } from '@/lib/billing';
@@ -37,11 +39,11 @@ interface Props {
   invoice: Invoice | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** which document to show first — thermal slip or formal invoice */
-  view?: 'slip' | 'invoice';
+  /** which document to show first — thermal slip, formal invoice or driver slip */
+  view?: DocView;
 }
 
-type DocView = 'slip' | 'invoice';
+export type DocView = 'slip' | 'invoice' | 'driver';
 
 export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange, view = 'slip' }: Props) {
   const settings = useStore((s) => s.settings);
@@ -53,6 +55,7 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
   const { toast } = useToast();
   const slipRef = useRef<HTMLDivElement | null>(null);
   const invoiceRef = useRef<HTMLDivElement | null>(null);
+  const driverRef = useRef<HTMLDivElement | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   // Which document is shown / captured — thermal slip or formal invoice
@@ -68,15 +71,19 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
   const [waFallback, setWaFallback] = useState<{ url: string; fileName: string } | null>(null);
 
   const getCaptureTarget = useCallback((): HTMLElement | null => {
-    return captureRef.current ?? (mode === 'invoice' ? invoiceRef.current : slipRef.current);
+    if (captureRef.current) return captureRef.current;
+    if (mode === 'invoice') return invoiceRef.current;
+    if (mode === 'driver') return driverRef.current;
+    return slipRef.current;
   }, [mode]);
 
   if (!invoice) return null;
 
+  const hasDriverSlip = !!invoice.delivery?.delivered;
   const waCaption = whatsappCaption(invoice, settings);
   const waMsg = whatsappMessage(invoice, settings);
   const smsMsg = smsMessage(invoice, settings);
-  const fileName = slipFileName(invoice.no);
+  const fileName = slipFileName(mode === 'driver' ? `${invoice.no}-driver` : invoice.no);
 
   const guard = async (key: string, fn: () => Promise<void> | void) => {
     try {
@@ -212,12 +219,16 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
       <DialogContent className="max-h-[92dvh] w-[calc(100vw-1.5rem)] max-w-md overflow-hidden p-0 gap-0 grid grid-rows-[auto_minmax(0,1fr)_auto]">
         <DialogHeader className="px-4 pt-4 pb-2">
           <DialogTitle className="flex items-center gap-2 text-base">
-            {mode === 'invoice' ? 'Invoice' : 'Bill Generated'} — {invoice.no}
+            {mode === 'invoice' ? 'Invoice' : mode === 'driver' ? 'Driver Slip' : 'Bill Generated'} — {invoice.no}
           </DialogTitle>
           <DialogDescription className="text-xs">
             {mode === 'invoice' ? (
               <>
                 Full <b>invoice</b> image — WhatsApp sends this picture only. Paid bills carry a <b>PAID</b> stamp; balance bills carry the <b>UPI QR</b>.
+              </>
+            ) : mode === 'driver' ? (
+              <>
+                <b>Driver slip</b> image — items &amp; quantities only, <b>no prices</b>. Driver, vehicle &amp; delivery address included.
               </>
             ) : (
               <>
@@ -225,10 +236,10 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
               </>
             )}
           </DialogDescription>
-          {/* View switch — the owner sees BOTH the formal invoice and the thermal slip */}
+          {/* View switch — the owner sees the thermal slip, the formal invoice AND the driver slip */}
           <div className="mt-2 flex items-center gap-1.5">
             <span className="text-[11px] text-muted-foreground shrink-0">View:</span>
-            <div className="flex gap-1">
+            <div className="flex gap-1 flex-wrap">
               <button
                 type="button"
                 onClick={() => setMode('slip')}
@@ -249,6 +260,18 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
               >
                 <FileText className="size-3" /> Invoice
               </button>
+              {hasDriverSlip && (
+                <button
+                  type="button"
+                  onClick={() => setMode('driver')}
+                  className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    mode === 'driver' ? 'border-blue-600 bg-blue-600 text-white' : 'bg-card hover:bg-accent'
+                  }`}
+                  aria-pressed={mode === 'driver'}
+                >
+                  <Truck className="size-3" /> Driver
+                </button>
+              )}
             </div>
           </div>
           {/* Bill language — flips the slip + bill text instantly, saved on the invoice */}
@@ -293,6 +316,8 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
               <div className="shadow-md bg-white" style={mode === 'invoice' ? { zoom: 0.7 } : undefined}>
                 {mode === 'invoice' ? (
                   <InvoiceDoc invoice={invoice} settings={settings} rootRef={(n) => (invoiceRef.current = n)} />
+                ) : mode === 'driver' ? (
+                  <DriverSlip invoice={invoice} settings={settings} rootRef={(n) => (driverRef.current = n)} />
                 ) : (
                   <ThermalSlip invoice={invoice} settings={settings} rootRef={(n) => (slipRef.current = n)} />
                 )}
@@ -387,6 +412,8 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
         <div ref={captureRef}>
           {mode === 'invoice' ? (
             <InvoiceDoc invoice={invoice} settings={settings} />
+          ) : mode === 'driver' ? (
+            <DriverSlip invoice={invoice} settings={settings} />
           ) : (
             <ThermalSlip invoice={invoice} settings={settings} />
           )}

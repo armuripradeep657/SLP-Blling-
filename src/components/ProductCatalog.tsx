@@ -14,10 +14,12 @@ import {
 import { Plus, Search, PackageX } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { priceForSize } from '@/lib/billing';
+import { useT } from '@/hooks/use-app-lang';
 import { PRODUCT_CATEGORIES } from '@/lib/defaultData';
 import type { Product } from '@/lib/types';
 
 export default function ProductCatalog({ onOpenCustom }: { onOpenCustom: () => void }) {
+  const t = useT();
   const products = useStore((s) => s.products);
   const addToCart = useStore((s) => s.addToCart);
   const [query, setQuery] = useState('');
@@ -45,13 +47,13 @@ export default function ProductCatalog({ onOpenCustom }: { onOpenCustom: () => v
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search products…"
+            placeholder={t('cat.search')}
             className="h-11 pl-9 rounded-xl"
             aria-label="Search products"
           />
         </div>
         <Button variant="outline" className="h-11 rounded-xl px-3" onClick={onOpenCustom}>
-          <Plus className="size-4" /> Custom
+          <Plus className="size-4" /> {t('cat.custom')}
         </Button>
       </div>
 
@@ -74,7 +76,7 @@ export default function ProductCatalog({ onOpenCustom }: { onOpenCustom: () => v
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
           <PackageX className="size-10 opacity-40" />
-          <p className="text-sm">No products found. Add products in the Products tab.</p>
+          <p className="text-sm">{t('cat.noProducts')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3">
@@ -88,6 +90,7 @@ export default function ProductCatalog({ onOpenCustom }: { onOpenCustom: () => v
 }
 
 function ProductCard({ product, onAddSize }: { product: Product; onAddSize: (size: string) => void }) {
+  const t = useT();
   const outOfStock = typeof product.stock === 'number' && product.stock <= 0;
   return (
     <div className={`rounded-xl border bg-card overflow-hidden flex flex-col ${outOfStock ? 'opacity-60' : ''}`}>
@@ -103,7 +106,7 @@ function ProductCard({ product, onAddSize }: { product: Product; onAddSize: (siz
               outOfStock ? 'bg-red-600 text-white' : 'bg-black/60 text-white'
             }`}
           >
-            {outOfStock ? 'Out of stock' : `Stock: ${product.stock}`}
+            {outOfStock ? t('cat.outOfStock') : `${t('cat.stock')}: ${product.stock}`}
           </span>
         )}
       </div>
@@ -112,7 +115,7 @@ function ProductCard({ product, onAddSize }: { product: Product; onAddSize: (siz
           <p className="text-[13px] font-semibold leading-tight line-clamp-2">{product.name}</p>
           {product.nameTe ? <p className="text-[11px] text-blue-800 leading-tight line-clamp-1">{product.nameTe}</p> : null}
           <p className="text-xs text-muted-foreground mt-0.5">
-            from <span className="font-bold text-blue-700">₹{product.price}</span>
+            {t('cat.from')} <span className="font-bold text-blue-700">₹{product.price}</span>
           </p>
         </div>
         <div className="flex flex-wrap gap-1 mt-auto">
@@ -137,6 +140,7 @@ function ProductCard({ product, onAddSize }: { product: Product; onAddSize: (siz
 }
 
 export function CustomItemDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const t = useT();
   const addCustomItem = useStore((s) => s.addCustomItem);
   const [name, setName] = useState('');
   const [nameTe, setNameTe] = useState('');
@@ -159,32 +163,29 @@ export function CustomItemDialog({ open, onOpenChange }: { open: boolean; onOpen
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Add custom item</DialogTitle>
-          <DialogDescription>
-            Added to the bill now — and saved to your product list with this name, size &amp; price for next time.
-          </DialogDescription>
+          <DialogTitle>{t('cat.customItem')}</DialogTitle>
+          <DialogDescription>{t('cat.customItemDesc')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <Input placeholder="Item name *" value={name} onChange={(e) => setName(e.target.value)} className="h-11" />
+          <Input placeholder={t('cat.itemName')} value={name} onChange={(e) => setName(e.target.value)} className="h-11" />
           <Input
-            placeholder="Item name in Telugu (optional — తెలుగు పేరు)"
+            placeholder={t('cat.itemNameTe')}
             value={nameTe}
             onChange={(e) => setNameTe(e.target.value)}
             className="h-11"
           />
           <div className="grid grid-cols-2 gap-2">
-            <Input placeholder="Size (e.g. 10FT)" value={size} onChange={(e) => setSize(e.target.value)} className="h-11" />
-            <Input placeholder="Price ₹ *" type="number" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} className="h-11" />
+            <Input placeholder={t('cat.sizePh')} value={size} onChange={(e) => setSize(e.target.value)} className="h-11" />
+            <Input placeholder={t('cat.pricePh')} type="number" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} className="h-11" />
           </div>
-          <Input placeholder="Quantity" type="number" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} className="h-11" />
+          <Input placeholder={t('cat.qty')} type="number" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} className="h-11" />
         </div>
         <DialogFooter>
           <Button onClick={submit} className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white">
-            Add to Bill
+            {t('cat.addToBill')}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
-

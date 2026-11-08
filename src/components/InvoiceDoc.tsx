@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { fmt, fmtShort, upiUri } from '@/lib/billing';
-import { labels, fill, companyNameFor, itemLabel } from '@/lib/i18n';
+import { labels, fill, slipFontFamily, companyLines, itemLabel, cur } from '@/lib/i18n';
 import { useQrDataUrl } from '@/hooks/use-qr';
 import type { BusinessSettings, Invoice } from '@/lib/types';
 
@@ -24,11 +24,9 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
   const w = 430;
   const lang = invoice.language;
   const L = labels(lang);
-  const isTe = lang === 'te';
-  const font = isTe
-    ? '"Noto Sans Telugu", Arial, Helvetica, sans-serif'
-    : 'Arial, Helvetica, sans-serif';
-  const company = companyNameFor(settings, lang);
+  const isTe = lang !== 'en'; // tighter spacing when Telugu glyphs are used
+  const font = slipFontFamily(lang);
+  const rupee = cur(lang);
 
   const isFullyPaid = invoice.totals.balance <= 0;
 
@@ -78,7 +76,7 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
       <span>{label}</span>
       <span style={{ whiteSpace: 'nowrap' }}>
         {opts?.minus ? '- ' : ''}
-        {isTe ? 'రూ.' : 'Rs.'} {value}
+        {rupee} {value}
       </span>
     </div>
   );
@@ -139,7 +137,19 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
           }}
         />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 15.5, lineHeight: 1.25 }}>{company}</div>
+          {companyLines(settings, lang).map((line, i) => (
+            <div
+              key={i}
+              style={{
+                fontWeight: 700,
+                fontSize: i === 0 ? 15.5 : 12.5,
+                lineHeight: 1.25,
+                textTransform: i === 0 ? 'none' : 'none',
+              }}
+            >
+              {line}
+            </div>
+          ))}
           {settings.address ? (
             <div style={{ fontSize: 10.5, color: '#333', whiteSpace: 'pre-wrap' }}>{settings.address}</div>
           ) : null}
@@ -165,7 +175,7 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
             {L.billTo}
           </div>
           <div style={{ fontWeight: 700, fontSize: 13.5, marginTop: 1 }}>
-            {invoice.customer.name || (isTe ? 'నామవాచక కస్టమర్' : 'Walk-in customer')}
+            {invoice.customer.name || (lang === 'en' ? 'Walk-in customer' : 'నామవాచక కస్టమర్ / Walk-in')}
           </div>
           {invoice.customer.phone ? <div style={{ fontSize: 11.5 }}>{L.mMobile}: {invoice.customer.phone}</div> : null}
           {invoice.customer.address ? (
@@ -205,7 +215,7 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
                 <div style={{ fontWeight: 700 }}>{itemLabel(it, lang)}</div>
                 {(it.discount || 0) > 0 ? (
                   <div style={{ fontSize: 10, color: '#b91c1c' }}>
-                    {L.lessDiscount} - {isTe ? 'రూ.' : 'Rs.'} {fmt(it.discount)}
+                    {L.lessDiscount} - {rupee} {fmt(it.discount)}
                   </div>
                 ) : null}
               </td>
@@ -241,13 +251,13 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '2.5px 0', fontSize: 12.5 }}>
           <span>{L.paid}</span>
           <span>
-            {isTe ? 'రూ.' : 'Rs.'} {fmt(invoice.totals.paid)}
+            {rupee} {fmt(invoice.totals.paid)}
           </span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '2.5px 0', fontSize: 12.5, fontWeight: 700 }}>
           <span>{invoice.totals.balance > 0 ? L.balanceDue : L.balance}</span>
           <span style={{ color: invoice.totals.balance > 0 ? '#b91c1c' : '#15803d' }}>
-            {isTe ? 'రూ.' : 'Rs.'} {fmt(invoice.totals.balance)}
+            {rupee} {fmt(invoice.totals.balance)}
           </span>
         </div>
         {invoice.status !== 'Paid' ? (
@@ -302,7 +312,7 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 22 }}>
         <div style={{ textAlign: 'center', minWidth: 170 }}>
           <div style={{ fontSize: 11, fontWeight: 700 }}>
-            {fill(L.sigFor, { company })}
+            {fill(L.sigFor, { company: companyLines(settings, lang).join(' / ') })}
           </div>
           <div style={{ borderTop: '1px solid #111', marginTop: 30, paddingTop: 3, fontSize: 11.5, fontWeight: 700 }}>
             {settings.ownerName}

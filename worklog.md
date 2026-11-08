@@ -231,3 +231,30 @@ Work Log:
 
 Stage Summary:
 - The PWA is now self-updating on every device: the owner changes anything here (products, prices, labels, features) and every phone using the same link — browser or installed app — picks up the new version automatically within a minute (or instantly via Settings -> Check for updates), with no reinstall and no data loss
+
+---
+Task ID: 14
+Agent: main
+Task: "Languages: app switch English ↔ తెలుగు, bills English/Telugu/both; Delivery + driver slip (tick Delivered → driver, vehicle, address; slip shows items & quantities, no prices); Ledger day view income/spent/net + all-days by month + Dues receive (income on day received) + Expenses (labour wages, diesel, raw material); photo upload + camera option; 1-time install notification after update, closed = never again"
+
+Work Log:
+- types.ts: BillLanguage += 'both' (bilingual bills); BusinessSettings += appLang ('en'|'te' app-UI language); Invoice += delivery?: DeliveryInfo + payments?: PaymentRecord[]; new DeliveryInfo/PaymentRecord/Expense/ExpenseCategory; MainTab += 'ledger'; BillConfig += delivery draft
+- i18n.ts: BOTH_LABELS (Telugu / English combined labels, built from EN+TE incl. modes), companyLines() (Telugu name above English name on docs), itemLabel('both') = "te / en", slipFontFamily('both') → Telugu-capable stack, cur() currency helper; new DriverLabels (EN/TE/Both) + driverLabels(); full APP_EN/APP_TE app-UI dictionaries (~120 keys) + appT()
+- billing.ts: localDateKey/localMonthKey (local-TZ day/month keys), paymentsOf(inv) (synthesizes payment records for old invoices), applyPayment(inv, amount, mode, dateISO) → updates paid/balance/status + appends record
+- store.ts: completeInvoice saves delivery (when Delivered ticked) + initial payment record (Due advances recorded as Cash income on bill date); updateInvoiceStatus records newly-paid amount as income today; new receiveDuePayment(id, amount, mode), addExpense, deleteExpense, expenses state (+partialize); delivery resets each bill, language stays sticky
+- BillPanel: bill-language 3-way segmented (English | తెలుగు | రెండూ · Both); new Delivery section — Delivered checkbox reveals Driver name / Vehicle number / Delivery address inputs; all panel labels translated via useT()
+- New DriverSlip.tsx: inline-styled thermal driver slip — logo watermark + header logo, company lines, DELIVERY SLIP band, invoice no/date/customer, Driver/Vehicle/Address rows, ITEM|QTY list (item + size + "x n"), Total Quantity, "no prices" note, Driver Signature line — zero Rs./₹ anywhere
+- ThermalSlip + InvoiceDoc: 'both' support — bilingual labels, two company-name lines, Telugu-capable fonts, tighter stamp spacing when non-English
+- InvoiceModal: DocView 'slip'|'invoice'|'driver' + Truck Driver chip (only when invoice.delivery.delivered), 3 language chips, DriverSlip preview + capture (fileName SLP-INV-x-driver.png), per-view titles
+- HistoryView: Invoice + Slip + Driver buttons per row (Driver only for delivered invoices), flex-wrap so all buttons fit on mobile, Telugu labels/status
+- New LedgerView.tsx: Day (date picker, Income/Spent/Net stat cards + received-from/expenses transaction list), All days (month picker, per-day income/spent/net table + month totals), Dues (total-due KPI, per-invoice Receive panel with prefilled balance + Cash/UPI/Card → receiveDuePayment → income today + toast), Expenses (date/category Labour wages|Diesel|Raw material|Other/amount/note form, month spent KPI, list + delete); Telugu category labels
+- Navigation: 5 tabs (Bill/Products/Ledger/History/Settings) mobile grid-cols-5 + desktop, header quick English↔తెలుగు pill toggle (static aria-label), Telugu company name in header when appLang=te, translated labels
+- SettingsView: App language section (English | తెలుగు segmented, saved to settings.appLang), translated section headings/fields/buttons
+- ProductsView: image section now has BOTH "Upload photo" (gallery) and "Take with camera" (input capture="environment") buttons; translated form
+- PwaInstall: rebuilt into ONE-TIME post-update install notification — localStorage slp-update-notice-seen stores APP_VERSION; popup (EN+TE text, benefits, Install/How-to) shows once per version, Close records it and it NEVER returns until the next update; isMobile now also matches (pointer: coarse)
+- New lib/version.ts APP_VERSION='15' (bump with every release); sw.js CACHE v14 → v15
+- Translated BillTab/ProductCatalog/page.tsx headings via useT()
+- Verified scripts/verify-task14.mjs (Playwright iPhone 390x844, fresh storage) — 43/43 assertions green, ZERO console/page errors: one-time popup appears→close→persisted v15→never again after reload; nav+header+settings fully Telugu and back; 3 bill-language chips; bilingual slip (ఉపమొత్తం / Subtotal, మొత్తం / TOTAL, both company names, watermark); direct send https://wa.me/919876501234 image-only (no ?text=); Delivered tick → driver fields → driver slip with RAMESH/AP07AB 1234/items+qty and NO prices; UPI QR on balance; History Invoice/Slip/Driver buttons all open correct docs; ledger Day income 300 → expense Diesel 120 → Net 180; Dues receive 100 prefilled+confirmed → cleared + toast; All-days month table 400/120/280 with month-total row; product photo upload renders resized dataURL + camera button present; lint clean; dev.log clean; screenshots v15-*.png in download/
+
+Stage Summary:
+- The app UI now switches between English and తెలుగు everywhere; bills render in English, Telugu or BOTH (bilingual labels + both company names); Delivered tick adds driver/vehicle/address and produces a price-free driver slip (viewable + shareable from History); full ledger (day view, monthly list, dues receipts counting as same-day income, categorized expenses); product photos work from gallery AND camera; every update pops a one-time install notification that never returns once closed
