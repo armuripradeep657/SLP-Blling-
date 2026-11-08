@@ -38,7 +38,7 @@ export function whatsappMessage(inv: Invoice, s: BusinessSettings): string {
   lines.push(fill(L.mPaidBal, { paid: fmt(inv.totals.paid), balance: fmt(inv.totals.balance) }));
   if (inv.status === 'Paid') lines.push('');
   lines.push('');
-  if (s.upiId) lines.push(`UPI ID: ${s.upiId}`);
+  // UPI ID is intentionally NOT printed — the balance QR in the bill image carries it
   lines.push(inv.language === 'en' ? s.returnPolicy || L.policy : L.policy);
   lines.push('');
   lines.push(`${L.mThanks} \u{1F64F}`);

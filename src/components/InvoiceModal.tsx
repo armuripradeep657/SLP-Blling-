@@ -312,8 +312,13 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
           <div className="mx-4 rounded-lg border bg-neutral-100">
             <div className="flex justify-center py-4">
               {/* Invoice doc is 430px wide — zoom the PREVIEW to fit the modal;
-                  the off-screen capture node below stays full-size */}
-              <div className="shadow-md bg-white" style={mode === 'invoice' ? { zoom: 0.7 } : undefined}>
+                  the off-screen capture node below stays full-size.
+                  Keyed by view+language so switching re-plays the entrance animation */}
+              <div
+                key={`${mode}-${invoice.language}`}
+                className="anim-fade-up shadow-md bg-white"
+                style={mode === 'invoice' ? { zoom: 0.7 } : undefined}
+              >
                 {mode === 'invoice' ? (
                   <InvoiceDoc invoice={invoice} settings={settings} rootRef={(n) => (invoiceRef.current = n)} />
                 ) : mode === 'driver' ? (

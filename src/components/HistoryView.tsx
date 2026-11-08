@@ -57,14 +57,14 @@ export default function HistoryView({
     <div className="space-y-3">
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-xl border bg-card p-3">
+        <div className="anim-pop rounded-xl border bg-card p-3">
           <p className="text-xs text-muted-foreground">{t('history.totalBilled')}</p>
           <p className="text-xl font-extrabold tabular-nums">₹{fmt(totalSales)}</p>
           <p className="text-[11px] text-muted-foreground">
             {invoices.length} {t('history.invoices')}
           </p>
         </div>
-        <div className="rounded-xl border bg-card p-3">
+        <div className="anim-pop rounded-xl border bg-card p-3" style={{ animationDelay: '60ms' }}>
           <p className="text-xs text-muted-foreground">{t('history.balanceDue')}</p>
           <p className="text-xl font-extrabold tabular-nums text-red-600">₹{fmt(totalDue)}</p>
           <p className="text-[11px] text-muted-foreground">
@@ -101,8 +101,12 @@ export default function HistoryView({
       </div>
 
       <ul className="space-y-2">
-        {filtered.map((inv) => (
-          <li key={inv.id} className="rounded-xl border bg-card p-3">
+        {filtered.map((inv, i) => (
+          <li
+            key={inv.id}
+            className="anim-fade-up rounded-xl border bg-card p-3"
+            style={{ animationDelay: `${Math.min(i, 10) * 45}ms` }}
+          >
             <button className="w-full text-left" onClick={() => onOpenInvoice(inv, 'invoice')} aria-label={`Open invoice ${inv.no}`}>
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">

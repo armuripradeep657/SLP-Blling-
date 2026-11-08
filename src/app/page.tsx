@@ -67,7 +67,7 @@ export default function Home() {
         {!mounted ? (
           <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">{t('page.loading')}</div>
         ) : (
-          <>
+          <div key={activeTab} className="anim-fade-up">
             {activeTab === 'bill' && (
               <div className="lg:grid lg:grid-cols-[1fr_400px] lg:gap-6 lg:items-start">
                 <div>
@@ -109,7 +109,7 @@ export default function Home() {
                 <SettingsView />
               </div>
             )}
-          </>
+          </div>
         )}
       </main>
 

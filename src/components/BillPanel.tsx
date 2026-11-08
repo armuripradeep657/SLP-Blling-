@@ -163,11 +163,15 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
           </Button>
         </div>
         <ul className="space-y-2">
-          {cart.map((it) => {
+          {cart.map((it, i) => {
             const net = lineNet(it);
             const shownName = cfg.language === 'te' && it.nameTe ? it.nameTe : it.name;
             return (
-              <li key={it.key} className="rounded-lg border bg-card p-2.5">
+              <li
+                key={it.key}
+                className="anim-fade-up rounded-lg border bg-card p-2.5"
+                style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium leading-tight">{shownName}</p>
@@ -431,7 +435,7 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
 
       <Button
         onClick={onCompleteClick}
-        className="w-full h-14 text-base font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20"
+        className="anim-glow w-full h-14 text-base font-bold bg-blue-600 hover:bg-blue-700 text-white"
       >
         <ReceiptText className="size-5" />
         {t('bill.complete')}

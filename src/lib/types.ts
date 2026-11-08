@@ -128,6 +128,8 @@ export interface Expense {
   category: ExpenseCategory;
   amount: number;
   note?: string;
+  /** How the money was paid out — shown in the ledger (Cash / UPI / Card) */
+  mode?: PaymentMode;
 }
 
 export type MainTab = 'bill' | 'products' | 'ledger' | 'history' | 'settings';

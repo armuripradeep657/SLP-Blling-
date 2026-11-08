@@ -211,7 +211,7 @@ export default function PwaInstall() {
         aria-label="Install app notification"
         className="fixed inset-x-3 bottom-[4.75rem] z-50 sm:bottom-6 sm:left-auto sm:right-6 sm:w-96"
       >
-        <div className="relative rounded-2xl border border-blue-200 bg-white p-4 shadow-2xl">
+        <div className="anim-sheet relative rounded-2xl border border-blue-200 bg-white p-4 shadow-2xl">
           <button
             onClick={dismiss}
             aria-label="Close install notification"

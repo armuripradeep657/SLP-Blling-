@@ -282,9 +282,8 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
             style={{ display: 'block', margin: '0 auto', imageRendering: 'pixelated' }}
           />
           <div style={{ fontSize: baseFont - 1.2, marginTop: 2 }}>
-            {isUpiQr
-              ? fill(L.scanPay, { rs: fmt(invoice.totals.balance), upi: settings.upiId })
-              : L.scanChat}
+            {/* UPI ID hidden — the QR itself carries the payment handle */}
+            {isUpiQr ? fill(L.scanPay, { rs: fmt(invoice.totals.balance) }) : L.scanChat}
           </div>
         </div>
       ) : null}

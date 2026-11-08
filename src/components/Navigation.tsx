@@ -90,18 +90,18 @@ export function BottomNav() {
               key={x.id}
               onClick={() => setActiveTab(x.id)}
               aria-current={active ? 'page' : undefined}
-              className={`relative flex h-16 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${
+              className={`relative flex h-16 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-all active:scale-90 ${
                 active ? 'text-blue-700' : 'text-neutral-500'
               }`}
             >
               <Icon className="size-5" active={active} />
               {x.id === 'bill' && count > 0 && (
-                <span className="absolute right-[18%] top-2 rounded-full bg-blue-600 px-1.5 text-[10px] font-bold text-white">
+                <span key={count} className="anim-badge absolute right-[18%] top-2 rounded-full bg-blue-600 px-1.5 text-[10px] font-bold text-white">
                   {count}
                 </span>
               )}
               {x.label}
-              {active && <span className="absolute top-0 h-0.5 w-10 rounded-full bg-blue-600" />}
+              {active && <span className="anim-fade-up absolute top-0 h-0.5 w-10 rounded-full bg-blue-600" />}
             </button>
           );
         })}
@@ -130,7 +130,7 @@ export function DesktopTabs() {
           role="tab"
           aria-selected={activeTab === x.id}
           onClick={() => setActiveTab(x.id)}
-          className={`rounded-full px-5 py-2 text-sm font-semibold transition-colors ${
+          className={`rounded-full px-5 py-2 text-sm font-semibold transition-all active:scale-95 ${
             activeTab === x.id ? 'bg-blue-600 text-white shadow' : 'border bg-card hover:bg-accent'
           }`}
         >
