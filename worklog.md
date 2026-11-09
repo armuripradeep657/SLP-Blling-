@@ -313,3 +313,17 @@ Work Log:
 
 Stage Summary:
 - Adding items now shows the live bill right on the page under the products — owner sees items, edits prices/qty and completes the bill without opening anything
+
+---
+Task ID: 18
+Agent: main
+Task: "Remove current bill form bill page show only view bill after enter customer name mobile number new evry time"
+
+Work Log:
+- Reverted the inline bill panel (Task 17): Bill tab again shows ONLY the product catalog + sticky "View bill" bar; tapping View bill opens the bottom sheet with the full bill form (BillTab back to Sheet flow, inline #current-bill removed)
+- Fresh customer every bill: store completeInvoice() now resets customer to { name:'', phone:'', address:'' } alongside the existing billConfig reset — the last customer's name/mobile no longer pre-fills the next bill (recent-customer chips kept as optional quick-pick)
+- lib/version.ts 18 → 19; sw.js CACHE v18 → v19
+- Verified: verify-task16.mjs 52/52 green, zero console/page errors — new Phase C0 asserts NO bill form on the page, sheet opens with EMPTY name+mobile, and Phase D asserts the SECOND bill is blank again after Ravi Kumar's bill; screenshots v19-billpage-viewbill.png / v19-sheet-fresh-customer.png; lint clean
+
+Stage Summary:
+- Bill page is clean (products + View bill only); every bill starts with a blank customer so name and mobile are typed new each time

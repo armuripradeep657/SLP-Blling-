@@ -1,0 +1,22 @@
+import { chromium } from 'playwright';
+const run = async () => {
+  const browser = await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await page.goto('http://localhost:3000', { waitUntil: 'networkidle' });
+  await page.evaluate(() => localStorage.clear());
+  await page.goto('http://localhost:3000', { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1800);
+  const popup = page.locator('[aria-label="Install app notification"]');
+  if (await popup.count()) await popup.getByRole('button', { name: 'Close install notification' }).click();
+  await page.locator('button', { hasText: '+2FT' }).first().click();
+  await page.waitForTimeout(300);
+  await page.locator('button', { hasText: '+3FT' }).first().click();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: '/home/z/my-project/download/v19-billpage-viewbill.png' });
+  await page.getByRole('button', { name: 'View bill' }).click();
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: '/home/z/my-project/download/v19-sheet-fresh-customer.png' });
+  await browser.close();
+  console.log('done');
+};
+run();

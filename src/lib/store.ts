@@ -247,6 +247,8 @@ export const useStore = create<BillingStore>()(
           products: updatedProducts,
           cart: [],
           lastInvoice: invoice,
+          // fresh customer for the next bill — name & mobile are entered new every time
+          customer: { name: '', phone: '', address: '' },
           // fresh config for the next bill (Cash mode, no leftover discount/charges;
           // chosen bill language stays sticky)
           billConfig: { ...DEFAULT_CONFIG, language: billConfig.language },
