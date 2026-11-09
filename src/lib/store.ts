@@ -11,6 +11,7 @@ import type {
   CartItem,
   Customer,
   Expense,
+  IncomeEntry,
   Invoice,
   MainTab,
   PaymentMode,
@@ -29,6 +30,8 @@ interface BillingStore {
   lastInvoice: Invoice | null;
 
   expenses: Expense[];
+  /** Manual income entries (money received outside bills) */
+  incomes: IncomeEntry[];
 
   setActiveTab: (t: MainTab) => void;
   saveSettings: (s: Partial<BusinessSettings>) => void;
@@ -57,6 +60,9 @@ interface BillingStore {
   receiveDuePayment: (id: string, amount: number, mode: PaymentMode) => void;
   addExpense: (e: Omit<Expense, 'id'>) => void;
   deleteExpense: (id: string) => void;
+  /** Add a manual income entry (name + Cash/UPI mode) — counts in the ledger day/month */
+  addIncome: (e: Omit<IncomeEntry, 'id'>) => void;
+  deleteIncome: (id: string) => void;
 }
 
 const DEFAULT_CONFIG: BillConfig = {
@@ -83,6 +89,7 @@ export const useStore = create<BillingStore>()(
       activeTab: 'bill',
       lastInvoice: null,
       expenses: [],
+      incomes: [],
 
       setActiveTab: (t) => set({ activeTab: t }),
 
@@ -301,6 +308,17 @@ export const useStore = create<BillingStore>()(
 
       deleteExpense: (id) =>
         set((st) => ({ expenses: st.expenses.filter((x) => x.id !== id) })),
+
+      addIncome: (e) =>
+        set((st) => ({
+          incomes: [
+            { ...e, id: `inc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` },
+            ...st.incomes,
+          ],
+        })),
+
+      deleteIncome: (id) =>
+        set((st) => ({ incomes: st.incomes.filter((x) => x.id !== id) })),
     }),
     {
       name: 'slp-cement-billing-v1',
@@ -328,6 +346,7 @@ export const useStore = create<BillingStore>()(
         customer: st.customer,
         activeTab: st.activeTab,
         expenses: st.expenses,
+        incomes: st.incomes,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) state.hydrated = true;

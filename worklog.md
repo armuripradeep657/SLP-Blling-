@@ -281,3 +281,20 @@ Stage Summary:
 - InvoiceDoc redesigned into a unique navy-gradient + gold-accent document (rotated status stamp, meta chips, zebra table, gradient TOTAL banner, scan-to-pay card) using the same narasimha badge logo + watermark
 - Animation layer (slp-fade-up/pop/slide/sheet/badge/glow keyframes with reduced-motion kill-switch) applied to tab switches, nav badge, buttons, history/ledger rows, invoice preview and install popup
 - Re-verified in a fresh sandbox run: scripts/verify-task16.mjs — 33/33 assertions green, zero console/page errors; screenshots v16-verify-*.png in download/
+
+---
+Task ID: 16
+Agent: main
+Task: "i have to add income details and spent details with that names and it's by cash or upi"
+
+Work Log:
+- Root cause: ledger income came ONLY from invoice payments/dues receipts — there was no way to ADD a standalone income entry (expenses already had an add form with name+mode)
+- types.ts: new IncomeEntry { id, dateISO, name, amount, mode? }
+- store.ts: incomes[] state + addIncome/deleteIncome actions + persisted in partialize (key slp-cement-billing-v1)
+- LedgerView: new "Income" tab (Day | All days | Income | Expenses | Dues) — Add-income form (date, amount, Name/details with Telugu placeholder, Cash/UPI/Card mode select, green Add button) + month list with green income rows, mode chips and delete; manual incomes feed rowsByDay so they appear in the Day view and the expandable All-days detail with their NAME + mode chip, and count in day/month income & net totals
+- i18n: ledger.incName/incPlaceholder/addIncome/incAdded/monthIncome/noIncomes in EN + TE (పేరు / వివరాలు · ఆదాయం జోడించు …)
+- lib/version.ts APP_VERSION 16 → 17; sw.js CACHE v16 → v17 (installed devices update + one-time popup re-arms)
+- Verified: scripts/verify-task16.mjs — 47/47 assertions green, zero console/page errors; new Phase F2 covers add (Ramesh · stone sale ₹500 UPI chip), day-view row, month total 900.00, delete + totals restore; lint clean; screenshot v16-verify-income-added.png
+
+Stage Summary:
+- Ledger now handles BOTH sides by hand: "Income" tab to add money received outside bills (name + Cash/UPI/Card) and "Expenses" tab for spends; every entry everywhere (Day view, All-days expand, month lists) carries its name and a Cash/UPI chip

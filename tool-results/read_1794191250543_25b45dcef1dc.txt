@@ -1,0 +1,607 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useMemo, useState } from 'react';
+     4→     4→import { Button } from '@/components/ui/button';
+     5→     5→import { Input } from '@/components/ui/input';
+     6→     6→import { Label } from '@/components/ui/label';
+     7→     7→import {
+     8→     8→  Select,
+     9→     9→  SelectContent,
+    10→    10→  SelectItem,
+    11→    11→  SelectTrigger,
+    12→    12→  SelectValue,
+    13→    13→} from '@/components/ui/select';
+    14→    14→import { useToast } from '@/hooks/use-toast';
+    15→    15→import {
+    16→    16→  ArrowDownRight,
+    17→    17→  ArrowUpRight,
+    18→    18→  CalendarDays,
+    19→    19→  ChevronDown,
+    20→    20→  IndianRupee,
+    21→    21→  Trash2,
+    22→    22→  TrendingUp,
+    23→    23→  Truck,
+    24→    24→  Wallet,
+    25→    25→} from 'lucide-react';
+    26→    26→import { useStore } from '@/lib/store';
+    27→    27→import { fmt, fmtShort, localDateKey, localMonthKey, paymentsOf } from '@/lib/billing';
+    28→    28→import { useAppLang, useT } from '@/hooks/use-app-lang';
+    29→    29→import type { AppLanguage, ExpenseCategory, PaymentMode } from '@/lib/types';
+    30→    30→
+    31→    31→const EXPENSE_CATEGORIES: ExpenseCategory[] = ['Labour wages', 'Diesel', 'Raw material', 'Other'];
+    32→    32→
+    33→    33→const CATEGORY_TE: Record<ExpenseCategory, string> = {
+    34→    34→  'Labour wages': 'కూలీ వేతనాలు',
+    35→    35→  Diesel: 'డీజిల్',
+    36→    36→  'Raw material': 'ముడి పదార్థం',
+    37→    37→  Other: 'ఇతర',
+    38→    38→};
+    39→    39→
+    40→    40→const MODES: PaymentMode[] = ['Cash', 'UPI', 'Card'];
+    41→    41→
+    42→    42→type LedgerTab = 'day' | 'allDays' | 'dues' | 'expenses';
+    43→    43→
+    44→    44→/** One money row in the ledger — income (bill payment) or spent (expense) */
+    45→    45→interface LedgerRow {
+    46→    46→  time: string;
+    47→    47→  /** main line — customer name for income, category for spent */
+    48→    48→  label: string;
+    49→    49→  /** secondary line — invoice no / note */
+    50→    50→  sub: string;
+    51→    51→  amount: number;
+    52→    52→  kind: 'in' | 'out';
+    53→    53→  /** Cash / UPI / Card — shown as a chip on every row */
+    54→    54→  mode?: PaymentMode;
+    55→    55→}
+    56→    56→
+    57→    57→function categoryLabel(c: ExpenseCategory, appLang: AppLanguage): string {
+    58→    58→  return appLang === 'te' ? CATEGORY_TE[c] : c;
+    59→    59→}
+    60→    60→
+    61→    61→function modeLabel(m: PaymentMode, appLang: AppLanguage): string {
+    62→    62→  if (appLang !== 'te') return m;
+    63→    63→  return m === 'Cash' ? 'నగదు' : m === 'Card' ? 'కార్డ్' : m === 'Due' ? 'బాకీ' : 'UPI';
+    64→    64→}
+    65→    65→
+    66→    66→/** Cash / UPI / Card chip — on income and spent rows alike */
+    67→    67→function ModeChip({ mode, appLang }: { mode?: PaymentMode; appLang: AppLanguage }) {
+    68→    68→  if (!mode) return null;
+    69→    69→  const cls =
+    70→    70→    mode === 'Cash'
+    71→    71→      ? 'bg-green-100 text-green-800'
+    72→    72→      : mode === 'UPI'
+    73→    73→        ? 'bg-blue-100 text-blue-800'
+    74→    74→        : mode === 'Due'
+    75→    75→          ? 'bg-amber-100 text-amber-800'
+    76→    76→          : 'bg-purple-100 text-purple-800';
+    77→    77→  return (
+    78→    78→    <span className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${cls}`}>
+    79→    79→      {modeLabel(mode, appLang)}
+    80→    80→    </span>
+    81→    81→  );
+    82→    82→}
+    83→    83→
+    84→    84→/** Stat card used across ledger tabs (module-level — never created during render) */
+    85→    85→function StatCard({ label, value, kind }: { label: string; value: number; kind: 'in' | 'out' | 'net' }) {
+    86→    86→  return (
+    87→    87→    <div className="anim-pop rounded-xl border bg-card p-3">
+    88→    88→      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+    89→    89→        {kind === 'in' ? (
+    90→    90→          <ArrowUpRight className="size-3.5 text-green-700" />
+    91→    91→        ) : kind === 'out' ? (
+    92→    92→          <ArrowDownRight className="size-3.5 text-red-600" />
+    93→    93→        ) : (
+    94→    94→          <TrendingUp className="size-3.5 text-blue-700" />
+    95→    95→        )}
+    96→    96→        {label}
+    97→    97→      </p>
+    98→    98→      <p
+    99→    99→        className={`mt-0.5 text-lg font-extrabold tabular-nums ${
+   100→   100→          kind === 'in' ? 'text-green-700' : kind === 'out' ? 'text-red-600' : value < 0 ? 'text-red-600' : 'text-blue-800'
+   101→   101→        }`}
+   102→   102→      >
+   103→   103→        ₹{fmt(value)}
+   104→   104→      </p>
+   105→   105→    </div>
+   106→   106→  );
+   107→   107→}
+   108→   108→
+   109→   109→/** Row used by the day view AND the expandable all-days detail */
+   110→   110→function LedgerRowItem({ r, appLang, i }: { r: LedgerRow; appLang: AppLanguage; i: number }) {
+   111→   111→  return (
+   112→   112→    <li
+   113→   113→      className="anim-fade-up flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2"
+   114→   114→      style={{ animationDelay: `${Math.min(i, 10) * 40}ms` }}
+   115→   115→    >
+   116→   116→      <div className="flex min-w-0 items-center gap-2.5">
+   117→   117→        {r.kind === 'in' ? (
+   118→   118→          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700">
+   119→   119→            <ArrowUpRight className="size-4" />
+   120→   120→          </span>
+   121→   121→        ) : (
+   122→   122→          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+   123→   123→            <ArrowDownRight className="size-4" />
+   124→   124→          </span>
+   125→   125→        )}
+   126→   126→        <div className="min-w-0">
+   127→   127→          <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+   128→   128→            <span className="truncate">{r.label}</span>
+   129→   129→            <ModeChip mode={r.mode} appLang={appLang} />
+   130→   130→          </p>
+   131→   131→          <p className="truncate text-[11px] text-muted-foreground">
+   132→   132→            {r.time}
+   133→   133→            {r.sub ? ` · ${r.sub}` : ''}
+   134→   134→          </p>
+   135→   135→        </div>
+   136→   136→      </div>
+   137→   137→      <span className={`shrink-0 text-sm font-bold tabular-nums ${r.kind === 'in' ? 'text-green-700' : 'text-red-600'}`}>
+   138→   138→        {r.kind === 'in' ? '+' : '−'} ₹{fmt(r.amount)}
+   139→   139→      </span>
+   140→   140→    </li>
+   141→   141→  );
+   142→   142→}
+   143→   143→
+   144→   144→export default function LedgerView() {
+   145→   145→  const t = useT();
+   146→   146→  const appLang = useAppLang();
+   147→   147→  const invoices = useStore((s) => s.invoices);
+   148→   148→  const expenses = useStore((s) => s.expenses);
+   149→   149→  const receiveDuePayment = useStore((s) => s.receiveDuePayment);
+   150→   150→  const addExpense = useStore((s) => s.addExpense);
+   151→   151→  const deleteExpense = useStore((s) => s.deleteExpense);
+   152→   152→  const { toast } = useToast();
+   153→   153→
+   154→   154→  const today = localDateKey(new Date());
+   155→   155→  const thisMonth = localMonthKey(new Date());
+   156→   156→
+   157→   157→  const [tab, setTab] = useState<LedgerTab>('day');
+   158→   158→  const [day, setDay] = useState(today);
+   159→   159→  const [month, setMonth] = useState(thisMonth);
+   160→   160→  const [expandedDay, setExpandedDay] = useState<string | null>(null);
+   161→   161→
+   162→   162→  /* ---------------- Money aggregation ---------------- */
+   163→   163→
+   164→   164→  // Every income / spent entry grouped by local day — feeds the day view,
+   165→   165→  // the all-days list AND each day's expandable detail (name + Cash/UPI)
+   166→   166→  const rowsByDay = useMemo(() => {
+   167→   167→    const map = new Map<string, LedgerRow[]>();
+   168→   168→    const push = (k: string, r: LedgerRow) => {
+   169→   169→      const list = map.get(k);
+   170→   170→      if (list) list.push(r);
+   171→   171→      else map.set(k, [r]);
+   172→   172→    };
+   173→   173→    invoices.forEach((inv) => {
+   174→   174→      paymentsOf(inv).forEach((p) => {
+   175→   175→        push(localDateKey(new Date(p.dateISO)), {
+   176→   176→          time: new Date(p.dateISO).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+   177→   177→          label: `${t('ledger.receivedFrom')} ${inv.customer.name || inv.no}`,
+   178→   178→          sub: inv.no,
+   179→   179→          amount: p.amount,
+   180→   180→          kind: 'in',
+   181→   181→          mode: p.mode,
+   182→   182→        });
+   183→   183→      });
+   184→   184→    });
+   185→   185→    expenses.forEach((e) => {
+   186→   186→      push(localDateKey(new Date(e.dateISO)), {
+   187→   187→        time: new Date(e.dateISO).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+   188→   188→        label: categoryLabel(e.category, appLang),
+   189→   189→        sub: e.note || '',
+   190→   190→        amount: e.amount,
+   191→   191→        kind: 'out',
+   192→   192→        mode: e.mode,
+   193→   193→      });
+   194→   194→    });
+   195→   195→    // newest first within each day
+   196→   196→    map.forEach((list, k) => map.set(k, [...list].sort((a, b) => b.time.localeCompare(a.time))));
+   197→   197→    return map;
+   198→   198→  }, [invoices, expenses, t, appLang]);
+   199→   199→
+   200→   200→  const dayRows = rowsByDay.get(day) ?? [];
+   201→   201→
+   202→   202→  const moneyByDay = useMemo(() => {
+   203→   203→    const map = new Map<string, { income: number; spent: number }>();
+   204→   204→    rowsByDay.forEach((rows, k) => {
+   205→   205→      const acc = { income: 0, spent: 0 };
+   206→   206→      rows.forEach((r) => (r.kind === 'in' ? (acc.income += r.amount) : (acc.spent += r.amount)));
+   207→   207→      map.set(k, { income: Math.round(acc.income * 100) / 100, spent: Math.round(acc.spent * 100) / 100 });
+   208→   208→    });
+   209→   209→    return map;
+   210→   210→  }, [rowsByDay]);
+   211→   211→
+   212→   212→  const dayMoney = (k: string): { income: number; spent: number } =>
+   213→   213→    moneyByDay.get(k) ?? { income: 0, spent: 0 };
+   214→   214→
+   215→   215→  const dues = useMemo(
+   216→   216→    () => invoices.filter((i) => i.totals.balance > 0).sort((a, b) => b.dateISO.localeCompare(a.dateISO)),
+   217→   217→    [invoices]
+   218→   218→  );
+   219→   219→  const totalDue = dues.reduce((s, i) => s + i.totals.balance, 0);
+   220→   220→
+   221→   221→  // all-days rows for the selected month
+   222→   222→  const monthDays = useMemo(
+   223→   223→    () =>
+   224→   224→      [...moneyByDay.keys()]
+   225→   225→        .filter((k) => localMonthKey(new Date(`${k}T12:00:00`)) === month)
+   226→   226→        .sort((a, b) => b.localeCompare(a))
+   227→   227→        .map((k) => ({ key: k, ...(moneyByDay.get(k) as { income: number; spent: number }) })),
+   228→   228→    [moneyByDay, month]
+   229→   229→  );
+   230→   230→
+   231→   231→  const monthIncome = monthDays.reduce((s, d) => s + d.income, 0);
+   232→   232→  const monthSpent = monthDays.reduce((s, d) => s + d.spent, 0);
+   233→   233→
+   234→   234→  const monthExpenses = useMemo(
+   235→   235→    () =>
+   236→   236→      expenses
+   237→   237→        .filter((e) => localMonthKey(new Date(e.dateISO)) === month)
+   238→   238→        .sort((a, b) => b.dateISO.localeCompare(a.dateISO)),
+   239→   239→    [expenses, month]
+   240→   240→  );
+   241→   241→
+   242→   242→  /* ---------------- Receive-due inline panel ---------------- */
+   243→   243→  const [receiving, setReceiving] = useState<string | null>(null);
+   244→   244→  const [recvAmount, setRecvAmount] = useState('');
+   245→   245→  const [recvMode, setRecvMode] = useState<PaymentMode>('Cash');
+   246→   246→
+   247→   247→  const openReceive = (id: string, balance: number) => {
+   248→   248→    setReceiving(id);
+   249→   249→    setRecvAmount(String(fmtShort(balance)));
+   250→   250→    setRecvMode('Cash');
+   251→   251→  };
+   252→   252→
+   253→   253→  const confirmReceive = () => {
+   254→   254→    if (!receiving) return;
+   255→   255→    const amt = Number(recvAmount) || 0;
+   256→   256→    if (amt <= 0) return;
+   257→   257→    receiveDuePayment(receiving, amt, recvMode);
+   258→   258→    setReceiving(null);
+   259→   259→    toast({ title: t('ledger.receiveDone'), description: `₹${fmt(amt)} · ${modeLabel(recvMode, appLang)}` });
+   260→   260→  };
+   261→   261→
+   262→   262→  /* ---------------- Expense form ---------------- */
+   263→   263→  const [expDate, setExpDate] = useState(today);
+   264→   264→  const [expCat, setExpCat] = useState<ExpenseCategory>('Labour wages');
+   265→   265→  const [expAmount, setExpAmount] = useState('');
+   266→   266→  const [expNote, setExpNote] = useState('');
+   267→   267→  const [expMode, setExpMode] = useState<PaymentMode>('Cash');
+   268→   268→
+   269→   269→  const submitExpense = () => {
+   270→   270→    const amt = Number(expAmount) || 0;
+   271→   271→    if (amt <= 0) return;
+   272→   272→    // date input gives YYYY-MM-DD — keep it local (noon ISO to avoid TZ shifts)
+   273→   273→    addExpense({
+   274→   274→      dateISO: new Date(`${expDate}T12:00:00`).toISOString(),
+   275→   275→      category: expCat,
+   276→   276→      amount: amt,
+   277→   277→      note: expNote.trim() || undefined,
+   278→   278→      mode: expMode,
+   279→   279→    });
+   280→   280→    setExpAmount('');
+   281→   281→    setExpNote('');
+   282→   282→    toast({
+   283→   283→      title: t('ledger.expAdded'),
+   284→   284→      description: `₹${fmt(amt)} · ${categoryLabel(expCat, appLang)} · ${modeLabel(expMode, appLang)}`,
+   285→   285→    });
+   286→   286→  };
+   287→   287→
+   288→   288→  const tabs: { id: LedgerTab; label: string }[] = [
+   289→   289→    { id: 'day', label: t('ledger.day') },
+   290→   290→    { id: 'allDays', label: t('ledger.allDays') },
+   291→   291→    { id: 'dues', label: `${t('ledger.dues')}${totalDue > 0 ? ` (${dues.length})` : ''}` },
+   292→   292→    { id: 'expenses', label: t('ledger.expenses') },
+   293→   293→  ];
+   294→   294→
+   295→   295→  return (
+   296→   296→    <div className="space-y-3">
+   297→   297→      {/* Tab chips */}
+   298→   298→      <div className="flex gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Ledger sections">
+   299→   299→        {tabs.map((x) => (
+   300→   300→          <button
+   301→   301→            key={x.id}
+   302→   302→            role="tab"
+   303→   303→            aria-selected={tab === x.id}
+   304→   304→            onClick={() => setTab(x.id)}
+   305→   305→            className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all active:scale-95 ${
+   306→   306→              tab === x.id ? 'bg-blue-600 text-white' : 'border bg-card hover:bg-accent'
+   307→   307→            }`}
+   308→   308→          >
+   309→   309→            {x.label}
+   310→   310→          </button>
+   311→   311→        ))}
+   312→   312→      </div>
+   313→   313→
+   314→   314→      {/* ---------- DAY VIEW ---------- */}
+   315→   315→      {tab === 'day' && (
+   316→   316→        <div className="space-y-3">
+   317→   317→          <div className="flex items-center gap-2">
+   318→   318→            <CalendarDays className="size-4 shrink-0 text-blue-700" />
+   319→   319→            <Input type="date" value={day} max={today} onChange={(e) => setDay(e.target.value)} className="h-11 max-w-44" aria-label="Ledger day" />
+   320→   320→            {day !== today && (
+   321→   321→              <Button variant="ghost" size="sm" className="h-9" onClick={() => setDay(today)}>
+   322→   322→                {appLang === 'te' ? 'ఈ రోజు' : 'Today'}
+   323→   323→              </Button>
+   324→   324→            )}
+   325→   325→          </div>
+   326→   326→          <div className="grid grid-cols-3 gap-2">
+   327→   327→            <StatCard label={t('ledger.income')} value={dayMoney(day).income} kind="in" />
+   328→   328→            <StatCard label={t('ledger.spent')} value={dayMoney(day).spent} kind="out" />
+   329→   329→            <StatCard label={t('ledger.net')} value={dayMoney(day).income - dayMoney(day).spent} kind="net" />
+   330→   330→          </div>
+   331→   331→          <ul className="space-y-1.5">
+   332→   332→            {dayRows.map((r, i) => (
+   333→   333→              <LedgerRowItem key={`${r.time}-${r.label}-${i}`} r={r} appLang={appLang} i={i} />
+   334→   334→            ))}
+   335→   335→            {dayRows.length === 0 && (
+   336→   336→              <li className="py-10 text-center text-sm text-muted-foreground">{t('ledger.noActivity')}</li>
+   337→   337→            )}
+   338→   338→          </ul>
+   339→   339→        </div>
+   340→   340→      )}
+   341→   341→
+   342→   342→      {/* ---------- ALL DAYS BY MONTH (tap a day for its details) ---------- */}
+   343→   343→      {tab === 'allDays' && (
+   344→   344→        <div className="space-y-3">
+   345→   345→          <div className="flex items-center gap-2">
+   346→   346→            <CalendarDays className="size-4 shrink-0 text-blue-700" />
+   347→   347→            <Input type="month" value={month} onChange={(e) => setMonth(e.target.value || thisMonth)} className="h-11 max-w-44" aria-label="Ledger month" />
+   348→   348→          </div>
+   349→   349→          <div className="grid grid-cols-3 gap-2">
+   350→   350→            <StatCard label={t('ledger.income')} value={monthIncome} kind="in" />
+   351→   351→            <StatCard label={t('ledger.spent')} value={monthSpent} kind="out" />
+   352→   352→            <StatCard label={t('ledger.net')} value={monthIncome - monthSpent} kind="net" />
+   353→   353→          </div>
+   354→   354→          <div className="overflow-hidden rounded-xl border bg-card">
+   355→   355→            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 bg-blue-600 px-3 py-2 text-[11px] font-bold text-white">
+   356→   356→              <span>{t('ledger.date')}</span>
+   357→   357→              <span className="w-20 text-right">{t('ledger.income')}</span>
+   358→   358→              <span className="w-20 text-right">{t('ledger.spent')}</span>
+   359→   359→              <span className="w-20 text-right">{t('ledger.net')}</span>
+   360→   360→            </div>
+   361→   361→            <ul className="max-h-96 divide-y overflow-y-auto">
+   362→   362→              {monthDays.map((d) => {
+   363→   363→                const net = Math.round((d.income - d.spent) * 100) / 100;
+   364→   364→                const dt = new Date(`${d.key}T12:00:00`);
+   365→   365→                const open = expandedDay === d.key;
+   366→   366→                const rows = rowsByDay.get(d.key) ?? [];
+   367→   367→                return (
+   368→   368→                  <li key={d.key} className={open ? 'bg-blue-50/50' : undefined}>
+   369→   369→                    <button
+   370→   370→                      onClick={() => setExpandedDay(open ? null : d.key)}
+   371→   371→                      aria-expanded={open}
+   372→   372→                      className="grid w-full grid-cols-[1fr_auto_auto_auto] gap-x-3 px-3 py-2 text-xs tabular-nums transition-colors hover:bg-accent/60"
+   373→   373→                    >
+   374→   374→                      <span className="flex items-center gap-1 font-medium">
+   375→   375→                        <ChevronDown className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+   376→   376→                        {dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
+   377→   377→                      </span>
+   378→   378→                      <span className="w-20 text-right font-semibold text-green-700">₹{fmtShort(d.income)}</span>
+   379→   379→                      <span className="w-20 text-right font-semibold text-red-600">₹{fmtShort(d.spent)}</span>
+   380→   380→                      <span className={`w-20 text-right font-bold ${net < 0 ? 'text-red-600' : 'text-blue-800'}`}>₹{fmtShort(net)}</span>
+   381→   381→                    </button>
+   382→   382→                    {/* Day detail — every income & spent entry with name + Cash/UPI */}
+   383→   383→                    {open && (
+   384→   384→                      <div className="anim-fade-up space-y-1 px-2.5 pb-2.5">
+   385→   385→                        {rows.map((r, i) => (
+   386→   386→                          <div key={i} className="flex items-center justify-between gap-2 rounded-lg border bg-card px-2.5 py-1.5">
+   387→   387→                            <div className="flex min-w-0 items-center gap-1.5">
+   388→   388→                              {r.kind === 'in' ? (
+   389→   389→                                <ArrowUpRight className="size-3.5 shrink-0 text-green-700" />
+   390→   390→                              ) : (
+   391→   391→                                <ArrowDownRight className="size-3.5 shrink-0 text-red-600" />
+   392→   392→                              )}
+   393→   393→                              <span className="truncate text-[11px] font-medium">{r.label}</span>
+   394→   394→                              {r.sub ? <span className="shrink-0 text-[10px] text-muted-foreground">· {r.sub}</span> : null}
+   395→   395→                              <ModeChip mode={r.mode} appLang={appLang} />
+   396→   396→                            </div>
+   397→   397→                            <span className={`shrink-0 text-[11px] font-bold tabular-nums ${r.kind === 'in' ? 'text-green-700' : 'text-red-600'}`}>
+   398→   398→                              {r.kind === 'in' ? '+' : '−'} ₹{fmtShort(r.amount)}
+   399→   399→                            </span>
+   400→   400→                          </div>
+   401→   401→                        ))}
+   402→   402→                      </div>
+   403→   403→                    )}
+   404→   404→                  </li>
+   405→   405→                );
+   406→   406→              })}
+   407→   407→              {monthDays.length === 0 && (
+   408→   408→                <li className="py-10 text-center text-sm text-muted-foreground">{t('ledger.noActivity')}</li>
+   409→   409→              )}
+   410→   410→            </ul>
+   411→   411→            {monthDays.length > 0 && (
+   412→   412→              <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 border-t bg-neutral-50 px-3 py-2 text-xs font-bold tabular-nums">
+   413→   413→                <span>{t('ledger.monthTotal')}</span>
+   414→   414→                <span className="w-20 text-right text-green-700">₹{fmtShort(monthIncome)}</span>
+   415→   415→                <span className="w-20 text-right text-red-600">₹{fmtShort(monthSpent)}</span>
+   416→   416→                <span className="w-20 text-right text-blue-800">₹{fmtShort(monthIncome - monthSpent)}</span>
+   417→   417→              </div>
+   418→   418→            )}
+   419→   419→          </div>
+   420→   420→        </div>
+   421→   421→      )}
+   422→   422→
+   423→   423→      {/* ---------- DUES ---------- */}
+   424→   424→      {tab === 'dues' && (
+   425→   425→        <div className="space-y-3">
+   426→   426→          <div className="flex items-center justify-between rounded-xl border bg-red-50 p-3">
+   427→   427→            <div>
+   428→   428→              <p className="flex items-center gap-1 text-xs text-muted-foreground">
+   429→   429→                <Truck className="size-3.5" /> {t('ledger.totalDue')}
+   430→   430→              </p>
+   431→   431→              <p className="text-xl font-extrabold tabular-nums text-red-600">₹{fmt(totalDue)}</p>
+   432→   432→            </div>
+   433→   433→            <Badge2>{dues.length}</Badge2>
+   434→   434→          </div>
+   435→   435→          <ul className="space-y-2">
+   436→   436→            {dues.map((inv) => (
+   437→   437→              <li key={inv.id} className="rounded-xl border bg-card p-3">
+   438→   438→                <div className="flex items-center justify-between gap-2">
+   439→   439→                  <div className="min-w-0">
+   440→   440→                    <p className="text-sm font-bold">
+   441→   441→                      {inv.customer.name || t('history.walkin')} <span className="text-xs font-normal text-muted-foreground">· {inv.no}</span>
+   442→   442→                    </p>
+   443→   443→                    <p className="text-[11px] text-muted-foreground">
+   444→   444→                      {new Date(inv.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })} · {inv.paymentMode}
+   445→   445→                    </p>
+   446→   446→                  </div>
+   447→   447→                  <div className="shrink-0 text-right">
+   448→   448→                    <p className="text-base font-extrabold tabular-nums text-red-600">₹{fmt(inv.totals.balance)}</p>
+   449→   449→                    <Button size="sm" className="mt-1 h-8 bg-green-700 text-white text-xs hover:bg-green-800" onClick={() => openReceive(inv.id, inv.totals.balance)}>
+   450→   450→                      <IndianRupee className="size-3.5" /> {t('ledger.receive')}
+   451→   451→                    </Button>
+   452→   452→                  </div>
+   453→   453→                </div>
+   454→   454→                {receiving === inv.id && (
+   455→   455→                  <div className="anim-fade-up mt-2.5 space-y-2 rounded-lg border border-green-200 bg-green-50/60 p-2.5">
+   456→   456→                    <div className="grid grid-cols-2 gap-2">
+   457→   457→                      <div className="space-y-1">
+   458→   458→                        <Label className="text-[11px] text-muted-foreground">{t('ledger.receiveAmount')}</Label>
+   459→   459→                        <Input
+   460→   460→                          type="number"
+   461→   461→                          inputMode="decimal"
+   462→   462→                          min={0}
+   463→   463→                          max={inv.totals.balance}
+   464→   464→                          value={recvAmount}
+   465→   465→                          onChange={(e) => setRecvAmount(e.target.value)}
+   466→   466→                          className="h-10"
+   467→   467→                          aria-label="Amount received"
+   468→   468→                        />
+   469→   469→                      </div>
+   470→   470→                      <div className="space-y-1">
+   471→   471→                        <Label className="text-[11px] text-muted-foreground">{t('ledger.receiveMode')}</Label>
+   472→   472→                        <Select value={recvMode} onValueChange={(v) => setRecvMode(v as PaymentMode)}>
+   473→   473→                          <SelectTrigger className="h-10" aria-label="Payment mode">
+   474→   474→                            <SelectValue />
+   475→   475→                          </SelectTrigger>
+   476→   476→                          <SelectContent>
+   477→   477→                            {MODES.map((m) => (
+   478→   478→                              <SelectItem key={m} value={m}>
+   479→   479→                                {modeLabel(m, appLang)}
+   480→   480→                              </SelectItem>
+   481→   481→                            ))}
+   482→   482→                          </SelectContent>
+   483→   483→                        </Select>
+   484→   484→                      </div>
+   485→   485→                    </div>
+   486→   486→                    <div className="flex gap-2">
+   487→   487→                      <Button size="sm" className="h-9 flex-1 bg-green-700 text-white hover:bg-green-800" onClick={confirmReceive}>
+   488→   488→                        <Wallet className="size-4" /> {t('ledger.receiveConfirm')}
+   489→   489→                      </Button>
+   490→   490→                      <Button size="sm" variant="outline" className="h-9" onClick={() => setReceiving(null)}>
+   491→   491→                        {t('history.cancel')}
+   492→   492→                      </Button>
+   493→   493→                    </div>
+   494→   494→                  </div>
+   495→   495→                )}
+   496→   496→              </li>
+   497→   497→            ))}
+   498→   498→            {dues.length === 0 && (
+   499→   499→              <li className="py-10 text-center text-sm text-muted-foreground">{t('ledger.noDues')}</li>
+   500→   500→            )}
+   501→   501→          </ul>
+   502→   502→        </div>
+   503→   503→      )}
+   504→   504→
+   505→   505→      {/* ---------- EXPENSES ---------- */}
+   506→   506→      {tab === 'expenses' && (
+   507→   507→        <div className="space-y-3">
+   508→   508→          <div className="space-y-2.5 rounded-xl border bg-card p-3">
+   509→   509→            <p className="text-sm font-bold text-blue-800">
+   510→   510→              {t('ledger.monthSpent')}: <span className="tabular-nums">₹{fmt(monthSpent)}</span>
+   511→   511→            </p>
+   512→   512→            <div className="grid grid-cols-2 gap-2">
+   513→   513→              <div className="space-y-1">
+   514→   514→                <Label className="text-[11px] text-muted-foreground">{t('ledger.date')}</Label>
+   515→   515→                <Input type="date" value={expDate} max={today} onChange={(e) => setExpDate(e.target.value)} className="h-10" aria-label="Expense date" />
+   516→   516→              </div>
+   517→   517→              <div className="space-y-1">
+   518→   518→                <Label className="text-[11px] text-muted-foreground">{t('ledger.expCategory')}</Label>
+   519→   519→                <Select value={expCat} onValueChange={(v) => setExpCat(v as ExpenseCategory)}>
+   520→   520→                  <SelectTrigger className="h-10" aria-label="Expense category">
+   521→   521→                    <SelectValue />
+   522→   522→                  </SelectTrigger>
+   523→   523→                  <SelectContent>
+   524→   524→                    {EXPENSE_CATEGORIES.map((c) => (
+   525→   525→                      <SelectItem key={c} value={c}>
+   526→   526→                        {categoryLabel(c, appLang)}
+   527→   527→                      </SelectItem>
+   528→   528→                    ))}
+   529→   529→                  </SelectContent>
+   530→   530→                </Select>
+   531→   531→              </div>
+   532→   532→            </div>
+   533→   533→            <div className="grid grid-cols-2 gap-2">
+   534→   534→              <div className="space-y-1">
+   535→   535→                <Label className="text-[11px] text-muted-foreground">{t('ledger.expAmount')}</Label>
+   536→   536→                <Input type="number" inputMode="decimal" min={0} value={expAmount} onChange={(e) => setExpAmount(e.target.value)} placeholder="0" className="h-10" aria-label="Expense amount" />
+   537→   537→              </div>
+   538→   538→              <div className="space-y-1">
+   539→   539→                <Label className="text-[11px] text-muted-foreground">{t('ledger.receiveMode')}</Label>
+   540→   540→                <Select value={expMode} onValueChange={(v) => setExpMode(v as PaymentMode)}>
+   541→   541→                  <SelectTrigger className="h-10" aria-label="Expense payment mode">
+   542→   542→                    <SelectValue />
+   543→   543→                  </SelectTrigger>
+   544→   544→                  <SelectContent>
+   545→   545→                    {MODES.map((m) => (
+   546→   546→                      <SelectItem key={m} value={m}>
+   547→   547→                        {modeLabel(m, appLang)}
+   548→   548→                      </SelectItem>
+   549→   549→                    ))}
+   550→   550→                  </SelectContent>
+   551→   551→                </Select>
+   552→   552→              </div>
+   553→   553→            </div>
+   554→   554→            <div className="space-y-1">
+   555→   555→              <Label className="text-[11px] text-muted-foreground">{t('ledger.expNote')}</Label>
+   556→   556→              <Input value={expNote} onChange={(e) => setExpNote(e.target.value)} className="h-10" aria-label="Expense note" />
+   557→   557→            </div>
+   558→   558→            <Button onClick={submitExpense} className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700" disabled={!(Number(expAmount) > 0)}>
+   559→   559→              {t('ledger.addExpense')}
+   560→   560→            </Button>
+   561→   561→          </div>
+   562→   562→          <ul className="space-y-1.5">
+   563→   563→            {monthExpenses.map((e, i) => (
+   564→   564→              <li
+   565→   565→                key={e.id}
+   566→   566→                className="anim-fade-up flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2"
+   567→   567→                style={{ animationDelay: `${Math.min(i, 10) * 40}ms` }}
+   568→   568→              >
+   569→   569→                <div className="flex min-w-0 items-center gap-2.5">
+   570→   570→                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+   571→   571→                    <ArrowDownRight className="size-4" />
+   572→   572→                  </span>
+   573→   573→                  <div className="min-w-0">
+   574→   574→                    <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+   575→   575→                      <span className="truncate">{categoryLabel(e.category, appLang)}</span>
+   576→   576→                      <ModeChip mode={e.mode} appLang={appLang} />
+   577→   577→                    </p>
+   578→   578→                    <p className="truncate text-[11px] text-muted-foreground">
+   579→   579→                      {new Date(e.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+   580→   580→                      {e.note ? ` · ${e.note}` : ''}
+   581→   581→                    </p>
+   582→   582→                  </div>
+   583→   583→                </div>
+   584→   584→                <div className="flex shrink-0 items-center gap-1.5">
+   585→   585→                  <span className="text-sm font-bold tabular-nums text-red-600">− ₹{fmt(e.amount)}</span>
+   586→   586→                  <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-destructive" onClick={() => deleteExpense(e.id)} aria-label={`Delete expense ${e.category}`}>
+   587→   587→                    <Trash2 className="size-3.5" />
+   588→   588→                  </Button>
+   589→   589→                </div>
+   590→   590→              </li>
+   591→   591→            ))}
+   592→   592→            {monthExpenses.length === 0 && (
+   593→   593→              <li className="py-10 text-center text-sm text-muted-foreground">{t('ledger.noExpenses')}</li>
+   594→   594→            )}
+   595→   595→          </ul>
+   596→   596→        </div>
+   597→   597→      )}
+   598→   598→    </div>
+   599→   599→  );
+   600→   600→}
+   601→   601→
+   602→   602→function Badge2({ children }: { children: React.ReactNode }) {
+   603→   603→  return (
+   604→   604→    <span className="anim-badge rounded-full bg-red-600 px-3 py-1.5 text-sm font-bold tabular-nums text-white">{children}</span>
+   605→   605→  );
+   606→   606→}
+   607→   607→

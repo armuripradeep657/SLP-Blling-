@@ -39,7 +39,7 @@ const CATEGORY_TE: Record<ExpenseCategory, string> = {
 
 const MODES: PaymentMode[] = ['Cash', 'UPI', 'Card'];
 
-type LedgerTab = 'day' | 'allDays' | 'dues' | 'expenses';
+type LedgerTab = 'day' | 'allDays' | 'income' | 'expenses' | 'dues';
 
 /** One money row in the ledger — income (bill payment) or spent (expense) */
 interface LedgerRow {
@@ -146,9 +146,12 @@ export default function LedgerView() {
   const appLang = useAppLang();
   const invoices = useStore((s) => s.invoices);
   const expenses = useStore((s) => s.expenses);
+  const incomes = useStore((s) => s.incomes);
   const receiveDuePayment = useStore((s) => s.receiveDuePayment);
   const addExpense = useStore((s) => s.addExpense);
   const deleteExpense = useStore((s) => s.deleteExpense);
+  const addIncome = useStore((s) => s.addIncome);
+  const deleteIncome = useStore((s) => s.deleteIncome);
   const { toast } = useToast();
 
   const today = localDateKey(new Date());
@@ -192,10 +195,21 @@ export default function LedgerView() {
         mode: e.mode,
       });
     });
+    // manual income entries — money received outside a bill, with its own name
+    incomes.forEach((e) => {
+      push(localDateKey(new Date(e.dateISO)), {
+        time: new Date(e.dateISO).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        label: e.name,
+        sub: '',
+        amount: e.amount,
+        kind: 'in',
+        mode: e.mode,
+      });
+    });
     // newest first within each day
     map.forEach((list, k) => map.set(k, [...list].sort((a, b) => b.time.localeCompare(a.time))));
     return map;
-  }, [invoices, expenses, t, appLang]);
+  }, [invoices, expenses, incomes, t, appLang]);
 
   const dayRows = rowsByDay.get(day) ?? [];
 
@@ -237,6 +251,14 @@ export default function LedgerView() {
         .filter((e) => localMonthKey(new Date(e.dateISO)) === month)
         .sort((a, b) => b.dateISO.localeCompare(a.dateISO)),
     [expenses, month]
+  );
+
+  const monthIncomes = useMemo(
+    () =>
+      incomes
+        .filter((e) => localMonthKey(new Date(e.dateISO)) === month)
+        .sort((a, b) => b.dateISO.localeCompare(a.dateISO)),
+    [incomes, month]
   );
 
   /* ---------------- Receive-due inline panel ---------------- */
@@ -285,11 +307,35 @@ export default function LedgerView() {
     });
   };
 
+  /* ---------------- Manual income form ---------------- */
+  const [incDate, setIncDate] = useState(today);
+  const [incName, setIncName] = useState('');
+  const [incAmount, setIncAmount] = useState('');
+  const [incMode, setIncMode] = useState<PaymentMode>('Cash');
+
+  const submitIncome = () => {
+    const amt = Number(incAmount) || 0;
+    if (amt <= 0 || !incName.trim()) return;
+    addIncome({
+      dateISO: new Date(`${incDate}T12:00:00`).toISOString(),
+      name: incName.trim(),
+      amount: amt,
+      mode: incMode,
+    });
+    setIncName('');
+    setIncAmount('');
+    toast({
+      title: t('ledger.incAdded'),
+      description: `₹${fmt(amt)} · ${incName.trim()} · ${modeLabel(incMode, appLang)}`,
+    });
+  };
+
   const tabs: { id: LedgerTab; label: string }[] = [
     { id: 'day', label: t('ledger.day') },
     { id: 'allDays', label: t('ledger.allDays') },
-    { id: 'dues', label: `${t('ledger.dues')}${totalDue > 0 ? ` (${dues.length})` : ''}` },
+    { id: 'income', label: t('ledger.income') },
     { id: 'expenses', label: t('ledger.expenses') },
+    { id: 'dues', label: `${t('ledger.dues')}${totalDue > 0 ? ` (${dues.length})` : ''}` },
   ];
 
   return (
@@ -417,6 +463,82 @@ export default function LedgerView() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ---------- INCOME (manual entries) ---------- */}
+      {tab === 'income' && (
+        <div className="space-y-3">
+          <div className="space-y-2.5 rounded-xl border bg-card p-3">
+            <p className="text-sm font-bold text-green-800">
+              {t('ledger.monthIncome')}: <span className="tabular-nums">₹{fmt(monthIncome)}</span>
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('ledger.date')}</Label>
+                <Input type="date" value={incDate} max={today} onChange={(e) => setIncDate(e.target.value)} className="h-10" aria-label="Income date" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('ledger.expAmount')}</Label>
+                <Input type="number" inputMode="decimal" min={0} value={incAmount} onChange={(e) => setIncAmount(e.target.value)} placeholder="0" className="h-10" aria-label="Income amount" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground">{t('ledger.incName')}</Label>
+              <Input value={incName} onChange={(e) => setIncName(e.target.value)} placeholder={t('ledger.incPlaceholder')} className="h-10" aria-label="Income name" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground">{t('ledger.receiveMode')}</Label>
+              <Select value={incMode} onValueChange={(v) => setIncMode(v as PaymentMode)}>
+                <SelectTrigger className="h-10" aria-label="Income payment mode">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MODES.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {modeLabel(m, appLang)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={submitIncome} className="h-11 w-full bg-green-700 text-white hover:bg-green-800" disabled={!(Number(incAmount) > 0) || !incName.trim()}>
+              {t('ledger.addIncome')}
+            </Button>
+          </div>
+          <ul className="space-y-1.5">
+            {monthIncomes.map((e, i) => (
+              <li
+                key={e.id}
+                className="anim-fade-up flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2"
+                style={{ animationDelay: `${Math.min(i, 10) * 40}ms` }}
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700">
+                    <ArrowUpRight className="size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                      <span className="truncate">{e.name}</span>
+                      <ModeChip mode={e.mode} appLang={appLang} />
+                    </p>
+                    <p className="truncate text-[11px] text-muted-foreground">
+                      {new Date(e.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span className="text-sm font-bold tabular-nums text-green-700">+ ₹{fmt(e.amount)}</span>
+                  <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-destructive" onClick={() => deleteIncome(e.id)} aria-label={`Delete income ${e.name}`}>
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              </li>
+            ))}
+            {monthIncomes.length === 0 && (
+              <li className="py-10 text-center text-sm text-muted-foreground">{t('ledger.noIncomes')}</li>
+            )}
+          </ul>
         </div>
       )}
 

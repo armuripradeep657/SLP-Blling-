@@ -30,7 +30,7 @@ const run = async () => {
   };
 
   /* ---------- Phase A: one-time popup armed at version 16 ---------- */
-  console.log('Phase A — one-time update popup (v16)');
+  console.log('Phase A — one-time update popup (v17)');
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.evaluate(() => localStorage.clear());
   await page.goto(BASE, { waitUntil: 'networkidle' });
@@ -41,7 +41,7 @@ const run = async () => {
   await popup.getByRole('button', { name: 'Close install notification' }).click();
   await page.waitForTimeout(300);
   A(await popup.count() === 0, 'popup closes');
-  A((await page.evaluate(() => localStorage.getItem('slp-update-notice-seen'))) === '16', 'dismiss persisted with version 16');
+  A((await page.evaluate(() => localStorage.getItem('slp-update-notice-seen'))) === '17', 'dismiss persisted with version 17');
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForTimeout(1900);
   A(await popup.count() === 0, 'popup never returns after closing');
@@ -203,6 +203,44 @@ const run = async () => {
   A(allTxt.includes('Diesel'), 'all-days expand lists expense by category');
   A(allTxt.includes('CASH') && allTxt.includes('UPI'), 'both mode chips in expanded day');
   await page.screenshot({ path: shot('alldays-expanded-modes') });
+
+  /* ---------- Phase F2: ADD manual income with name + UPI mode ---------- */
+  console.log('Phase F2 — manual income entry (name + Cash/UPI)');
+  await page.locator('button[role="tab"]', { hasText: /^Income$/ }).click();
+  await page.waitForTimeout(400);
+  await V(page.getByLabel('Income amount')).fill('500');
+  await V(page.getByLabel('Income name')).fill('Ramesh · stone sale');
+  await V(page.getByLabel('Income payment mode')).click();
+  await page.getByRole('option', { name: 'UPI', exact: true }).click();
+  await page.waitForTimeout(200);
+  await V(page.getByRole('button', { name: 'Add income' })).click();
+  await page.waitForTimeout(700);
+  let incTxt = await ledger.innerText();
+  A(incTxt.includes('Ramesh · stone sale'), 'manual income listed with its NAME');
+  A(incTxt.includes('500.00') && incTxt.includes('UPI'), 'manual income shows amount + UPI chip');
+  await page.screenshot({ path: shot('income-added') });
+
+  // Day view now includes the manual income row
+  await page.locator('button[role="tab"]', { hasText: /^Day/ }).click();
+  await page.waitForTimeout(500);
+  dayTxt = await ledger.innerText();
+  A(dayTxt.includes('Ramesh · stone sale') && dayTxt.includes('UPI'), 'day view shows manual income name + UPI chip');
+  A(dayTxt.includes('₹900.00'), 'day income 900.00 (200+200+500 manual)');
+  // All-days month totals include manual income
+  await page.locator('button[role="tab"]', { hasText: /All days/ }).click();
+  await page.waitForTimeout(500);
+  const allTxt2 = await ledger.innerText();
+  A(allTxt2.includes('₹900.00'), 'month income includes manual 500 (900 total)');
+  // delete manual income restores totals
+  await page.locator('button[role="tab"]', { hasText: /^Income$/ }).click();
+  await page.waitForTimeout(400);
+  await V(page.getByLabel('Delete income Ramesh · stone sale')).click();
+  await page.waitForTimeout(500);
+  incTxt = await ledger.innerText();
+  A(!incTxt.includes('Ramesh · stone sale'), 'manual income deleted');
+  await page.locator('button[role="tab"]', { hasText: /All days/ }).click();
+  await page.waitForTimeout(500);
+  A(!(await ledger.innerText()).includes('₹900.00'), 'month totals drop back after delete');
 
   /* ---------- Phase G: Telugu app + Telugu invoice still clean ---------- */
   console.log('Phase G — Telugu surface check');

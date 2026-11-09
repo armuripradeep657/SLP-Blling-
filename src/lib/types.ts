@@ -132,4 +132,15 @@ export interface Expense {
   mode?: PaymentMode;
 }
 
+/** Manual income entry — money received outside a bill (name + Cash/UPI mode) */
+export interface IncomeEntry {
+  id: string;
+  dateISO: string;
+  /** What the money was for / from whom — shown as the ledger row name */
+  name: string;
+  amount: number;
+  /** Cash / UPI / Card — shown as a chip in the ledger */
+  mode?: PaymentMode;
+}
+
 export type MainTab = 'bill' | 'products' | 'ledger' | 'history' | 'settings';
