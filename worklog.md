@@ -298,3 +298,18 @@ Work Log:
 
 Stage Summary:
 - Ledger now handles BOTH sides by hand: "Income" tab to add money received outside bills (name + Cash/UPI/Card) and "Expenses" tab for spends; every entry everywhere (Day view, All-days expand, month lists) carries its name and a Cash/UPI chip
+
+---
+Task ID: 17
+Agent: main
+Task: "When I add items show that in items to view bill under the app"
+
+Work Log:
+- Mobile bill UX changed: previously added items were hidden until "View bill" opened a bottom sheet — now the CURRENT BILL renders INLINE on the Bill tab, directly under the product catalog, the moment an item is added (BillTab: removed Sheet; inline section id=current-bill with lg:hidden, heading + count badge + anim-fade-up panel)
+- The full panel is on the page: items (name/size/price/discount/qty steppers/remove), bill language chips, discount/labour/auto, payment mode, amount paid, delivery tick, totals and Complete Bill — no sheet needed
+- Sticky "View bill" bar now smooth-scrolls to the inline panel (scrollIntoView) instead of opening a sheet; count badge + total unchanged
+- Desktop keeps the sticky right-side aside panel (unchanged); lib/version.ts 17 → 18; sw.js CACHE v17 → v18
+- Verified: verify-task16.mjs 52/52 assertions green, zero console/page errors — new Phase C0 asserts panel visible on page with no dialog, added item listed, View-bill scroll (0 → 2751); screenshots v18-inline-items.png / v18-inline-bottom.png; lint clean
+
+Stage Summary:
+- Adding items now shows the live bill right on the page under the products — owner sees items, edits prices/qty and completes the bill without opening anything

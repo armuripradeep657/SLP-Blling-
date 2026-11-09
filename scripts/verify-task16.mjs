@@ -41,7 +41,7 @@ const run = async () => {
   await popup.getByRole('button', { name: 'Close install notification' }).click();
   await page.waitForTimeout(300);
   A(await popup.count() === 0, 'popup closes');
-  A((await page.evaluate(() => localStorage.getItem('slp-update-notice-seen'))) === '17', 'dismiss persisted with version 17');
+  A((await page.evaluate(() => localStorage.getItem('slp-update-notice-seen'))) === '18', 'dismiss persisted with version 18');
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForTimeout(1900);
   A(await popup.count() === 0, 'popup never returns after closing');
@@ -61,9 +61,22 @@ const run = async () => {
   await page.locator('nav[aria-label="Main navigation"] button', { hasText: 'Bill' }).click();
   await page.waitForTimeout(400);
   await V(page.locator('button', { hasText: '+2FT' })).first().click();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(400);
+
+  /* ---------- Phase C0: added items show INLINE under the catalog ---------- */
+  console.log('Phase C0 — items appear on the page as soon as they are added');
+  const completeBtn = V(page.getByRole('button', { name: /Complete Bill/ }));
+  A(await completeBtn.count() === 1 && await completeBtn.isVisible(), 'bill panel with items is visible on the page (no sheet needed)');
+  A(await V(page.locator('#current-bill li', { hasText: 'Gagulu' })).count() >= 1, 'added item listed under the catalog in the bill panel');
+  A(await page.locator('[role="dialog"]').count() === 0, 'no sheet/dialog was opened');
+  // sticky View-bill bar scrolls down to the panel
+  const yBefore = await page.evaluate(() => window.scrollY);
   await V(page.getByRole('button', { name: 'View bill' })).click();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(900);
+  const yAfter = await page.evaluate(() => window.scrollY);
+  A(yAfter > yBefore + 40, `View bill scrolls to the items panel (${yBefore} → ${yAfter})`);
+
+  await page.waitForTimeout(300);
   await V(page.getByPlaceholder('Customer name')).fill('Ravi Kumar');
   await V(page.getByPlaceholder('Mobile / WhatsApp')).fill('9876501234');
   await page.waitForTimeout(300);
