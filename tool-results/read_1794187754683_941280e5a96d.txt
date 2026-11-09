@@ -1,0 +1,277 @@
+     1→# Worklog
+     2→
+     3→---
+     4→Task ID: 1
+     5→Agent: main
+     6→Task: Build mobile-first billing PWA for Sri Lakshmi Penchil Narasimha Swamy Cement Works (Owner: A. Prasad)
+     7→
+     8→Work Log:
+     9→- Initialized fullstack env (Next.js 16 + Tailwind 4 + shadcn/ui)
+    10→- Installed html-to-image, qrcode, zustand
+    11→- Generated PWA icons (192/512/maskable/apple-touch/favicon) via sharp script
+    12→- Fetched 9 cement product photos via image-search, saved to public/products/ (optimized <=111KB)
+    13→- Built lib: types, billing (totals/round-off/per-size price/UPI URI/wa-sms links), messages (WhatsApp + SMS templates), store (zustand persist localStorage)
+    14→- Built components: ThermalSlip (inline-style receipt 58/80mm + UPI QR), InvoiceModal (capture PNG -> Share/WhatsApp/SMS/Download/Print/Copy), BillPanel, BillTab (sticky cart bar + sheet), ProductCatalog (size buttons, categories, custom items), ProductsView (CRUD + image upload + per-size prices), HistoryView (KPIs/filters/mark-paid), SettingsView, Navigation (header/bottom nav/desktop tabs), PwaInstall (beforeinstallprompt + iOS help + SW register)
+    15→- PWA: manifest.ts, sw.js (cache-first static, network-first nav), verified active + offline reload works
+    16→- Fixed: emoji unicode escapes (bundler mangled), dialog horizontal overflow ([&>*]:min-w-0), cart-bar overlap padding, invoice modal grid rows layout, all lint errors
+    17→
+    18→Stage Summary:
+    19→- Browser-verified end-to-end on mobile 390x844 + desktop 1440x900: bill flow, invoice PNG capture (912x1401 @3x, QR + text pixels verified), wa.me deep link, history, settings UPI->QR, product CRUD with upload, offline mode. Lint clean, no runtime errors.
+    20→
+    21→---
+    22→Task ID: 2
+    23→Agent: main
+    24→Task: WhatsApp share invoice as IMAGE (not text) + QR on invoice + fix all issues + keep app live
+    25→
+    26→Work Log:
+    27→- ThermalSlip.tsx: QR now ALWAYS renders — UPI payment QR when upiId set, else shop WhatsApp chat QR (wa.me) when shop phone/whatsapp set; caption switches accordingly
+    28→- messages.ts: added whatsappCaption() (short caption sent together with the image); guarded companyName/ownerName with fallbacks so missing settings never crash sms/whatsapp builders
+    29→- InvoiceModal.tsx: rebuilt sharing flow — primary green "Send Bill Image on WhatsApp" captures PNG then uses Web Share API level 2 (files+caption); when file share unsupported (desktop), shows new helper dialog with captured slip preview, saved filename, 3-step attach instructions and "Open WhatsApp" button; added QR hint chip when no UPI/phone configured; capture() helper reused by print
+    30→- store.ts: FIX hydration mismatch — persist skipHydration:true + page.tsx rehydrates after mount; added merge() deep-merging persisted settings/billConfig/customer over defaults (old partial saved data no longer wipes fields like companyName)
+    31→- Navigation.tsx: online badge via useSyncExternalStore (fixes react-hooks/set-state-in-effect lint error)
+    32→- Verified with Playwright (mobile 390x844 + desktop): slip renders with QR (UPI + WA fallback), captured image 912x1947 PNG, helper dialog preview works, download produces SLP-INV-1001.png, SW active + manifest linked, zero JS errors, no hydration overlay
+    33→
+    34→Stage Summary:
+    35→- WhatsApp sends the thermal-slip IMAGE with UPI QR (not plain text) on mobile via share sheet; desktop gets image download + guided attach helper
+    36→- App live on port 3000 (platform dev server, hot-reloaded); lint clean, production build passes
+    37→
+    38→
+    39→---
+    40→Task ID: 3
+    41→Agent: main
+    42→Task: User said "stop this step and run another steps" — skip prior loop, finalize & verify all remaining steps
+    43→
+    44→Work Log:
+    45→- Checked dev.log: clean, zero runtime errors; sw.js v2 active; manifest.webmanifest valid (standalone, theme #b45309, 192/512/maskable icons)
+    46→- Ran `bun run lint`: clean; `bun run build`: compiled successfully (5/5 pages), standalone output copied
+    47→- Playwright mobile 390x844 end-to-end: catalog size buttons -> bill -> customer Ravi Kumar -> Complete Bill -> SLP-INV-1001 thermal slip rendered (Proprietor A. Prasad, itemized sizes, total 580)
+    48→- QR verified: without UPI set -> hint chip shown; set prasad@upi -> UPI QR img (data:image/png via QRCode.toDataURL) renders on slip
+    49→- Clicked "Send Bill Image on WhatsApp": PNG captured (SLP-INV-1002.png), helper dialog shows live slip preview WITH QR + 3-step attach instructions + Open WhatsApp button
+    50→- Zero page errors, zero console errors; screenshots saved to download/verify-invoice-modal.png, verify-wa-helper.png
+    51→
+    52→Stage Summary:
+    53→- All steps finalized and verified end-to-end; app live on port 3000; production build passes; PWA installable; WhatsApp shares thermal-slip IMAGE with UPI QR (not text)
+    54→
+    55→---
+    56→Task ID: 4
+    57→Agent: main
+    58→Task: Add Narasimha Swamy logo, blue & white theme, remove GST, add Labour + Auto charges, smart QR (PAID stamp vs balance QR)
+    59→
+    60→Work Log:
+    61→- Image-searched Lord Narasimha Swamy; scripts/make-logo.js (sharp): square crop of deity -> public/narasimha-logo.jpg; regenerated icon-192/512, maskable 192/512, apple-touch, favicon with blue-700 circle background
+    62→- Theme: all amber-* Tailwind classes -> blue-* (Navigation/BillPanel/BillTab/page/HistoryView/ProductCatalog/ProductsView/PwaInstall/InvoiceModal/SettingsView); layout themeColor #1d4ed8; manifest bg #ffffff theme #1d4ed8; globals.css --primary/--ring -> blue oklch
+    63→- Logo: app header shows circular Narasimha logo; ThermalSlip shows logo (blue-ringed circle) above company name
+    64→- GST removed: BillConfig/Invoice/Totals types dropped taxRate/tax/taxable; computeTotals = subtotal - discount + labour + auto (+round off); BillPanel GST select removed; slip GST/GSTIN lines removed; messages GST lines removed; Settings GSTIN + default-GST fields removed
+    65→- Labour & Auto charges: BillConfig.labourCharge/autoCharge; two inputs in BillPanel ("if any"); slip lines "Labour Charges"/"Auto Charges"; WhatsApp/SMS messages include them; completeInvoice resets billConfig so charges never leak to next bill
+    66→- Smart QR (ThermalSlip): balance <= 0 -> blue double-border "AMOUNT PAID / Received with thanks — Rs X (mode)" stamp, NO QR; balance > 0 -> UPI QR encoding the BALANCE amount (upiUri am=balance) with "Scan to Pay Balance Rs X · UPI: id" caption; WhatsApp chat-QR fallback kept when no UPI set; InvoiceModal hint now only when balance due && no UPI; caption text conditional (pay balance vs fully paid)
+    67→- sw.js CACHE -> v3, precache += /narasimha-logo.jpg; eslint ignores += scripts/mini-services/download
+    68→- Verified Playwright mobile 390x844, fresh storage: blue home + logo header; bill 780 + labour 50 + auto 30 = 860 Cash full -> slip shows logo, Labour/Auto lines, TOTAL 860, AMOUNT PAID stamp, NO QR (captured PNG via WA flow confirms); second bill Due advance 100 on 200 -> slip shows UPI QR + "Scan to Pay Balance Rs. 100.00 · UPI: prasad@upi", no stamp; settings UPI field works, zero GST remnants; lint clean, build passes, SW v3, zero console/page errors
+    69→
+    70→Stage Summary:
+    71→- App is blue & white with Narasimha Swamy logo everywhere (header, slip, PWA icon); GST fully removed; Labour + Auto charges optional per bill; QR smart per payment state: fully paid = PAID stamp (no QR), balance due = UPI QR for exact balance; build + lint clean
+    72→
+    73→---
+    74→Task ID: 5
+    75→Agent: main
+    76→Task: User follow-up — "change colour to blue, no QR when total bill paid, app downloadable to mobile" (with orange banner screenshot)
+    77→
+    78→Work Log:
+    79→- Audited current state: Task 4 changes (blue theme, Narasimha logo, smart QR) already on disk; user likely saw stale cached PWA. Found 1 leftover orange element: HistoryView Partial badge bg-amber-500 -> bg-blue-600 (UI now 100% blue/white, zero amber/orange matches in src/)
+    80→- New src/components/InstallAppSection.tsx: Settings section "Get the App on Your Phone" — native install button via beforeinstallprompt, standalone-detection ("App is installed"), Android (Chrome menu -> Install app) and iPhone (Safari Share -> Add to Home Screen) step-by-step instructions
+    81→- SettingsView.tsx: wired InstallAppSection between Billing preferences and Data sections
+    82→- public/sw.js: CACHE v3 -> v4 (forces clients with old cached v2/v3 shell to refresh to blue version after one reload; skipWaiting + clients.claim already clear old caches)
+    83→- Verified Playwright/agent-browser mobile 390x844 fresh storage: header blue gradient + circular Narasimha logo img; Settings UPI prasad@upi saved; install section renders Android+iPhone instructions
+    84→- Payment flow 1: Gagulu 2FT 200 + Labour 50 + Auto 30 = 280, Cash full -> SLP-INV-1001 slip: Labour/Auto lines, TOTAL 280, AMOUNT PAID stamp present, img[alt="UPI QR code"] count = 0
+    85→- Payment flow 2: Gagulu 2FT 200, Due mode advance 100 -> SLP-INV-1002 slip: * Partial *, UPI QR rendered, caption "Scan to Pay Balance Rs. 100.00 · UPI: prasad@upi", no PAID stamp
+    86→- Zero page errors, zero console errors; dev.log clean; manifest theme #1d4ed8 / 4 icons / standalone; sw.js v4 served; screenshots: verify-blue-home.png, verify-install-section.png, verify-paid-no-qr.png, verify-paid-stamp.png, verify-balance-qr.png (download/)
+    87→
+    88→Stage Summary:
+    89→- App 100% blue & white (no orange anywhere), fully-paid bills carry AMOUNT PAID stamp with NO QR, balance bills carry UPI QR for exact balance, and app download is discoverable via floating install banner + Settings "Get the App on Your Phone" section; SW v4 ensures user's phone picks up the new blue version on next visit/reload
+    90→
+    91→---
+    92→Task ID: 6
+    93→Agent: main
+    94→Task: Replace logo with user-uploaded official company badge ("this is logo keep replace")
+    95→
+    96→Work Log:
+    97→- User uploaded official circular badge (Narasimha deity + SRI LAKSHMI / PENCHILA NARASIMHA SWAMY / CEMENT WORK text, blue/red/gold, 1408x768 PNG) at upload/pasted_image_1792856288189.png
+    98→- New scripts/make-logo-v2.js (sharp): trim white canvas -> 623x561 badge -> contain into 654x654 white square (badge ~95%, verified "PENCHILA" wing text stays inside the UI circular crop zone)
+    99→- Regenerated with same filenames (zero code changes): narasimha-logo.jpg 512 (header + thermal slip), icon-192/512, icon-maskable-192/512 (badge in 80% safe zone), apple-touch-icon 180, favicon-32
+   100→- sw.js CACHE v4 -> v5 so installed clients refresh to the new badge on next visit
+   101→- Verified agent-browser mobile 390x844: header shows new badge in circular white ring crop; fresh bill SLP-INV-1001 slip shows new badge (circular, blue border) + AMOUNT PAID stamp + no QR (re-confirms Task 5 logic); icon-192 and maskable-192 visually checked
+   102→- Zero page/console errors; lint clean
+   103→
+   104→Stage Summary:
+   105→- Official company badge now used everywhere: app header, thermal slip, PWA home-screen icon, favicon; SW v5 pushes the new badge to installed phones; all prior behavior (blue theme, smart QR, labour/auto charges, PWA install) re-verified intact
+   106→
+   107→---
+   108→Task ID: 7
+   109→Agent: main
+   110→Task: "enable pop up option to download in mobile phone and qr show in recept in using only upi id based not company name"
+   111→
+   112→Work Log:
+   113→- QR UPI-ID only: billing.ts upiUri() dropped the pn (payee name) param — URI is now upi://pay?pa=<id>&am=<amt>&cu=INR&tn=<invno>; ThermalSlip call updated (no companyName dep); bun test output confirmed: upi://pay?pa=prasad%40upi&am=100&cu=INR&tn=SLP-INV-1002
+   114→- Install popup: rewrote PwaInstall.tsx — small floating banner replaced by prominent bottom-sheet popup above the mobile bottom nav (sm: bottom-right card on desktop): company badge logo, "Install the Billing App" title, 3 benefit bullets (offline / full-screen / bills saved on device), blue Install App button (native beforeinstallprompt prompt) or How to Install (manual steps dialog covering Android Chrome + iPhone Safari), Not now + X dismiss with sessionStorage flag (re-appears next session until app installed)
+   115→- Popup shows 1.2s after load on mobile devices (UA/maxTouchPoints) or whenever native install prompt fires, and only when app not already installed
+   116→- sw.js CACHE v5 -> v6
+   117→- Verified agent-browser iPhone 14 emulation: popup renders with badge + benefits + buttons above bottom nav; Not now dismisses (popup removed from DOM); UPI set -> Due bill advance 100 on 200 -> slip QR renders with caption "Scan to Pay Balance Rs. 100.00 · UPI: prasad@upi", no PAID stamp; zero page/console errors; lint clean
+   118→
+   119→Stage Summary:
+   120→- Install popup now actively prompts download on mobile every session until installed/dismissed; receipt QR payload is UPI-ID only (no company name), so payer UPI apps resolve prasad@upi directly
+   121→
+   122→---
+   123→Task ID: 8
+   124→Agent: main
+   125→Task: "direct sent invoice image to customer mobile number directly using that customer number entered it is new also no problem; work this web application anywhere online without interrupt"
+   126→
+   127→Work Log:
+   128→- InvoiceModal.tsx: new primary action onWhatsAppDirect() — captures slip PNG, tries clipboard image copy (ClipboardItem image/png, try/catch), downloads image to gallery as reliable fallback, then window.open(waLink(customer.phone, full bill text)) -> https://wa.me/91<digits>?text=... click-to-chat opens the customer's chat DIRECTLY (works for brand-new numbers, no contact saving); guidance toast tells user to long-press WhatsApp message box -> Paste -> Send (or attach from gallery via paperclip)
+   129→- Primary button now: "Send Direct to <customer name>" when customer phone exists (Send icon), else legacy share-sheet "Send Bill Image on WhatsApp"; Share Image / Download / SMS / Print / Copy as text kept as secondary grid
+   130→- New ConnectivityToast.tsx mounted in page.tsx: toast on offline ("keep billing as usual — bills saved on device") and back-online transitions; complements header offline badge
+   131→- sw.js CACHE v6 -> v7
+   132→- Note: true silent background image push needs WhatsApp Business Cloud API (paid Meta token) — not available; click-to-chat direct-open + clipboard/gallery is the strongest contactless flow without credentials
+   133→- Verified agent-browser iPhone 14 emulation: bill for NEW customer Suresh Babu 9000012345 -> primary "Send Direct to Suresh Babu"; window.open stub captured https://wa.me/919000012345?text=*Sri%20Lakshmi... (direct number, bill text pre-filled); toast confirmed visible ("Chat opened for Suresh Babu" + paste/attach hint); set offline on -> "You are offline" toast + header badge, product billing still works offline; back online -> "Back online" toast; zero page/console errors; lint clean
+   134→
+   135→Stage Summary:
+   136→- Direct-to-number WhatsApp send is now the primary action using the typed customer number (new numbers fine); app resilient online/offline anywhere (PWA + SW v7 + connectivity toasts)
+   137→
+   138→---
+   139→Task ID: 9
+   140→Agent: main
+   141→Task: "while add custom item that item will add in products with that size and price name in products. remove that pasted image" (dark N circle = Next.js dev-tools badge)
+   142→
+   143→Work Log:
+   144→- store.ts addCustomItem: now ALSO auto-saves the custom item into the products catalog — case-insensitive name match; same name merges (new size + per-size price added to existing product), new name creates product {category: 'Custom', sizes: [size], sizePrices: {size: price}, price} at the top of the list
+   145→- ProductCatalog CustomItemDialog description updated: "Added to the bill now — and saved to your product list with this name, size & price for next time."
+   146→- next.config.ts: devIndicators: false — removes the dark Next.js "N" circle badge overlaying the app (verified #devtools-indicator now 0x0/invisible in shadow DOM, screenshot clean)
+   147→- sw.js CACHE v7 -> v8
+   148→- Verified agent-browser mobile: custom "Cool Brick" 6FT ₹350 -> cart + persisted to products + visible in Products tab (6FT: ₹350) + billable from catalog (+6FT button, cart 2x350=700); second custom "cool brick" 8FT ₹400 merged into the SAME product (productCount 1, sizes [6FT,8FT], sizePrices {6FT:350, 8FT:400}); zero page/console errors; lint clean
+   149→
+   150→Stage Summary:
+   151→- Custom items are now permanent catalog products (auto-saved with name/size/price, dedup+merge); Next.js dev N badge removed from the UI
+   152→
+   153→---
+   154→Task ID: 10
+   155→Agent: main
+   156→Task: "while billing owner can change that product cost directly and apply discount for each product and remove that round off; share customer thermal slip to customer directly using customer number through whatsapp"
+   157→
+   158→Work Log:
+   159→- types.ts: CartItem += discount?: number (per-line flat Rs); Totals += itemDiscounts; removed roundOff from BillConfig/Invoice and roundOffEnabled from BusinessSettings (roundOff kept in Totals as always-0 for old persisted data compat)
+   160→- billing.ts: new lineNet(it) helper (gross - capped item discount); computeTotals now subtotal(gross) - itemDiscounts - bill-level discount + labour + auto = EXACT total (round-off logic deleted; percent bill discount now bases on after-item-discount amount)
+   161→- store.ts: new updateCartItem(key, patch) action (price/discount/qty edits while billing; catalog untouched); DEFAULT_CONFIG + completeInvoice dropped roundOff
+   162→- BillPanel.tsx: every cart line now has inline "Price Rs (unit)" + "Discount Rs" inputs (owner changes cost directly while billing; line total shows net after item discount instantly); removed Round off switch + totals row; new "Item discounts" totals row; layout regrouped (Discount|Labour / Auto|Payment mode / full-width Amount paid)
+   163→- ThermalSlip.tsx: per-item "less discount - Rs X" line under item; "Item Discounts - Rs X" total row; Round Off row removed; old invoices guarded with || 0
+   164→- messages.ts WhatsApp text: per-item Discount line + Item Discounts row; Round Off line removed
+   165→- SettingsView.tsx: "Round off totals" toggle removed; defaultData.ts roundOffEnabled removed
+   166→- sw.js CACHE v8 -> v9
+   167→- Direct WhatsApp send (built in Task 8) re-verified: "Send Direct to <name>" -> clipboard image copy + gallery download + wa.me/<customer number> click-to-chat
+   168→- Verified agent-browser iPhone 14, fresh storage: Gagulu price edited 200->225 inline (line total updates instantly); item discounts 25+20; totals = Subtotal 575 | Item discounts 45 | Labour 50 | Auto 30 | Grand Total 610.00 EXACT, no Round Off UI anywhere; slip shows "less discount" per item + Item Discounts row + AMOUNT PAID stamp, TOTAL Rs. 610.00; Send Direct captured https://wa.me/919000012345?text=*Sri%20Lakshmi... ; Due bill at decimal price 333.33 advance 100 -> balance 233.33 EXACT + UPI QR "Scan to Pay Balance Rs. 233.33 · UPI: prasad@upi" + * Partial *; zero page/console errors; lint clean
+   169→
+   170→Stage Summary:
+   171→- Owner can now edit any item's price and give per-item discounts right inside the bill; round-off fully removed (exact totals to the paisa); thermal slip + WhatsApp text reflect edited prices and item discounts; direct-to-number WhatsApp slip sharing re-confirmed working
+   172→
+   173→---
+   174→Task ID: 11
+   175→Agent: main
+   176→Task: "while send that thermal slip change language option on bill with all details into telugu language option enable; while i select telugu means send bill in telugu language otherwise normal english; send bill only image; and invoice also in history"
+   177→
+   178→Work Log:
+   179→- Bundled Noto Sans Telugu webfont (public/fonts/NotoSansTelugu-Regular/Bold.ttf from notofonts.github.io) + @font-face in globals.css — html-to-image embeds it (skipFonts:false) so Telugu slip PNG captures correctly on ANY device; fonts precached in sw.js for offline
+   180→- types.ts: BillLanguage 'en'|'te'; BillConfig.language + Invoice.language (saved per invoice)
+   181→- store.ts: DEFAULT_CONFIG.language='en'; completeInvoice saves language on invoice; language STICKY across bills (resetBillConfig + post-complete reset keep chosen language); new updateInvoiceLanguage(id, lang) updates invoices + lastInvoice
+   182→- New src/lib/i18n.ts: EN/TE label dictionaries (slip labels, payment modes Cash->నగదు/Card->కార్డ్/Due->బాకీ, status Partial->పాక్షికం, AMOUNT PAID->మొత్తం చెల్లించబడింది, scan captions, WhatsApp/SMS words) + fill() templates + slipFontFamily()
+   183→- ThermalSlip.tsx: every label/customer/mobile/size/discount/totals/payment/status/stamp/QR caption/footer in Telugu when invoice.language='te' (Telugu font stack; tighter stamp padding/letter-spacing); old invoices without language default English
+   184→- messages.ts: whatsappMessage + whatsappCaption + smsMessage language-aware (Telugu bill text, Telugu thank-you/policy defaults, "బిల్లు ఇమేజ్ విడిగా పంపబడుతుంది")
+   185→- BillPanel.tsx: "Bill language · బిల్లు భాష" segmented toggle (English | తెలుగు) saved into billConfig
+   186→- InvoiceModal.tsx: "Bill language:" chips in the modal header — flip live via updateInvoiceLanguage so the slip re-renders instantly and the invoice in HISTORY keeps the language; derived live invoice from store (stored ?? prop)
+   187→- Image-only send: new billing.ts waChatLink(phone) -> https://wa.me/91<number> with NO ?text= — direct send now opens the customer's chat EMPTY, bill goes as image only (clipboard paste / gallery attach); fallback helper's Open WhatsApp also textless; full text still available via "Copy bill as text" (now in the invoice's language)
+   188→- sw.js CACHE v9 -> v10 (+2 font precache entries)
+   189→- Verified agent-browser iPhone 14: BillPanel toggle renders Telugu; Telugu bill -> slip fully Telugu (ఉపమొత్తం/చెల్లింపు/నగదు/బాకీ/మొత్తం చెల్లించబడింది stamp, zero English remnants, crisp Noto glyphs in captured PNG); modal English<->తెలుగు flip re-renders live both ways; direct send captured https://wa.me/919000012345 (no text=) and https://wa.me/919000098765 for English bill; copy-as-text contains Telugu bill; History re-open keeps Telugu (chip selected); new bill defaults sticky Telugu, English selectable; zero page/console errors; lint clean
+   190→
+   191→Stage Summary:
+   192→- Owner picks bill language (English or Telugu) on the bill or right in the share modal; the thermal slip image + bill text render fully in the chosen language, the language is saved with the invoice (History re-shares keep it, sticky default for next bills), and WhatsApp direct send now carries the bill as IMAGE only
+   193→
+   194→---
+   195→Task ID: 12
+   196→Agent: main
+   197→Task: "while billing change company name also telugu, enter bill in telugu only, product name also in telugu; in history show both invoice and thermal slip to owner; in that thermal slip and invoice background show company logo"
+   198→
+   199→Work Log:
+   200→- types.ts: BusinessSettings += companyNameTe; Product += nameTe?; CartItem += nameTe? (snapshot per bill line)
+   201→- defaultData.ts: default companyNameTe 'శ్రీ లక్ష్మీ పెంచిల నరసింహ స్వామి సిమెంట్ వర్క్స్' + Telugu names for all 14 default products (గగులు, గలులు బిళ్లాలు, గుంజ, కెటికెలు, సెలుపు రాళ్లు …)
+   202→- i18n.ts: new companyNameFor() + itemLabel() helpers (Telugu name when set, English fallback); invoice-doc labels (billTo/tSno/tItem/tQty/tRate/sigFor/invoiceNoLabel EN+TE)
+   203→- store.ts: addToCart snapshots nameTe; addCustomItem(name,size,price,qty,nameTe?) stores Telugu name on cart line + catalog product (merge keeps existing)
+   204→- ThermalSlip.tsx: Telugu company name + Telugu item names when language='te'; company logo WATERMARK (absolute, 66% width, opacity 0.08, z -1) behind whole slip; QR logic refactored into shared hook
+   205→- New src/hooks/use-qr.ts: useQrDataUrl() shared by slip + invoice
+   206→- New src/components/InvoiceDoc.tsx: formal A4-style invoice (430px, inline styles for html-to-image) — logo header, INVOICE/బిల్లు title, Bill To, full table (S.No/Item/Size/Qty/Rate/Amount + per-item discount), totals block, smart PAID stamp / balance UPI QR, signature ("For company"/"తరఫున"), thank-you footer, Telugu font + Telugu company/product names + logo watermark (opacity 0.06)
+   207→- InvoiceModal.tsx: view prop ('slip'|'invoice') + header View chips (Thermal slip | Invoice) — both documents viewable/capturable/shareable for the SAME bill; invoice preview zoom 0.7 to fit modal (off-screen capture node stays full-size); title/description adapt per view
+   208→- HistoryView.tsx: each invoice row now has BOTH "Invoice" (FileText) and "Slip" (ReceiptText) buttons; row tap opens Invoice; page.tsx passes view through
+   209→- messages.ts: WhatsApp message/caption/SMS use Telugu company name + Telugu item names when invoice.language='te'
+   210→- SettingsView.tsx: "Company name in Telugu (బిల్లు పేరు — తెలుగు)" field
+   211→- ProductsView.tsx: "Product name in Telugu" field in add/edit form + Telugu name shown in list; ProductCatalog.tsx: Telugu name input in Custom item dialog + Telugu subtitle on catalog cards; BillPanel.tsx: cart line shows Telugu product name (English beneath) when Telugu selected
+   212→- sw.js CACHE v10 -> v11
+   213→- Verified agent-browser iPhone 14 (fresh storage): Telugu bill -> cart line + slip + invoice ALL in Telugu (శ్రీ లక్ష్మీ పెంచిల నరసింహ స్వామి సిమెంట్ వర్క్స్, గగులు (బావి రింగ్)); watermark img (opacity .08/.06, z -1) present in both docs; English flip works live both ways (case-safe re-check); invoice preview fits modal (scrollW==clientW); History: Invoice + Slip buttons both open correct views, language kept per invoice (1002 reopens Telugu); Due bill 670 advance 100 -> invoice shows UPI QR + బాకీ రూ.570.00 + * పాక్షికం *; Download captured SLP-INV-1002.png (745KB) — Telugu glyphs crisp, watermark visible in PNG; custom item 'Cool Brick' with Telugu name కూల్ బ్రిక్ saved to products + billed in Telugu; direct send from invoice view -> https://wa.me/919000012345 (no text, image-only); Settings Telugu company field + Products Telugu name fields confirmed; zero page/console errors; lint clean; production build passes
+   214→
+   215→Stage Summary:
+   216→- Bills are now FULLY Telugu when తెలుగు is selected — company name and product names included (both editable); History gives the owner BOTH the formal invoice and the thermal slip for every bill; both documents carry the Narasimha Swamy company logo as a faint background watermark; direct WhatsApp send stays image-only
+   217→
+   218→---
+   219→Task ID: 13
+   220→Agent: main
+   221→Task: "this link can work any update — change here, updated details in mobiles also where installed this app; same link in all devices; any update change, remaining all devices also get that update" (auto-update on all installed devices)
+   222→
+   223→Work Log:
+   224→- PwaInstall.tsx ServiceWorkerRegister rebuilt into a full auto-update engine:
+   225→  * Polls registration.update() every 60s while the app is open, plus on tab visible, window focus and back-online events (offline devices just keep the cached version until next online check)
+   226→  * sw.js already uses skipWaiting + clients.claim, so a newly detected worker activates immediately; the page listens for controllerchange and AUTO-RELOADS ONCE onto the new version (first-install controllerchange ignored via hadController guard; sessionStorage timestamp guard slp-sw-reloaded-at prevents reload loops)
+   227→  * Blue "Updating app to the latest version…" banner shows for ~1.2s before the refresh; bills/cart are localStorage-persisted on every change so the reload never loses data
+   228→- SettingsView.tsx: new "App updates" section — explains the same-link-everywhere auto-update behavior + "Check for updates now" button (calls reg.update(), listens updatefound once, toasts "Update found — app refreshes…" or "You are on the latest version", offline -> "go online once and tap again")
+   229→- public/sw.js CACHE v11 -> v12 (then bumped v13/v14 during live update simulations; final source = v14)
+   230→- Verified agent-browser iPhone 14: SW v12 activated + controlling; simulated a release by changing sw.js to v13 and calling reg.update() -> page AUTO-RELOADED (window.__marker gone), caches = [slp-billing-v13], new SW activated/controlling; repeated with v14 -> same result (reloaded true, v14 cache); Settings section + button render, button toast "You are on the latest version" when current; earlier duplicate useState import compile error fixed; zero runtime errors after fix; lint clean; production build passes
+   231→
+   232→Stage Summary:
+   233→- The PWA is now self-updating on every device: the owner changes anything here (products, prices, labels, features) and every phone using the same link — browser or installed app — picks up the new version automatically within a minute (or instantly via Settings -> Check for updates), with no reinstall and no data loss
+   234→
+   235→---
+   236→Task ID: 14
+   237→Agent: main
+   238→Task: "Languages: app switch English ↔ తెలుగు, bills English/Telugu/both; Delivery + driver slip (tick Delivered → driver, vehicle, address; slip shows items & quantities, no prices); Ledger day view income/spent/net + all-days by month + Dues receive (income on day received) + Expenses (labour wages, diesel, raw material); photo upload + camera option; 1-time install notification after update, closed = never again"
+   239→
+   240→Work Log:
+   241→- types.ts: BillLanguage += 'both' (bilingual bills); BusinessSettings += appLang ('en'|'te' app-UI language); Invoice += delivery?: DeliveryInfo + payments?: PaymentRecord[]; new DeliveryInfo/PaymentRecord/Expense/ExpenseCategory; MainTab += 'ledger'; BillConfig += delivery draft
+   242→- i18n.ts: BOTH_LABELS (Telugu / English combined labels, built from EN+TE incl. modes), companyLines() (Telugu name above English name on docs), itemLabel('both') = "te / en", slipFontFamily('both') → Telugu-capable stack, cur() currency helper; new DriverLabels (EN/TE/Both) + driverLabels(); full APP_EN/APP_TE app-UI dictionaries (~120 keys) + appT()
+   243→- billing.ts: localDateKey/localMonthKey (local-TZ day/month keys), paymentsOf(inv) (synthesizes payment records for old invoices), applyPayment(inv, amount, mode, dateISO) → updates paid/balance/status + appends record
+   244→- store.ts: completeInvoice saves delivery (when Delivered ticked) + initial payment record (Due advances recorded as Cash income on bill date); updateInvoiceStatus records newly-paid amount as income today; new receiveDuePayment(id, amount, mode), addExpense, deleteExpense, expenses state (+partialize); delivery resets each bill, language stays sticky
+   245→- BillPanel: bill-language 3-way segmented (English | తెలుగు | రెండూ · Both); new Delivery section — Delivered checkbox reveals Driver name / Vehicle number / Delivery address inputs; all panel labels translated via useT()
+   246→- New DriverSlip.tsx: inline-styled thermal driver slip — logo watermark + header logo, company lines, DELIVERY SLIP band, invoice no/date/customer, Driver/Vehicle/Address rows, ITEM|QTY list (item + size + "x n"), Total Quantity, "no prices" note, Driver Signature line — zero Rs./₹ anywhere
+   247→- ThermalSlip + InvoiceDoc: 'both' support — bilingual labels, two company-name lines, Telugu-capable fonts, tighter stamp spacing when non-English
+   248→- InvoiceModal: DocView 'slip'|'invoice'|'driver' + Truck Driver chip (only when invoice.delivery.delivered), 3 language chips, DriverSlip preview + capture (fileName SLP-INV-x-driver.png), per-view titles
+   249→- HistoryView: Invoice + Slip + Driver buttons per row (Driver only for delivered invoices), flex-wrap so all buttons fit on mobile, Telugu labels/status
+   250→- New LedgerView.tsx: Day (date picker, Income/Spent/Net stat cards + received-from/expenses transaction list), All days (month picker, per-day income/spent/net table + month totals), Dues (total-due KPI, per-invoice Receive panel with prefilled balance + Cash/UPI/Card → receiveDuePayment → income today + toast), Expenses (date/category Labour wages|Diesel|Raw material|Other/amount/note form, month spent KPI, list + delete); Telugu category labels
+   251→- Navigation: 5 tabs (Bill/Products/Ledger/History/Settings) mobile grid-cols-5 + desktop, header quick English↔తెలుగు pill toggle (static aria-label), Telugu company name in header when appLang=te, translated labels
+   252→- SettingsView: App language section (English | తెలుగు segmented, saved to settings.appLang), translated section headings/fields/buttons
+   253→- ProductsView: image section now has BOTH "Upload photo" (gallery) and "Take with camera" (input capture="environment") buttons; translated form
+   254→- PwaInstall: rebuilt into ONE-TIME post-update install notification — localStorage slp-update-notice-seen stores APP_VERSION; popup (EN+TE text, benefits, Install/How-to) shows once per version, Close records it and it NEVER returns until the next update; isMobile now also matches (pointer: coarse)
+   255→- New lib/version.ts APP_VERSION='15' (bump with every release); sw.js CACHE v14 → v15
+   256→- Translated BillTab/ProductCatalog/page.tsx headings via useT()
+   257→- Verified scripts/verify-task14.mjs (Playwright iPhone 390x844, fresh storage) — 43/43 assertions green, ZERO console/page errors: one-time popup appears→close→persisted v15→never again after reload; nav+header+settings fully Telugu and back; 3 bill-language chips; bilingual slip (ఉపమొత్తం / Subtotal, మొత్తం / TOTAL, both company names, watermark); direct send https://wa.me/919876501234 image-only (no ?text=); Delivered tick → driver fields → driver slip with RAMESH/AP07AB 1234/items+qty and NO prices; UPI QR on balance; History Invoice/Slip/Driver buttons all open correct docs; ledger Day income 300 → expense Diesel 120 → Net 180; Dues receive 100 prefilled+confirmed → cleared + toast; All-days month table 400/120/280 with month-total row; product photo upload renders resized dataURL + camera button present; lint clean; dev.log clean; screenshots v15-*.png in download/
+   258→
+   259→Stage Summary:
+   260→- The app UI now switches between English and తెలుగు everywhere; bills render in English, Telugu or BOTH (bilingual labels + both company names); Delivered tick adds driver/vehicle/address and produces a price-free driver slip (viewable + shareable from History); full ledger (day view, monthly list, dues receipts counting as same-day income, categorized expenses); product photos work from gallery AND camera; every update pops a one-time install notification that never returns once closed
+   261→
+   262→Task ID: 15
+   263→Agent: main
+   264→Task: "Hide my upi id from that slip and invoice and add best animation also and in ledger i have to add income details and spent details with that names and it's by cash or upi also and change the invoice and create some more unique use the same logo last i used"
+   265→
+   266→Work Log:
+   267→- UPI ID hidden on ALL bill surfaces: i18n scanPay labels now "Scan to Pay Balance Rs. {rs}" (EN) / "బాకీ రూ. {rs} చెల్లించడానికి స్కాన్ చేయండి" (TE) — the "· UPI: {upi}" suffix removed; ThermalSlip fill call no longer passes the ID; messages.ts whatsappMessage no longer prints "UPI ID: …" line; the upi://pay QR itself still carries the handle so scanning still pays the owner
+   268→- Ledger detail level (user ask: income/spent details with NAMES + cash/upi): new shared rowsByDay map feeds Day view + All-days; every income row = "Received from <customer>" + invoice no + time + Cash/UPI/Card chip + amount; every expense row = category + note + mode chip
+   269→- Expense type += mode?: PaymentMode; expense form gains a Payment mode select (Cash/UPI/Card, Telugu labels నగదు/కార్డ్); expense list + day rows show the chip; toast confirms "₹250.00 · Diesel · Cash"
+   270→- All-days list is now EXPANDABLE per day: tap a date row (chevron rotates) → slide-in detail of that day's every income & spent entry with name + invoice no + Cash/UPI chip + amount; month totals row unchanged
+   271→- ModeChip component: Cash=green, UPI=blue, Card=purple, Due=amber; Telugu mode labels; receive-dues panel modes localized too
+   272→- Fixed pre-existing bug: categoryLabel(c) called without appLang in 2 places (would be a TS error)
+   273→- InvoiceDoc REDESIGNED (unique, same narasimha-logo.jpg): navy→blue gradient header band with gold (#f59e0b) underline + gold INVOICE eyebrow + gold-ring logo, giant faint ₹ glyph, ROTATED status stamp riding the header seam (మొత్తం చెల్లించబడింది / AMOUNT PAID green · PARTIAL blue · DUE red), meta chips row (payment/items/qty), light-blue Bill-To card, rounded navy-header zebra items table, gradient TOTAL banner with 20px figure, paid/balance card, dashed SCAN-TO-PAY card (QR + "Open any UPI app" hint — NO UPI ID) or green received-thanks banner, navy footer band with gold top border + thank-you/policy/powered; full watermark kept; still 100% inline styles for html-to-image
+   274→- Best animations: globals.css keyframes slp-fade-up / slp-pop-in / slp-slide-in-right / slp-sheet-up / slp-bounce-badge / slp-glow + utility classes (.anim-*) with prefers-reduced-motion kill-switch; applied: tab-switch fade-up (page.tsx keyed wrapper), BottomNav badge bounce on count change + active:scale + animated active indicator, DesktopTabs press scale, global Button active:scale-[0.96], HistoryView KPI pop + staggered row entrances, LedgerView stat pops + staggered rows + chevron rotate + receive panel fade-up, BillPanel staggered cart items + glowing Complete button, InvoiceModal preview re-plays entrance on view/language switch, PwaInstall bottom-sheet slide-up
+   275→- lib/version.ts APP_VERSION 15 → 16; sw.js CACHE v15 → v16 (installed devices auto-update + one-time install popup re-arms, closes forever on dismiss)
+   276→- Verified (agent-browser iPhone 14, fresh storage + prasad@upi seeded): slip & invoice & Telugu invoice contain ZERO "prasad@upi"/"UPI:" strings while balance QR renders (2 nodes) and scan-copy reads "Scan to Pay Balance Rs. 500.00 · Open any UPI app & scan to pay"; Telugu PAID invoice shows green rotated మొత్తం చెల్లించబడింది stamp with QR gone; Day ledger lists "Received from Ramesh · CASH ₹300" then after UPI dues receipt "Received from Ramesh · UPI ₹500"; Dues receive via UPI cleared the due; expense Diesel ₹250 Cash ("Auto diesel") listed with CASH chip; All-days expand shows Diesel CASH −₹250 + Ramesh UPI +₹500 + Ramesh CASH +₹300 under 08 Nov 26 (800/250/550 + month total); zero page errors, lint clean; screenshots v16-*.png in download/
+   277→
