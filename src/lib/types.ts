@@ -182,4 +182,32 @@ export interface Appearance {
   watermark: string;
 }
 
+/** IDs deleted on any device — synced so deletes don't come back from other phones */
+export interface DeletedIds {
+  invoices: string[];
+  expenses: string[];
+  incomes: string[];
+  labours: string[];
+  products: string[];
+}
+
+/**
+ * The data blob that syncs (encrypted) between the owner's phones.
+ * cart / customer / billConfig / activeTab stay device-local — a bill
+ * half-typed on one phone never appears on another.
+ */
+export interface SyncPayload {
+  v: 1;
+  settings: BusinessSettings;
+  products: Product[];
+  invoices: Invoice[];
+  expenses: Expense[];
+  incomes: IncomeEntry[];
+  labourWorks: LabourWork[];
+  appearance: Appearance;
+  deletedIds: DeletedIds;
+  /** LWW clock for settings/appearance/products — bumped on config changes */
+  dataUpdatedAt: number;
+}
+
 export type MainTab = 'bill' | 'products' | 'ledger' | 'labour' | 'history' | 'settings';

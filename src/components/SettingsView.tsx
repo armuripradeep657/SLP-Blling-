@@ -22,7 +22,9 @@ import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from '@/lib/defaultData';
 import { normalizePhone } from '@/lib/billing';
 import InstallAppSection from '@/components/InstallAppSection';
 import { useT, useAppLang } from '@/hooks/use-app-lang';
-import { Download, ImageUp, RefreshCw, RotateCcw, Upload } from 'lucide-react';
+import { getAuth, lockApp } from '@/lib/cloud';
+import { getSyncStatus, syncNow } from '@/lib/sync';
+import { CloudUpload, Download, ImageUp, Lock, RefreshCw, RotateCcw, ShieldCheck, Upload } from 'lucide-react';
 import type {
   Appearance,
   BgThemeId,
@@ -160,6 +162,10 @@ export default function SettingsView() {
 
       <Separator />
 
+      <SyncSecuritySection />
+
+      <Separator />
+
       <InstallAppSection />
 
       <Separator />
@@ -248,7 +254,11 @@ function BusinessIdentitySection() {
 
   const [draft, setDraft] = useState<IdentityDraft>(() => identityOf(settings));
   // re-sync the draft whenever saved settings change (Update pressed / backup restored)
-  useEffect(() => setDraft(identityOf(settings)), [settings]);
+  const [draftSync, setDraftSync] = useState(settings);
+  if (draftSync !== settings) {
+    setDraftSync(settings);
+    setDraft(identityOf(settings));
+  }
 
   const saved = identityOf(settings);
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
@@ -353,7 +363,11 @@ function BillingSlipSection() {
   const { toast } = useToast();
 
   const [draft, setDraft] = useState<BillingDraft>(() => billingOf(settings));
-  useEffect(() => setDraft(billingOf(settings)), [settings]);
+  const [billingSync, setBillingSync] = useState(settings);
+  if (billingSync !== settings) {
+    setBillingSync(settings);
+    setDraft(billingOf(settings));
+  }
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(billingOf(settings));
   const upd = (patch: Partial<BillingDraft>) => setDraft((d) => ({ ...d, ...patch }));
@@ -525,7 +539,6 @@ function AppearanceSection() {
         <Label className="text-xs text-muted-foreground">{t('settings.watermark')}</Label>
         <p className="text-xs text-muted-foreground">{t('settings.watermarkDesc')}</p>
         <div className="flex items-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={appearance.watermark || '/narasimha-logo.jpg'}
             alt="Watermark preview"
@@ -554,6 +567,104 @@ function AppearanceSection() {
           onChange={pickWatermark}
         />
       </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Sync & security — encrypted cloud sync between the owner's phones   */
+/* (mobile + OTP login, PIN-protected data) and the manual lock.       */
+/* ------------------------------------------------------------------ */
+
+function SyncSecuritySection() {
+  const t = useT();
+  const { toast } = useToast();
+  const [status, setStatus] = useState(() => getSyncStatus());
+  const [online, setOnline] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  // live status — the engine updates quietly in the background
+  useEffect(() => {
+    const iv = setInterval(() => setStatus(getSyncStatus()), 2000);
+    const upd = () => setOnline(navigator.onLine);
+    window.addEventListener('online', upd);
+    window.addEventListener('offline', upd);
+    upd();
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener('online', upd);
+      window.removeEventListener('offline', upd);
+    };
+  }, []);
+
+  const auth = getAuth();
+
+  const doSync = async () => {
+    setBusy(true);
+    const okRes = await syncNow();
+    setBusy(false);
+    setStatus(getSyncStatus());
+    toast({ title: okRes ? t('sync.syncedToast') : t('sync.syncFailedToast') });
+  };
+
+  const doLock = () => {
+    lockApp(); // wipes session + key on this device → the OTP + PIN gate returns
+    toast({ title: t('sync.lockedToast') });
+    setTimeout(() => location.reload(), 400);
+  };
+
+  const lastSync =
+    status.lastSyncAt > 0
+      ? t('sync.lastSync').replace(
+          '{time}',
+          new Date(status.lastSyncAt).toLocaleTimeString('en-IN', {
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        )
+      : t('sync.never');
+
+  return (
+    <section aria-label="Sync and security" className="space-y-3">
+      <h3 className="text-sm font-bold text-blue-800">{t('sync.title')}</h3>
+      <p className="text-xs text-muted-foreground">{t('sync.desc')}</p>
+
+      <div className="space-y-1 rounded-lg border bg-neutral-50 px-3 py-2 text-xs" data-sync-status>
+        {auth && (
+          <p className="font-semibold text-blue-800">
+            {t('sync.loginAs').replace('{phone}', auth.phone)}
+          </p>
+        )}
+        <p className={online ? 'text-emerald-700' : 'text-amber-700'}>
+          {online ? t('sync.statusOn') : t('sync.statusOff')}
+        </p>
+        <p className="text-muted-foreground">{lastSync}</p>
+      </div>
+
+      <Button
+        variant="outline"
+        className="h-11 w-full"
+        onClick={doSync}
+        disabled={busy}
+        aria-label="Sync now"
+      >
+        <CloudUpload className="size-4" />
+        {busy ? t('sync.syncing') : t('sync.now')}
+      </Button>
+      <Button
+        variant="outline"
+        className="h-11 w-full text-destructive hover:text-destructive"
+        onClick={doLock}
+        aria-label="Lock app"
+      >
+        <Lock className="size-4" />
+        {t('sync.lockNow')}
+      </Button>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">{t('sync.lockDesc')}</p>
+      <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
+        <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
+        {t('sync.e2eeNote')}
+      </p>
     </section>
   );
 }

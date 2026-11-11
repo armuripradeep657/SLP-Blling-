@@ -12,9 +12,12 @@ import BillPanel from '@/components/BillPanel';
 import InvoiceModal, { type DocView } from '@/components/InvoiceModal';
 import PwaInstall, { ServiceWorkerRegister } from '@/components/PwaInstall';
 import ConnectivityToast from '@/components/ConnectivityToast';
+import LockScreen from '@/components/LockScreen';
 import { useStore } from '@/lib/store';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
 import { computeTotals, fmt } from '@/lib/billing';
+import { apiPullVault, isUnlocked, lockApp } from '@/lib/cloud';
+import { startSyncEngine } from '@/lib/sync';
 import type { BgThemeId, Invoice } from '@/lib/types';
 
 const subscribeNoop = () => () => undefined;
@@ -77,13 +80,40 @@ export default function Home() {
   const [modalInvoice, setModalInvoice] = useState<Invoice | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalView, setModalView] = useState<DocView>('slip');
-  const [showSplash, setShowSplash] = useState(false);
+  const [showSplash, setShowSplash] = useState(true); // opening zoom — plays once per app open
+  /** app gate: checking → locked (OTP + PIN) or ready (unlocked device) */
+  const [gate, setGate] = useState<'checking' | 'locked' | 'ready'>('checking');
 
   // Rehydrate persisted store AFTER mount (skipHydration) — avoids SSR mismatch
   useEffect(() => {
     useStore.persist.rehydrate();
-    setShowSplash(true); // opening animation — logo zoom (once per app open)
+    let cancelled = false;
+    (async () => {
+      // first-time use (or after "Lock app"): the OTP + PIN gate stands in front
+      if (!isUnlocked()) {
+        setGate('locked');
+        return;
+      }
+      // device remembers itself — validate the 30-day session (works offline too)
+      const pull = await apiPullVault();
+      if (cancelled) return;
+      if (pull.kind === 'auth') {
+        lockApp(); // session expired → lock again
+        setGate('locked');
+        return;
+      }
+      setGate('ready');
+      startSyncEngine(); // encrypted auto-sync across the owner's phones
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const handleUnlocked = () => {
+    setGate('ready');
+    startSyncEngine();
+  };
 
   // true on client after hydration, false on the server (avoids SSR mismatch)
   const mounted = useSyncExternalStore(
@@ -109,6 +139,24 @@ export default function Home() {
     const inv = useStore.getState().lastInvoice;
     if (inv) openInvoice(inv);
   };
+
+  /* ----- gate: OTP + PIN lock stands in front of the whole app ----- */
+  if (gate === 'checking') {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-gradient-to-b from-blue-50 via-white to-blue-100">
+        {showSplash && <Splash logoSrc={logoSrc} name={companyName} />}
+        <p className="text-sm text-muted-foreground">{t('page.loading')}</p>
+      </div>
+    );
+  }
+  if (gate === 'locked') {
+    return (
+      <>
+        {showSplash && <Splash logoSrc={logoSrc} name={companyName} />}
+        <LockScreen onUnlocked={handleUnlocked} />
+      </>
+    );
+  }
 
   return (
     <div data-app-root className={`relative min-h-dvh bg-gradient-to-b ${BG_STYLES[bgTheme]}`}>

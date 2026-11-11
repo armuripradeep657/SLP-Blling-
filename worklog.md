@@ -345,3 +345,20 @@ Work Log:
 
 Stage Summary:
 - Expenses now record WHEN (date + time), WHO (person), WHAT FOR (purpose) and HOW MUCH (amount) with the payment mode — and the Narasimha company seal sits centred over the whole app as a subtle watermark
+
+---
+Task ID: 20
+Agent: main
+Task: "In labour remove product name and add product quantity ... money I paid now and balance money also ... online work when I update in one mobile automatically update in all mobile ... strong end-to-end encrypt ... first time use lock system using mobile number and otp ... real time otp based login" (v23)
+
+Work Log:
+- Labour rework: product-NAME field removed, product QUANTITY (nos) added; money split into "Paid now ₹" + "Balance ₹ (to pay)" (mode chip applies to the paid part); rows show date · work · qty nos · −₹paid · Balance ₹balance; month cards = Paid this month / Balance to pay / entries + Total wages line (paid+balance); legacy rows (old `product`/`amount` fields) still render; i18n EN+TE keys reworked
+- Online sync (one mobile → all mobiles): Prisma SyncAccount + Session tables (SQLite); API routes /api/auth/request-otp, /api/auth/verify-otp, /api/auth/pin, /api/vault (GET/PUT, 6MB cap); client engine lib/sync.ts — local-first, push (debounced 1.2s, queued if busy) + poll pull every 4s + on online/visibility; merge = union-by-id for invoices/expenses/incomes/labour/products with tombstones (store.deletedIds, delete actions record them) + LWW clock (dataUpdatedAt) for settings/appearance with nextInvoiceNo max-merge (no duplicate bill numbers); cart/customer/billConfig stay device-local
+- End-to-end encryption: random DEK (AES-256-GCM) encrypts the whole state blob; DEK wrapped by KEK = PBKDF2-SHA256 210k rounds over phone+PIN (lib/crypto.ts, WebCrypto); server stores ONLY ciphertext + wrapped DEK + salt — PIN/key never leave the device (vault GET returns wrapped key for new devices; wrong PIN = GCM unwrap failure)
+- First-time lock: LockScreen gate in front of the whole app (page.tsx gate checking/locked/ready) — mobile number + real 6-digit OTP (SHA-256 hashed server-side, 5-min expiry, 5 attempts, 20s resend cooldown, 5 sends/hour) → first time = create 4–8 digit PIN, next time/new phone = PIN unlock; device stays unlocked 30 days (hashed session token) until Settings → Lock app
+- OTP delivery: MSG91 flow API + generic JSON webhook adapters (env: MSG91_AUTH_KEY/MSG91_TEMPLATE_ID/MSG91_SENDER_ID or SMS_GATEWAY_URL/SMS_GATEWAY_KEY); demo mode shows the OTP on screen until a gateway key is configured — login works end-to-end meanwhile and data stays PIN-encrypted
+- Settings → "Sync & security" section: logged-in number, online/offline status, last-synced time, Sync now, Lock app + E2EE note; lib/version.ts 22 → 23; sw.js CACHE v23
+- Verified: scripts/shot-v23.mjs — 50/50 PASS (lock gate hides app, wrong OTP rejected, PIN setup/unlock, v23 popup, labour beside ledger, qty/paid/balance rows + month cards + delete, reload auto-unlock persistence, backup carries qty/paid/balance, TWO-BROWSER sync both directions incl. auto-arrival in ~5s, vault ciphertext + SQLite file contain no plain business text, lock-again + re-login); scripts/smoke-bill-v23.mjs — 7/7 (bill flow behind the gate); tsc + eslint clean; screenshots v23-lock-phone/lock-otp/unlocked/labour/device1-sync/device2-sync/locked-again
+
+Stage Summary:
+- Labour now records quantity + money paid now + balance; every update made on one phone appears on the owner's other phones automatically; the whole app is protected by mobile-number + OTP login with a security PIN, and the server can only ever see encrypted data

@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowDownRight, CalendarDays, Hammer, Trash2 } from 'lucide-react';
+import { ArrowDownRight, CalendarDays, Coins, Hammer, Trash2 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { fmt, fmtShort, localDateKey, localMonthKey } from '@/lib/billing';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
@@ -25,7 +25,7 @@ function modeLabel(m: PaymentMode, appLang: AppLanguage): string {
   return m === 'Cash' ? 'నగదు' : m === 'Card' ? 'కార్డ్' : m === 'Due' ? 'బాకీ' : 'UPI';
 }
 
-/** Cash / UPI / Card chip — how the day's money was given */
+/** Cash / UPI / Card chip — how the money was given that day */
 function ModeChip({ mode, appLang }: { mode?: PaymentMode; appLang: AppLanguage }) {
   if (!mode) return null;
   const cls =
@@ -60,30 +60,41 @@ export default function LabourView() {
   const [lwDate, setLwDate] = useState(today);
   const [lwName, setLwName] = useState('');
   const [lwWork, setLwWork] = useState('');
-  const [lwProduct, setLwProduct] = useState('');
-  const [lwMoney, setLwMoney] = useState('');
+  const [lwQty, setLwQty] = useState('');
+  const [lwPaid, setLwPaid] = useState('');
+  const [lwBalance, setLwBalance] = useState('');
   const [lwMode, setLwMode] = useState<PaymentMode>('Cash');
+
+  const previewPaid = Number(lwPaid) || 0;
+  const previewBalance = Number(lwBalance) || 0;
+  const previewTotal = Math.round((previewPaid + previewBalance) * 100) / 100;
 
   const submitLabourWork = () => {
     const name = lwName.trim();
     const work = lwWork.trim();
     if (!name || !work) return;
-    const amt = Number(lwMoney) || 0;
+    const paid = Math.round((Number(lwPaid) || 0) * 100) / 100;
+    const balance = Math.round((Number(lwBalance) || 0) * 100) / 100;
+    const qty = Math.round(Number(lwQty) || 0);
     addLabourWork({
       dateISO: new Date(`${lwDate || today}T12:00:00`).toISOString(),
       name,
       work,
-      product: lwProduct.trim() || undefined,
-      amount: amt > 0 ? amt : undefined,
-      mode: amt > 0 ? lwMode : undefined,
+      qty: qty > 0 ? qty : undefined,
+      paid: paid > 0 ? paid : undefined,
+      balance: balance > 0 ? balance : undefined,
+      mode: paid > 0 ? lwMode : undefined,
     });
     setLwName('');
     setLwWork('');
-    setLwProduct('');
-    setLwMoney('');
+    setLwQty('');
+    setLwPaid('');
+    setLwBalance('');
     toast({
       title: t('labour.added'),
-      description: amt > 0 ? `${name} · ₹${fmt(amt)} · ${modeLabel(lwMode, appLang)}` : name,
+      description: `${name} · ${fmt(previewTotal)} ${
+        previewBalance > 0 ? `· ${t('labour.rowBalance')} ₹${fmt(previewBalance)}` : ''
+      }`,
     });
   };
 
@@ -96,14 +107,22 @@ export default function LabourView() {
     [labourWorks, month]
   );
 
-  const monthMoney = useMemo(
-    () => monthWorks.reduce((s, w) => s + (w.amount || 0), 0),
+  const monthPaid = useMemo(
+    () => monthWorks.reduce((s, w) => s + (w.paid ?? w.amount ?? 0), 0),
     [monthWorks]
+  );
+  const monthBalance = useMemo(
+    () => monthWorks.reduce((s, w) => s + (w.balance ?? 0), 0),
+    [monthWorks]
+  );
+  const monthWages = useMemo(
+    () => Math.round((monthPaid + monthBalance) * 100) / 100,
+    [monthPaid, monthBalance]
   );
 
   return (
     <div className="space-y-3">
-      {/* month picker + money given this month */}
+      {/* month picker + paid / balance / entries this month */}
       <div className="space-y-2.5 rounded-xl border bg-card p-3">
         <div className="flex items-center gap-2">
           <CalendarDays className="size-4 shrink-0 text-blue-700" />
@@ -115,29 +134,38 @@ export default function LabourView() {
             aria-label="Labour month"
           />
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="anim-pop rounded-xl border bg-card p-3">
-            <p className="flex items-center gap-1 text-xs text-muted-foreground">
-              <ArrowDownRight className="size-3.5 text-red-600" />
-              {t('labour.moneyMonth')}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="anim-pop rounded-xl border bg-card p-2.5">
+            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <ArrowDownRight className="size-3 shrink-0 text-red-600" />
+              <span className="truncate">{t('labour.paidMonth')}</span>
             </p>
-            <p data-labour-month-money className="mt-0.5 text-lg font-extrabold tabular-nums text-red-600">
-              ₹{fmt(monthMoney)}
+            <p data-labour-month-paid className="mt-0.5 text-base font-extrabold tabular-nums text-red-600">
+              ₹{fmt(monthPaid)}
             </p>
           </div>
-          <div className="anim-pop rounded-xl border bg-card p-3">
-            <p className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Hammer className="size-3.5 text-amber-700" />
-              {t('labour.worksMonth')}
+          <div className="anim-pop rounded-xl border bg-card p-2.5">
+            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Coins className="size-3 shrink-0 text-amber-600" />
+              <span className="truncate">{t('labour.balanceMonth')}</span>
             </p>
-            <p data-labour-month-count className="mt-0.5 text-lg font-extrabold tabular-nums text-blue-800">
+            <p data-labour-month-balance className="mt-0.5 text-base font-extrabold tabular-nums text-amber-600">
+              ₹{fmt(monthBalance)}
+            </p>
+          </div>
+          <div className="anim-pop rounded-xl border bg-card p-2.5">
+            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Hammer className="size-3 shrink-0 text-blue-700" />
+              <span className="truncate">{t('labour.worksMonth')}</span>
+            </p>
+            <p data-labour-month-count className="mt-0.5 text-base font-extrabold tabular-nums text-blue-800">
               {monthWorks.length}
             </p>
           </div>
         </div>
       </div>
 
-      {/* add form — who / when / what / product / money */}
+      {/* add form — who / when / what / product QUANTITY / money paid now + balance */}
       <div className="space-y-2.5 rounded-xl border bg-card p-3">
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
@@ -174,44 +202,73 @@ export default function LabourView() {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
-            <Label className="text-[11px] text-muted-foreground">{t('labour.product')}</Label>
+            <Label className="text-[11px] text-muted-foreground">{t('labour.qty')}</Label>
             <Input
-              value={lwProduct}
-              onChange={(e) => setLwProduct(e.target.value)}
-              placeholder={t('labour.productPlaceholder')}
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={lwQty}
+              onChange={(e) => setLwQty(e.target.value)}
+              placeholder={t('labour.qtyPlaceholder')}
               className="h-10"
-              aria-label="Work product"
+              aria-label="Work quantity"
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-[11px] text-muted-foreground">{t('labour.money')}</Label>
+            <Label className="text-[11px] text-muted-foreground">{t('labour.paid')}</Label>
             <Input
               type="number"
               inputMode="decimal"
               min={0}
-              value={lwMoney}
-              onChange={(e) => setLwMoney(e.target.value)}
+              value={lwPaid}
+              onChange={(e) => setLwPaid(e.target.value)}
               placeholder="0"
               className="h-10"
-              aria-label="Labour money"
+              aria-label="Labour paid"
             />
           </div>
         </div>
-        <div className="space-y-1">
-          <Label className="text-[11px] text-muted-foreground">{t('labour.mode')}</Label>
-          <Select value={lwMode} onValueChange={(v) => setLwMode(v as PaymentMode)}>
-            <SelectTrigger className="h-10" aria-label="Labour money mode">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MODES.map((m) => (
-                <SelectItem key={m} value={m}>
-                  {modeLabel(m, appLang)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">{t('labour.balance')}</Label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              value={lwBalance}
+              onChange={(e) => setLwBalance(e.target.value)}
+              placeholder="0"
+              className="h-10"
+              aria-label="Labour balance"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">{t('labour.mode')}</Label>
+            <Select value={lwMode} onValueChange={(v) => setLwMode(v as PaymentMode)}>
+              <SelectTrigger className="h-10" aria-label="Labour money mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MODES.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {modeLabel(m, appLang)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+        {(previewPaid > 0 || previewBalance > 0) && (
+          <p className="text-xs font-semibold text-muted-foreground">
+            {t('labour.wagesTotal')}: <span className="tabular-nums text-blue-800">₹{fmt(previewTotal)}</span>
+            {previewBalance > 0 && (
+              <span className="text-amber-600">
+                {' '}
+                · {t('labour.rowBalance')} ₹{fmt(previewBalance)}
+              </span>
+            )}
+          </p>
+        )}
         <Button
           onClick={submitLabourWork}
           className="h-11 w-full bg-amber-600 text-white hover:bg-amber-700"
@@ -225,54 +282,73 @@ export default function LabourView() {
 
       {/* register rows */}
       <ul className="space-y-1.5">
-        {monthWorks.map((e, i) => (
-          <li
-            key={e.id}
-            data-labour-row={e.name}
-            className="anim-fade-up flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2"
-            style={{ animationDelay: `${Math.min(i, 10) * 40}ms` }}
-          >
-            <div className="flex min-w-0 items-center gap-2.5">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-                <Hammer className="size-4" />
-              </span>
-              <div className="min-w-0">
-                <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                  <span className="truncate">{e.name}</span>
-                  <ModeChip mode={e.amount ? e.mode : undefined} appLang={appLang} />
-                </p>
-                <p className="truncate text-[11px] text-muted-foreground">
-                  {new Date(e.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                  {' · '}
-                  {e.work}
-                  {e.product ? ` · ${e.product}` : ''}
-                </p>
+        {monthWorks.map((e, i) => {
+          const paid = e.paid ?? e.amount ?? 0; // legacy `amount` = paid that day
+          const balance = e.balance ?? 0;
+          return (
+            <li
+              key={e.id}
+              data-labour-row={e.name}
+              className="anim-fade-up flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2"
+              style={{ animationDelay: `${Math.min(i, 10) * 40}ms` }}
+            >
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                  <Hammer className="size-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                    <span className="truncate">{e.name}</span>
+                    <ModeChip mode={paid ? e.mode : undefined} appLang={appLang} />
+                  </p>
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    {new Date(e.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                    {' · '}
+                    {e.work}
+                    {e.product ? ` · ${e.product}` : ''}
+                    {e.qty ? ` · ${e.qty} ${t('labour.qtyUnit')}` : ''}
+                  </p>
+                  {balance > 0 && (
+                    <p className="text-[11px] font-bold text-amber-600">
+                      {t('labour.rowBalance')} ₹{fmt(balance)}
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              {e.amount ? (
-                <span className="text-sm font-bold tabular-nums text-red-600">− ₹{fmt(e.amount)}</span>
-              ) : null}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8 text-muted-foreground hover:text-destructive"
-                onClick={() => deleteLabourWork(e.id)}
-                aria-label={`Delete work ${e.name}`}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          </li>
-        ))}
+              <div className="flex shrink-0 items-center gap-1.5">
+                {paid ? (
+                  <span className="text-sm font-bold tabular-nums text-red-600">− ₹{fmt(paid)}</span>
+                ) : null}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 text-muted-foreground hover:text-destructive"
+                  onClick={() => deleteLabourWork(e.id)}
+                  aria-label={`Delete work ${e.name}`}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+            </li>
+          );
+        })}
         {monthWorks.length === 0 && (
           <li className="py-10 text-center text-sm text-muted-foreground">{t('labour.empty')}</li>
         )}
       </ul>
       {monthWorks.length > 0 && (
-        <div className="flex items-center justify-between rounded-lg border bg-neutral-50 px-3 py-2 text-xs font-bold">
-          <span>{t('ledger.monthTotal')}</span>
-          <span className="tabular-nums text-red-600">₹{fmtShort(monthMoney)}</span>
+        <div className="space-y-0.5 rounded-lg border bg-neutral-50 px-3 py-2 text-xs font-bold">
+          <div className="flex items-center justify-between">
+            <span>{t('labour.wagesTotal')}</span>
+            <span data-labour-month-money className="tabular-nums text-blue-800">
+              ₹{fmtShort(monthWages)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between font-semibold text-muted-foreground">
+            <span>
+              {t('labour.paidMonth')} ₹{fmtShort(monthPaid)} · {t('labour.rowBalance')} ₹{fmtShort(monthBalance)}
+            </span>
+          </div>
         </div>
       )}
     </div>

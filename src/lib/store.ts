@@ -11,6 +11,7 @@ import type {
   BusinessSettings,
   CartItem,
   Customer,
+  DeletedIds,
   Expense,
   IncomeEntry,
   Invoice,
@@ -19,6 +20,25 @@ import type {
   PaymentMode,
   Product,
 } from './types';
+
+const EMPTY_DELETED: DeletedIds = {
+  invoices: [],
+  expenses: [],
+  incomes: [],
+  labours: [],
+  products: [],
+};
+
+/** Helper: mark an id deleted (tombstone) so sync never resurrects it */
+function tomb(all: DeletedIds, key: keyof DeletedIds, id: string): DeletedIds {
+  const list = all[key];
+  return list.includes(id) ? all : { ...all, [key]: [id, ...list] };
+}
+
+/** Helper: bump the sync LWW clock (config-level changes) */
+function touch(now = Date.now()): number {
+  return now;
+}
 
 interface BillingStore {
   hydrated: boolean;
@@ -34,10 +54,14 @@ interface BillingStore {
   expenses: Expense[];
   /** Manual income entries (money received outside bills) */
   incomes: IncomeEntry[];
-  /** Labour work register — who worked, on what, on which product */
+  /** Labour work register — who worked, what quantity, money paid now + balance */
   labourWorks: LabourWork[];
   /** App look — background theme, header colour, owner's watermark photo */
   appearance: Appearance;
+  /** Tombstones — ids deleted anywhere, so cloud sync never brings them back */
+  deletedIds: DeletedIds;
+  /** Sync LWW clock — bumped whenever settings/appearance/products/bills numbering change */
+  dataUpdatedAt: number;
 
   setActiveTab: (t: MainTab) => void;
   saveSettings: (s: Partial<BusinessSettings>) => void;
@@ -103,17 +127,28 @@ export const useStore = create<BillingStore>()(
       incomes: [],
       labourWorks: [],
       appearance: { bgTheme: 'blue', headerTheme: 'blue', watermark: '' },
+      deletedIds: EMPTY_DELETED,
+      dataUpdatedAt: 0,
 
       setActiveTab: (t) => set({ activeTab: t }),
 
-      saveSettings: (s) => set((st) => ({ settings: { ...st.settings, ...s } })),
+      saveSettings: (s) =>
+        set((st) => ({ settings: { ...st.settings, ...s }, dataUpdatedAt: touch() })),
 
-      addProduct: (p) => set((st) => ({ products: [p, ...st.products] })),
+      addProduct: (p) => set((st) => ({ products: [p, ...st.products], dataUpdatedAt: touch() })),
 
       updateProduct: (id, p) =>
-        set((st) => ({ products: st.products.map((x) => (x.id === id ? { ...x, ...p } : x)) })),
+        set((st) => ({
+          products: st.products.map((x) => (x.id === id ? { ...x, ...p } : x)),
+          dataUpdatedAt: touch(),
+        })),
 
-      deleteProduct: (id) => set((st) => ({ products: st.products.filter((x) => x.id !== id) })),
+      deleteProduct: (id) =>
+        set((st) => ({
+          products: st.products.filter((x) => x.id !== id),
+          deletedIds: tomb(st.deletedIds, 'products', id),
+          dataUpdatedAt: touch(),
+        })),
 
       addToCart: (product, size) => {
         const price = priceForSize(product.price, product.sizePrices, size);
@@ -266,13 +301,18 @@ export const useStore = create<BillingStore>()(
           // chosen bill language stays sticky)
           billConfig: { ...DEFAULT_CONFIG, language: billConfig.language },
           settings: { ...st.settings, nextInvoiceNo: st.settings.nextInvoiceNo + 1 },
+          dataUpdatedAt: touch(),
         }));
         return invoice;
       },
 
       clearLastInvoice: () => set({ lastInvoice: null }),
 
-      deleteInvoice: (id) => set((st) => ({ invoices: st.invoices.filter((i) => i.id !== id) })),
+      deleteInvoice: (id) =>
+        set((st) => ({
+          invoices: st.invoices.filter((i) => i.id !== id),
+          deletedIds: tomb(st.deletedIds, 'invoices', id),
+        })),
 
       // Marking paid records the newly-received amount as income today
       updateInvoiceStatus: (id, paidAmount) =>
@@ -289,6 +329,7 @@ export const useStore = create<BillingStore>()(
           return {
             invoices: st.invoices.map(patchOne),
             lastInvoice: st.lastInvoice ? patchOne(st.lastInvoice) : st.lastInvoice,
+            dataUpdatedAt: touch(),
           };
         }),
 
@@ -299,6 +340,7 @@ export const useStore = create<BillingStore>()(
           invoices: st.invoices.map((i) => (i.id === id ? { ...i, language } : i)),
           lastInvoice:
             st.lastInvoice && st.lastInvoice.id === id ? { ...st.lastInvoice, language } : st.lastInvoice,
+          dataUpdatedAt: touch(),
         })),
 
       // Dues list: receive a balance payment — counts as income TODAY
@@ -310,6 +352,7 @@ export const useStore = create<BillingStore>()(
           return {
             invoices: st.invoices.map(patchOne),
             lastInvoice: st.lastInvoice ? patchOne(st.lastInvoice) : st.lastInvoice,
+            dataUpdatedAt: touch(),
           };
         }),
 
@@ -322,7 +365,10 @@ export const useStore = create<BillingStore>()(
         })),
 
       deleteExpense: (id) =>
-        set((st) => ({ expenses: st.expenses.filter((x) => x.id !== id) })),
+        set((st) => ({
+          expenses: st.expenses.filter((x) => x.id !== id),
+          deletedIds: tomb(st.deletedIds, 'expenses', id),
+        })),
 
       addIncome: (e) =>
         set((st) => ({
@@ -333,7 +379,10 @@ export const useStore = create<BillingStore>()(
         })),
 
       deleteIncome: (id) =>
-        set((st) => ({ incomes: st.incomes.filter((x) => x.id !== id) })),
+        set((st) => ({
+          incomes: st.incomes.filter((x) => x.id !== id),
+          deletedIds: tomb(st.deletedIds, 'incomes', id),
+        })),
 
       addLabourWork: (e) =>
         set((st) => ({
@@ -344,9 +393,13 @@ export const useStore = create<BillingStore>()(
         })),
 
       deleteLabourWork: (id) =>
-        set((st) => ({ labourWorks: st.labourWorks.filter((x) => x.id !== id) })),
+        set((st) => ({
+          labourWorks: st.labourWorks.filter((x) => x.id !== id),
+          deletedIds: tomb(st.deletedIds, 'labours', id),
+        })),
 
-      setAppearance: (a) => set((st) => ({ appearance: { ...st.appearance, ...a } })),
+      setAppearance: (a) =>
+        set((st) => ({ appearance: { ...st.appearance, ...a }, dataUpdatedAt: touch() })),
     }),
     {
       name: 'slp-cement-billing-v1',
@@ -378,6 +431,8 @@ export const useStore = create<BillingStore>()(
         incomes: st.incomes,
         labourWorks: st.labourWorks,
         appearance: st.appearance,
+        deletedIds: st.deletedIds,
+        dataUpdatedAt: st.dataUpdatedAt,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) state.hydrated = true;
