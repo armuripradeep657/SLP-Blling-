@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,7 +22,62 @@ import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from '@/lib/defaultData';
 import { normalizePhone } from '@/lib/billing';
 import InstallAppSection from '@/components/InstallAppSection';
 import { useT, useAppLang } from '@/hooks/use-app-lang';
-import { RefreshCw } from 'lucide-react';
+import { Download, RefreshCw, Upload } from 'lucide-react';
+import type { BusinessSettings, Expense, IncomeEntry, Invoice, Product } from '@/lib/types';
+
+/* ------------------------------------------------------------------ */
+/* Draft shapes — edits stay LOCAL until the owner presses Update      */
+/* ------------------------------------------------------------------ */
+
+/** Business Identity card fields (company name, owner, contact & UPI) */
+interface IdentityDraft {
+  companyName: string;
+  companyNameTe: string;
+  ownerName: string;
+  phone: string;
+  whatsappNumber: string;
+  address: string;
+  upiId: string;
+}
+
+const identityOf = (s: BusinessSettings): IdentityDraft => ({
+  companyName: s.companyName,
+  companyNameTe: s.companyNameTe ?? '',
+  ownerName: s.ownerName,
+  phone: s.phone,
+  whatsappNumber: s.whatsappNumber,
+  address: s.address,
+  upiId: s.upiId,
+});
+
+/** Billing & Slip card fields */
+interface BillingDraft {
+  invoicePrefix: string;
+  nextInvoiceNo: string;
+  slipWidthMm: 58 | 80;
+  thankYouNote: string;
+  returnPolicy: string;
+}
+
+const billingOf = (s: BusinessSettings): BillingDraft => ({
+  invoicePrefix: s.invoicePrefix,
+  nextInvoiceNo: String(s.nextInvoiceNo),
+  slipWidthMm: s.slipWidthMm,
+  thankYouNote: s.thankYouNote,
+  returnPolicy: s.returnPolicy,
+});
+
+/** Shape of the backup file the app writes & reads back */
+interface BackupFile {
+  app: string;
+  backupVersion: number;
+  exportedAt: string;
+  settings: BusinessSettings;
+  products: Product[];
+  invoices?: Invoice[];
+  expenses?: Expense[];
+  incomes?: IncomeEntry[];
+}
 
 export default function SettingsView() {
   const t = useT();
@@ -63,57 +118,11 @@ export default function SettingsView() {
 
       <Separator />
 
-      <section aria-label="Business identity" className="space-y-3">
-        <h3 className="text-sm font-bold text-blue-800">{t('settings.businessIdentity')}</h3>
-        <Field label={t('settings.companyName')} value={settings.companyName} onChange={(v) => set({ companyName: v })} textarea />
-        <Field
-          label={t('settings.companyNameTe')}
-          value={settings.companyNameTe ?? ''}
-          onChange={(v) => set({ companyNameTe: v })}
-          textarea
-          placeholder="శ్రీ లక్ష్మీ పెంచిల నరసింహ స్వామి సిమెంట్ వర్క్స్"
-        />
-        <Field label={t('settings.ownerName')} value={settings.ownerName} onChange={(v) => set({ ownerName: v })} placeholder="A. Prasad" />
-        <div className="grid grid-cols-2 gap-2">
-          <Field label={t('settings.phone')} value={settings.phone} onChange={(v) => set({ phone: v })} type="tel" placeholder="98765 43210" />
-          <Field label={t('settings.whatsapp')} value={settings.whatsappNumber} onChange={(v) => set({ whatsappNumber: v })} type="tel" placeholder="Used on bills" />
-        </div>
-        <Field label={t('settings.address')} value={settings.address} onChange={(v) => set({ address: v })} textarea placeholder="Main Road, Village, District" />
-        <Field label={t('settings.upi')} value={settings.upiId} onChange={(v) => set({ upiId: v })} placeholder="name@upi" />
-      </section>
+      <BusinessIdentitySection />
 
       <Separator />
 
-      <section aria-label="Billing preferences" className="space-y-3">
-        <h3 className="text-sm font-bold text-blue-800">{t('settings.billingSlip')}</h3>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label={t('settings.invoicePrefix')} value={settings.invoicePrefix} onChange={(v) => set({ invoicePrefix: v })} placeholder="SLP-INV-" />
-          <Field
-            label={t('settings.nextInvoiceNo')}
-            value={String(settings.nextInvoiceNo)}
-            onChange={(v) => set({ nextInvoiceNo: Math.max(1, Number(v.replace(/\D/g, '')) || 1) })}
-            type="number"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">{t('settings.slipWidth')}</Label>
-          <div className="flex gap-2">
-            {([58, 80] as const).map((mm) => (
-              <button
-                key={mm}
-                onClick={() => set({ slipWidthMm: mm })}
-                className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-semibold ${
-                  settings.slipWidthMm === mm ? 'border-blue-600 bg-blue-600 text-white' : 'bg-card hover:bg-accent'
-                }`}
-              >
-                {mm} mm {mm === 58 ? '(small)' : '(standard)'}
-              </button>
-            ))}
-          </div>
-        </div>
-        <Field label={t('settings.thankYouNote')} value={settings.thankYouNote} onChange={(v) => set({ thankYouNote: v })} />
-        <Field label={t('settings.returnPolicy')} value={settings.returnPolicy} onChange={(v) => set({ returnPolicy: v })} />
-      </section>
+      <BillingSlipSection />
 
       <Separator />
 
@@ -122,6 +131,10 @@ export default function SettingsView() {
       <Separator />
 
       <AppUpdatesSection />
+
+      <Separator />
+
+      <BackupSection />
 
       <Separator />
 
@@ -186,6 +199,336 @@ export default function SettingsView() {
         </AlertDialog>
       </section>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Business Identity — edit freely, save only with "Update details"    */
+/* ------------------------------------------------------------------ */
+
+function BusinessIdentitySection() {
+  const t = useT();
+  const settings = useStore((s) => s.settings);
+  const saveSettings = useStore((s) => s.saveSettings);
+  const { toast } = useToast();
+
+  const [draft, setDraft] = useState<IdentityDraft>(() => identityOf(settings));
+  // re-sync the draft whenever saved settings change (Update pressed / backup restored)
+  useEffect(() => setDraft(identityOf(settings)), [settings]);
+
+  const saved = identityOf(settings);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  const upd = (patch: Partial<IdentityDraft>) => setDraft((d) => ({ ...d, ...patch }));
+
+  const save = () => {
+    saveSettings({
+      ...draft,
+      companyName: draft.companyName.trim(),
+      companyNameTe: draft.companyNameTe.trim(),
+      ownerName: draft.ownerName.trim(),
+      phone: normalizePhone(draft.phone),
+      whatsappNumber: normalizePhone(draft.whatsappNumber),
+      address: draft.address.trim(),
+      upiId: draft.upiId.trim(),
+    });
+    toast({
+      title: t('settings.updatedToast'),
+      description: draft.companyName.trim() || undefined,
+    });
+  };
+
+  return (
+    <section aria-label="Business identity" className="space-y-3">
+      <h3 className="text-sm font-bold text-blue-800">{t('settings.businessIdentity')}</h3>
+      <p className="text-xs text-muted-foreground">{t('settings.updateHint')}</p>
+      <Field
+        ariaLabel="Company name"
+        label={t('settings.companyName')}
+        value={draft.companyName}
+        onChange={(v) => upd({ companyName: v })}
+        textarea
+      />
+      <Field
+        ariaLabel="Company name in Telugu"
+        label={t('settings.companyNameTe')}
+        value={draft.companyNameTe}
+        onChange={(v) => upd({ companyNameTe: v })}
+        textarea
+        placeholder="శ్రీ లక్ష్మీ పెంచిల నరసింహ స్వామి సిమెంట్ వర్క్స్"
+      />
+      <Field
+        ariaLabel="Owner name"
+        label={t('settings.ownerName')}
+        value={draft.ownerName}
+        onChange={(v) => upd({ ownerName: v })}
+        placeholder="A. Prasad"
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <Field
+          ariaLabel="Phone"
+          label={t('settings.phone')}
+          value={draft.phone}
+          onChange={(v) => upd({ phone: v })}
+          type="tel"
+          placeholder="98765 43210"
+        />
+        <Field
+          ariaLabel="WhatsApp number"
+          label={t('settings.whatsapp')}
+          value={draft.whatsappNumber}
+          onChange={(v) => upd({ whatsappNumber: v })}
+          type="tel"
+          placeholder="Used on bills"
+        />
+      </div>
+      <Field
+        ariaLabel="Shop address"
+        label={t('settings.address')}
+        value={draft.address}
+        onChange={(v) => upd({ address: v })}
+        textarea
+        placeholder="Main Road, Village, District"
+      />
+      <Field
+        ariaLabel="UPI ID"
+        label={t('settings.upi')}
+        value={draft.upiId}
+        onChange={(v) => upd({ upiId: v })}
+        placeholder="name@upi"
+      />
+      <Button
+        onClick={save}
+        disabled={!dirty}
+        className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+        aria-label="Update details"
+      >
+        {t('settings.updateDetails')}
+      </Button>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Billing & Slip — edit freely, save only with "Update bill settings" */
+/* ------------------------------------------------------------------ */
+
+function BillingSlipSection() {
+  const t = useT();
+  const settings = useStore((s) => s.settings);
+  const saveSettings = useStore((s) => s.saveSettings);
+  const { toast } = useToast();
+
+  const [draft, setDraft] = useState<BillingDraft>(() => billingOf(settings));
+  useEffect(() => setDraft(billingOf(settings)), [settings]);
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify(billingOf(settings));
+  const upd = (patch: Partial<BillingDraft>) => setDraft((d) => ({ ...d, ...patch }));
+
+  const save = () => {
+    saveSettings({
+      invoicePrefix: draft.invoicePrefix.trim() || 'SLP-INV-',
+      nextInvoiceNo: Math.max(1, Number(draft.nextInvoiceNo.replace(/\D/g, '')) || 1),
+      slipWidthMm: draft.slipWidthMm,
+      thankYouNote: draft.thankYouNote,
+      returnPolicy: draft.returnPolicy,
+    });
+    toast({ title: t('settings.billingUpdatedToast') });
+  };
+
+  return (
+    <section aria-label="Billing preferences" className="space-y-3">
+      <h3 className="text-sm font-bold text-blue-800">{t('settings.billingSlip')}</h3>
+      <div className="grid grid-cols-2 gap-2">
+        <Field
+          ariaLabel="Invoice prefix"
+          label={t('settings.invoicePrefix')}
+          value={draft.invoicePrefix}
+          onChange={(v) => upd({ invoicePrefix: v })}
+          placeholder="SLP-INV-"
+        />
+        <Field
+          ariaLabel="Next invoice no."
+          label={t('settings.nextInvoiceNo')}
+          value={draft.nextInvoiceNo}
+          onChange={(v) => upd({ nextInvoiceNo: v.replace(/\D/g, '') })}
+          type="number"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">{t('settings.slipWidth')}</Label>
+        <div className="flex gap-2">
+          {([58, 80] as const).map((mm) => (
+            <button
+              key={mm}
+              onClick={() => upd({ slipWidthMm: mm })}
+              className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-semibold ${
+                draft.slipWidthMm === mm ? 'border-blue-600 bg-blue-600 text-white' : 'bg-card hover:bg-accent'
+              }`}
+            >
+              {mm} mm {mm === 58 ? '(small)' : '(standard)'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <Field
+        ariaLabel="Thank-you note"
+        label={t('settings.thankYouNote')}
+        value={draft.thankYouNote}
+        onChange={(v) => upd({ thankYouNote: v })}
+      />
+      <Field
+        ariaLabel="Return policy"
+        label={t('settings.returnPolicy')}
+        value={draft.returnPolicy}
+        onChange={(v) => upd({ returnPolicy: v })}
+      />
+      <Button
+        onClick={save}
+        disabled={!dirty}
+        className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+        aria-label="Update bill settings"
+      >
+        {t('settings.updateBilling')}
+      </Button>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Backup & restore — one file with company details, products, bills   */
+/* and the whole ledger. Download it, keep it safe, restore anywhere.  */
+/* ------------------------------------------------------------------ */
+
+function BackupSection() {
+  const t = useT();
+  const settings = useStore((s) => s.settings);
+  const products = useStore((s) => s.products);
+  const invoices = useStore((s) => s.invoices);
+  const expenses = useStore((s) => s.expenses);
+  const incomes = useStore((s) => s.incomes);
+  const saveSettings = useStore((s) => s.saveSettings);
+  const { toast } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [pending, setPending] = useState<BackupFile | null>(null);
+
+  const doBackup = () => {
+    const data: BackupFile = {
+      app: 'slp-billing',
+      backupVersion: 1,
+      exportedAt: new Date().toISOString(),
+      settings,
+      products,
+      invoices,
+      expenses,
+      incomes,
+    };
+    try {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `slp-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast({
+        title: t('settings.backupDone'),
+        description: `${products.length} ${t('settings.backupProducts')} · ${invoices.length} ${t('settings.backupBills')}`,
+      });
+    } catch {
+      toast({ title: t('settings.backupFailed') });
+    }
+  };
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    try {
+      const data = JSON.parse(await f.text()) as BackupFile;
+      if (data?.app !== 'slp-billing' || typeof data.settings !== 'object' || !Array.isArray(data.products)) {
+        throw new Error('not a valid backup');
+      }
+      setPending(data);
+    } catch {
+      toast({ title: t('settings.backupInvalid') });
+    }
+  };
+
+  const doRestore = () => {
+    if (!pending) return;
+    saveSettings(pending.settings);
+    useStore.setState({
+      products: pending.products,
+      invoices: pending.invoices ?? [],
+      expenses: pending.expenses ?? [],
+      incomes: pending.incomes ?? [],
+    });
+    toast({
+      title: t('settings.restoredToast'),
+      description: `${pending.products.length} ${t('settings.backupProducts')} · ${(pending.invoices ?? []).length} ${t('settings.backupBills')}`,
+    });
+    setPending(null);
+  };
+
+  return (
+    <section aria-label="Backup and restore" className="space-y-2">
+      <h3 className="text-sm font-bold text-blue-800">{t('settings.backup')}</h3>
+      <p className="text-xs text-muted-foreground">{t('settings.backupDesc')}</p>
+      <Button
+        onClick={doBackup}
+        className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+        aria-label="Backup data"
+      >
+        <Download className="size-4" />
+        {t('settings.backupBtn')}
+      </Button>
+      <Button
+        variant="outline"
+        className="h-11 w-full"
+        onClick={() => fileRef.current?.click()}
+        aria-label="Restore backup"
+      >
+        <Upload className="size-4" />
+        {t('settings.restoreBtn')}
+      </Button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        aria-label="Restore backup file"
+        onChange={onFile}
+      />
+
+      <AlertDialog open={!!pending} onOpenChange={(o) => !o && setPending(null)}>
+        <AlertDialogContent className="max-w-xs">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('settings.restoreConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('settings.restoreConfirmDesc')}
+              {pending && (
+                <span className="mt-1 block font-semibold text-foreground">
+                  {pending.settings.companyName} · {pending.products.length} {t('settings.backupProducts')} ·{' '}
+                  {(pending.invoices ?? []).length} {t('settings.backupBills')}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={doRestore}
+              className="bg-blue-600 text-white hover:bg-blue-700"
+              aria-label="Confirm restore"
+            >
+              {t('settings.restore')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </section>
   );
 }
 
@@ -261,6 +604,7 @@ function Field({
   placeholder,
   type = 'text',
   textarea,
+  ariaLabel,
 }: {
   label: string;
   value: string;
@@ -268,6 +612,7 @@ function Field({
   placeholder?: string;
   type?: string;
   textarea?: boolean;
+  ariaLabel?: string;
 }) {
   const isPhone = type === 'tel';
   return (
@@ -275,6 +620,7 @@ function Field({
       <Label className="text-xs text-muted-foreground">{label}</Label>
       {textarea ? (
         <textarea
+          aria-label={ariaLabel}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
@@ -283,6 +629,7 @@ function Field({
         />
       ) : (
         <Input
+          aria-label={ariaLabel}
           type={type}
           inputMode={isPhone ? 'numeric' : undefined}
           value={value}
