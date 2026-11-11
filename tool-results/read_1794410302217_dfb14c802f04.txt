@@ -1,0 +1,767 @@
+     1→     1→// Bill language labels — English + Telugu + Both (bilingual)
+     2→     2→// + App UI language labels (English / తెలుగు) for the whole app chrome.
+     3→     3→import type { AppLanguage, BillLanguage } from './types';
+     4→     4→
+     5→     5→export interface SlipLabels {
+     6→     6→  proprietor: string;
+     7→     7→  itemSize: string;
+     8→     8→  amount: string;
+     9→     9→  size: string;
+    10→    10→  lessDiscount: string; // shown as "<lessDiscount> - Rs. X"
+    11→    11→  subtotal: string;
+    12→    12→  itemDiscounts: string;
+    13→    13→  discount: string;
+    14→    14→  labour: string;
+    15→    15→  auto: string;
+    16→    16→  total: string;
+    17→    17→  payment: string;
+    18→    18→  paid: string;
+    19→    19→  balanceDue: string;
+    20→    20→  balance: string;
+    21→    21→  amountPaid: string; // PAID stamp text
+    22→    22→  receivedThanks: string; // template {rs} {mode}
+    23→    23→  scanPay: string; // template {rs} {upi}
+    24→    24→  scanChat: string;
+    25→    25→  statusDue: string;
+    26→    26→  statusPartial: string;
+    27→    27→  modes: Record<string, string>;
+    28→    28→  thankYou: string;
+    29→    29→  policy: string;
+    30→    30→  powered: string;
+    31→    31→  // message-builder words
+    32→    32→  mInvoice: string;
+    33→    33→  mDate: string;
+    34→    34→  mCustomer: string;
+    35→    35→  mMobile: string;
+    36→    36→  mSubtotal: string;
+    37→    37→  mDiscount: string;
+    38→    38→  mPaidBal: string; // template "{paid} {balance}"
+    39→    39→  mThanks: string;
+    40→    40→  mImageSeparately: string;
+    41→    41→  capAttachedDue: string;
+    42→    42→  capAttachedPaid: string;
+    43→    43→  // formal invoice document
+    44→    44→  billTo: string;
+    45→    45→  tSno: string;
+    46→    46→  tItem: string;
+    47→    47→  tQty: string;
+    48→    48→  tRate: string;
+    49→    49→  sigFor: string; // template "{company}"
+    50→    50→  invoiceNoLabel: string;
+    51→    51→}
+    52→    52→
+    53→    53→export const EN_LABELS: SlipLabels = {
+    54→    54→  proprietor: 'Proprietor',
+    55→    55→  itemSize: 'ITEM / SIZE',
+    56→    56→  amount: 'AMOUNT',
+    57→    57→  size: 'Size',
+    58→    58→  lessDiscount: 'less discount',
+    59→    59→  subtotal: 'Subtotal',
+    60→    60→  itemDiscounts: 'Item Discounts',
+    61→    61→  discount: 'Discount',
+    62→    62→  labour: 'Labour Charges',
+    63→    63→  auto: 'Auto Charges',
+    64→    64→  total: 'TOTAL',
+    65→    65→  payment: 'Payment',
+    66→    66→  paid: 'Paid',
+    67→    67→  balanceDue: 'Balance Due',
+    68→    68→  balance: 'Balance',
+    69→    69→  amountPaid: 'AMOUNT PAID',
+    70→    70→  receivedThanks: 'Received with thanks — Rs. {rs} ({mode})',
+    71→    71→  scanPay: 'Scan to Pay Balance Rs. {rs}',
+    72→    72→  scanChat: 'Scan to chat on WhatsApp',
+    73→    73→  statusDue: 'DUE',
+    74→    74→  statusPartial: 'PARTIAL',
+    75→    75→  modes: { Cash: 'Cash', UPI: 'UPI', Card: 'Card', Due: 'Due' },
+    76→    76→  thankYou: 'Thank you! Visit Again',
+    77→    77→  policy: 'Goods once sold will not be taken back',
+    78→    78→  powered: 'Powered by SLP Billing App',
+    79→    79→  mInvoice: 'INVOICE',
+    80→    80→  mDate: 'Date',
+    81→    81→  mCustomer: 'Customer',
+    82→    82→  mMobile: 'Mobile',
+    83→    83→  mSubtotal: 'Subtotal',
+    84→    84→  mDiscount: 'Discount',
+    85→    85→  mPaidBal: '{paid} | Balance: {balance}',
+    86→    86→  mThanks: 'Thank you! Visit Again',
+    87→    87→  mImageSeparately: 'Bill image shared separately',
+    88→    88→  capAttachedDue: 'Bill image attached — scan the UPI QR in it to pay the balance',
+    89→    89→  capAttachedPaid: 'Bill image attached — amount fully paid, thank you',
+    90→    90→  billTo: 'Bill To',
+    91→    91→  tSno: 'S.No',
+    92→    92→  tItem: 'Item',
+    93→    93→  tQty: 'Qty',
+    94→    94→  tRate: 'Rate',
+    95→    95→  sigFor: 'For {company}',
+    96→    96→  invoiceNoLabel: 'Invoice No.',
+    97→    97→};
+    98→    98→
+    99→    99→export const TE_LABELS: SlipLabels = {
+   100→   100→  proprietor: 'యజమాని',
+   101→   101→  itemSize: 'వస్తువు / సైజ్',
+   102→   102→  amount: 'మొత్తం',
+   103→   103→  size: 'సైజ్',
+   104→   104→  lessDiscount: 'తగ్గింపు',
+   105→   105→  subtotal: 'ఉపమొత్తం',
+   106→   106→  itemDiscounts: 'వస్తువుల తగ్గింపు',
+   107→   107→  discount: 'తగ్గింపు',
+   108→   108→  labour: 'కూలి చార్జీలు',
+   109→   109→  auto: 'ఆటో చార్జీలు',
+   110→   110→  total: 'మొత్తం',
+   111→   111→  payment: 'చెల్లింపు',
+   112→   112→  paid: 'చెల్లించినది',
+   113→   113→  balanceDue: 'బాకీ',
+   114→   114→  balance: 'బాకీ',
+   115→   115→  amountPaid: 'మొత్తం చెల్లించబడింది',
+   116→   116→  receivedThanks: 'ధన్యవాదాలతో అందుకున్నాము — రూ. {rs} ({mode})',
+   117→   117→  scanPay: 'బాకీ రూ. {rs} చెల్లించడానికి స్కాన్ చేయండి',
+   118→   118→  scanChat: 'WhatsApp చాట్ కోసం స్కాన్ చేయండి',
+   119→   119→  statusDue: 'బాకీ',
+   120→   120→  statusPartial: 'పాక్షికం',
+   121→   121→  modes: { Cash: 'నగదు', UPI: 'UPI', Card: 'కార్డ్', Due: 'బాకీ' },
+   122→   122→  thankYou: 'ధన్యవాదాలు! మళ్ళీ రండి',
+   123→   123→  policy: 'అమ్మిన వస్తువులు తిరిగి తీసుకోబడవు',
+   124→   124→  powered: 'SLP బిల్లింగ్ యాప్ ద్వారా',
+   125→   125→  mInvoice: 'బిల్లు',
+   126→   126→  mDate: 'తేదీ',
+   127→   127→  mCustomer: 'కస్టమర్',
+   128→   128→  mMobile: 'మొబైల్',
+   129→   129→  mSubtotal: 'ఉపమొత్తం',
+   130→   130→  mDiscount: 'తగ్గింపు',
+   131→   131→  mPaidBal: 'చెల్లించినది: {paid} | బాకీ: {balance}',
+   132→   132→  mThanks: 'ధన్యవాదాలు! మళ్ళీ రండి',
+   133→   133→  mImageSeparately: 'బిల్లు ఇమేజ్ విడిగా పంపబడుతుంది',
+   134→   134→  capAttachedDue: 'బిల్లు ఇమేజ్ జోడించబడింది — బాకీ చెల్లించడానికి UPI QR స్కాన్ చేయండి',
+   135→   135→  capAttachedPaid: 'బిల్లు ఇమేజ్ జోడించబడింది — మొత్తం చెల్లింపు పూర్తి, ధన్యవాదాలు',
+   136→   136→  billTo: 'కస్టమర్ వివరాలు',
+   137→   137→  tSno: 'వరుస',
+   138→   138→  tItem: 'వస్తువు',
+   139→   139→  tQty: 'సంఖ్య',
+   140→   140→  tRate: 'రేటు',
+   141→   141→  sigFor: '{company} తరఫున',
+   142→   142→  invoiceNoLabel: 'బిల్లు నంబర్',
+   143→   143→};
+   144→   144→
+   145→   145→/** Bilingual labels — Telugu first, English second (used when bill language = Both) */
+   146→   146→export const BOTH_LABELS: SlipLabels = (() => {
+   147→   147→  const out = {} as SlipLabels;
+   148→   148→  (Object.keys(EN_LABELS) as (keyof SlipLabels)[]).forEach((k) => {
+   149→   149→    const en = EN_LABELS[k];
+   150→   150→    const te = TE_LABELS[k];
+   151→   151→    if (k === 'modes') {
+   152→   152→      out.modes = { Cash: 'నగదు / Cash', UPI: 'UPI', Card: 'కార్డ్ / Card', Due: 'బాకీ / Due' };
+   153→   153→    } else if (typeof en === 'string' && typeof te === 'string') {
+   154→   154→      (out as unknown as Record<string, string>)[k] = `${te} / ${en}`;
+   155→   155→    } else {
+   156→   156→      (out as unknown as Record<string, unknown>)[k] = en;
+   157→   157→    }
+   158→   158→  });
+   159→   159→  return out;
+   160→   160→})();
+   161→   161→
+   162→   162→export function labels(lang: BillLanguage | undefined): SlipLabels {
+   163→   163→  return lang === 'te' ? TE_LABELS : lang === 'both' ? BOTH_LABELS : EN_LABELS;
+   164→   164→}
+   165→   165→
+   166→   166→/** Currency prefix on bill amounts — Telugu bills use రూ., English/Both keep Rs. */
+   167→   167→export function cur(lang: BillLanguage | undefined): string {
+   168→   168→  return lang === 'te' ? 'రూ.' : 'Rs.';
+   169→   169→}
+   170→   170→
+   171→   171→/** Company name in the bill language — Telugu name when set, English otherwise */
+   172→   172→export function companyNameFor(
+   173→   173→  s: { companyName: string; companyNameTe?: string },
+   174→   174→  lang: BillLanguage | undefined
+   175→   175→): string {
+   176→   176→  return lang === 'te' && s.companyNameTe && s.companyNameTe.trim() ? s.companyNameTe : s.companyName;
+   177→   177→}
+   178→   178→
+   179→   179→/**
+   180→   180→ * Company name lines for printed documents — "Both" prints the Telugu name
+   181→   181→ * above the English name.
+   182→   182→ */
+   183→   183→export function companyLines(
+   184→   184→  s: { companyName: string; companyNameTe?: string },
+   185→   185→  lang: BillLanguage | undefined
+   186→   186→): string[] {
+   187→   187→  const te = (s.companyNameTe ?? '').trim();
+   188→   188→  const en = (s.companyName ?? '').trim();
+   189→   189→  if (lang === 'te') return [te || en];
+   190→   190→  if (lang === 'both') {
+   191→   191→    const lines = te && te !== en ? [te, en] : [en || te];
+   192→   192→    return lines.filter(Boolean);
+   193→   193→  }
+   194→   194→  return [en || te];
+   195→   195→}
+   196→   196→
+   197→   197→/** Item name in the bill language — Telugu product name when set, otherwise the English one */
+   198→   198→export function itemLabel(it: { name: string; nameTe?: string }, lang: BillLanguage | undefined): string {
+   199→   199→  const te = (it.nameTe ?? '').trim();
+   200→   200→  if (lang === 'te') return te || it.name;
+   201→   201→  if (lang === 'both') return te && te !== it.name ? `${te} / ${it.name}` : it.name;
+   202→   202→  return it.name;
+   203→   203→}
+   204→   204→
+   205→   205→/** Fill {tokens} in a label template */
+   206→   206→export function fill(template: string, vars: Record<string, string>): string {
+   207→   207→  return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+   208→   208→}
+   209→   209→
+   210→   210→/** UI chips for the bill language selector — English, Telugu or Both */
+   211→   211→export const BILL_LANGUAGES: { value: BillLanguage; label: string }[] = [
+   212→   212→  { value: 'en', label: 'English' },
+   213→   213→  { value: 'te', label: 'తెలుగు' },
+   214→   214→  { value: 'both', label: 'రెండూ · Both' },
+   215→   215→];
+   216→   216→
+   217→   217→/** Font stack for the thermal slip — Telugu glyphs need the bundled Noto Sans Telugu */
+   218→   218→export function slipFontFamily(lang: BillLanguage | undefined): string {
+   219→   219→  return lang === 'en'
+   220→   220→    ? '"Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, monospace'
+   221→   221→    : '"Noto Sans Telugu", "Courier New", Courier, ui-monospace, monospace';
+   222→   222→}
+   223→   223→
+   224→   224→/* ------------------------------------------------------------------ */
+   225→   225→/* Driver slip labels (items + quantities only — no prices)            */
+   226→   226→/* ------------------------------------------------------------------ */
+   227→   227→
+   228→   228→export interface DriverLabels {
+   229→   229→  title: string;
+   230→   230→  deliverTo: string;
+   231→   231→  driver: string;
+   232→   232→  vehicle: string;
+   233→   233→  address: string;
+   234→   234→  date: string;
+   235→   235→  invoiceNo: string;
+   236→   236→  customer: string;
+   237→   237→  mobile: string;
+   238→   238→  item: string;
+   239→   239→  qty: string;
+   240→   240→  totalQty: string;
+   241→   241→  note: string;
+   242→   242→  driverSign: string;
+   243→   243→}
+   244→   244→
+   245→   245→export const EN_DRIVER: DriverLabels = {
+   246→   246→  title: 'DELIVERY SLIP',
+   247→   247→  deliverTo: 'Deliver To',
+   248→   248→  driver: 'Driver',
+   249→   249→  vehicle: 'Vehicle No.',
+   250→   250→  address: 'Address',
+   251→   251→  date: 'Date',
+   252→   252→  invoiceNo: 'Invoice No.',
+   253→   253→  customer: 'Customer',
+   254→   254→  mobile: 'Mobile',
+   255→   255→  item: 'ITEM',
+   256→   256→  qty: 'QTY',
+   257→   257→  totalQty: 'Total Quantity',
+   258→   258→  note: 'No prices on this slip — items and quantities only',
+   259→   259→  driverSign: 'Driver Signature',
+   260→   260→};
+   261→   261→
+   262→   262→export const TE_DRIVER: DriverLabels = {
+   263→   263→  title: 'డెలివరీ స్లిప్',
+   264→   264→  deliverTo: 'పంపే చోటు',
+   265→   265→  driver: 'డ్రైవర్',
+   266→   266→  vehicle: 'వాహనం నంబర్',
+   267→   267→  address: 'చిరునామా',
+   268→   268→  date: 'తేదీ',
+   269→   269→  invoiceNo: 'బిల్లు నంబర్',
+   270→   270→  customer: 'కస్టమర్',
+   271→   271→  mobile: 'మొబైల్',
+   272→   272→  item: 'వస్తువు',
+   273→   273→  qty: 'సంఖ్య',
+   274→   274→  totalQty: 'మొత్తం సంఖ్య',
+   275→   275→  note: 'ఈ స్లిప్‌పై ధరలు లేవు — వస్తువులు, సంఖ్యలు మాత్రమే',
+   276→   276→  driverSign: 'డ్రైవర్ సంతకం',
+   277→   277→};
+   278→   278→
+   279→   279→export const BOTH_DRIVER: DriverLabels = {
+   280→   280→  title: 'డెలివరీ స్లిప్ / DELIVERY SLIP',
+   281→   281→  deliverTo: 'పంపే చోటు / Deliver To',
+   282→   282→  driver: 'డ్రైవర్ / Driver',
+   283→   283→  vehicle: 'వాహనం నంబర్ / Vehicle No.',
+   284→   284→  address: 'చిరునామా / Address',
+   285→   285→  date: 'తేదీ / Date',
+   286→   286→  invoiceNo: 'బిల్లు నంబర్ / Invoice No.',
+   287→   287→  customer: 'కస్టమర్ / Customer',
+   288→   288→  mobile: 'మొబైల్ / Mobile',
+   289→   289→  item: 'వస్తువు / ITEM',
+   290→   290→  qty: 'సంఖ్య / QTY',
+   291→   291→  totalQty: 'మొత్తం సంఖ్య / Total Quantity',
+   292→   292→  note: 'ఈ స్లిప్‌పై ధరలు లేవు / No prices on this slip',
+   293→   293→  driverSign: 'డ్రైవర్ సంతకం / Driver Signature',
+   294→   294→};
+   295→   295→
+   296→   296→export function driverLabels(lang: BillLanguage | undefined): DriverLabels {
+   297→   297→  return lang === 'te' ? TE_DRIVER : lang === 'both' ? BOTH_DRIVER : EN_DRIVER;
+   298→   298→}
+   299→   299→
+   300→   300→/* ------------------------------------------------------------------ */
+   301→   301→/* App UI language — the whole app switches between English and Telugu */
+   302→   302→/* ------------------------------------------------------------------ */
+   303→   303→
+   304→   304→export const APP_EN = {
+   305→   305→  // nav
+   306→   306→  'nav.bill': 'Bill',
+   307→   307→  'nav.products': 'Products',
+   308→   308→  'nav.ledger': 'Ledger',
+   309→   309→  'nav.labour': 'Labour',
+   310→   310→  'nav.history': 'History',
+   311→   311→  'nav.settings': 'Settings',
+   312→   312→  'nav.newBill': 'New Bill',
+   313→   313→  'nav.invoiceHistory': 'Invoice History',
+   314→   314→  'nav.switchLang': 'Switch app language',
+   315→   315→  'header.proprietor': 'Proprietor',
+   316→   316→  'header.offline': 'Offline',
+   317→   317→  // common bill panel
+   318→   318→  'bill.customer': 'Customer',
+   319→   319→  'bill.customerName': 'Customer name',
+   320→   320→  'bill.mobile': 'Mobile / WhatsApp',
+   321→   321→  'bill.addressOptional': 'Address (optional)',
+   322→   322→  'bill.language': 'Bill language · బిల్లు భాష',
+   323→   323→  'bill.items': 'Items',
+   324→   324→  'bill.clear': 'Clear',
+   325→   325→  'bill.priceUnit': 'Price ₹ (unit)',
+   326→   326→  'bill.discountItem': 'Discount ₹',
+   327→   327→  'bill.size': 'Size',
+   328→   328→  'bill.discount': 'Discount',
+   329→   329→  'bill.labour': 'Labour charges (if any)',
+   330→   330→  'bill.auto': 'Auto charges (if any)',
+   331→   331→  'bill.paymentMode': 'Payment mode',
+   332→   332→  'bill.amountPaid': 'Amount paid',
+   333→   333→  'bill.advance': '(advance)',
+   334→   334→  'bill.full': 'Full',
+   335→   335→  'bill.subtotal': 'Subtotal',
+   336→   336→  'bill.itemDiscounts': 'Item discounts',
+   337→   337→  'bill.grandTotal': 'Grand Total',
+   338→   338→  'bill.balanceDue': 'Balance due',
+   339→   339→  'bill.complete': 'Complete Bill — Thermal Slip',
+   340→   340→  'bill.invoiceNumbered': 'Invoice will be numbered',
+   341→   341→  'bill.noItems': 'No items in the bill',
+   342→   342→  'bill.noItemsHint': 'Tap a size button on any product to add it.',
+   343→   343→  // delivery
+   344→   344→  'delivery.title': 'Delivery',
+   345→   345→  'delivery.delivered': 'Delivered — add driver, vehicle & address',
+   346→   346→  'delivery.driver': 'Driver name',
+   347→   347→  'delivery.vehicle': 'Vehicle number',
+   348→   348→  'delivery.address': 'Delivery address',
+   349→   349→  'delivery.driverSlipNote': 'Driver slip: items & quantities only — no prices.',
+   350→   350→  // catalog / products
+   351→   351→  'cat.search': 'Search products…',
+   352→   352→  'cat.custom': 'Custom',
+   353→   353→  'cat.noProducts': 'No products found. Add products in the Products tab.',
+   354→   354→  'cat.outOfStock': 'Out of stock',
+   355→   355→  'cat.stock': 'Stock',
+   356→   356→  'cat.from': 'from',
+   357→   357→  'cat.customItem': 'Add custom item',
+   358→   358→  'cat.customItemDesc': 'Added to the bill now — and saved to your product list with this name, size & price for next time.',
+   359→   359→  'cat.itemName': 'Item name *',
+   360→   360→  'cat.itemNameTe': 'Item name in Telugu (optional — తెలుగు పేరు)',
+   361→   361→  'cat.sizePh': 'Size (e.g. 10FT)',
+   362→   362→  'cat.pricePh': 'Price ₹ *',
+   363→   363→  'cat.qty': 'Quantity',
+   364→   364→  'cat.addToBill': 'Add to Bill',
+   365→   365→  'products.catalog': 'Product Catalog',
+   366→   366→  'products.add': 'Add',
+   367→   367→  'products.edit': 'Edit',
+   368→   368→  'products.editProduct': 'Edit product',
+   369→   369→  'products.addProduct': 'Add product',
+   370→   370→  'products.formDesc': 'Set name, image, price, sizes & stock.',
+   371→   371→  'products.uploadPhoto': 'Upload photo',
+   372→   372→  'products.takePhoto': 'Take with camera',
+   373→   373→  'products.removePhoto': 'Remove photo',
+   374→   374→  'products.sampleImage': 'Or pick a sample image',
+   375→   375→  'products.name': 'Product name *',
+   376→   376→  'products.nameTe': 'Product name in Telugu (తెలుగు పేరు) — printed on Telugu bills',
+   377→   377→  'products.category': 'Category',
+   378→   378→  'products.basePrice': 'Base price ₹ *',
+   379→   379→  'products.sizes': 'Sizes (tap to add or type custom)',
+   380→   380→  'products.customSize': 'Custom size (e.g. 4x3 FT)',
+   381→   381→  'products.stock': 'Stock (optional)',
+   382→   382→  'products.saveChanges': 'Save changes',
+   383→   383→  'products.noProductsYet': 'No products yet — tap Add to create your first product.',
+   384→   384→  'products.tapSize': 'Products — tap a size to bill',
+   385→   385→  // history
+   386→   386→  'history.totalBilled': 'Total billed',
+   387→   387→  'history.balanceDue': 'Balance due',
+   388→   388→  'history.invoices': 'invoices',
+   389→   389→  'history.pending': 'pending',
+   390→   390→  'history.search': 'Search by invoice, customer or phone…',
+   391→   391→  'history.markPaid': 'Mark Paid',
+   392→   392→  'history.invoice': 'Invoice',
+   393→   393→  'history.slip': 'Slip',
+   394→   394→  'history.driver': 'Driver',
+   395→   395→  'history.delete': 'Delete',
+   396→   396→  'history.deleteTitle': 'Delete invoice?',
+   397→   397→  'history.deleteDesc': 'will be removed permanently.',
+   398→   398→  'history.cancel': 'Cancel',
+   399→   399→  'history.walkin': 'Walk-in customer',
+   400→   400→  'history.noBills': 'No bills yet. Complete your first bill from the Bill tab.',
+   401→   401→  'history.noMatch': 'No invoices match your search.',
+   402→   402→  'history.items': 'items',
+   403→   403→  // ledger
+   404→   404→  'ledger.title': 'Ledger',
+   405→   405→  'ledger.day': 'Day',
+   406→   406→  'ledger.allDays': 'All days',
+   407→   407→  'ledger.dues': 'Dues',
+   408→   408→  'ledger.expenses': 'Expenses',
+   409→   409→  'ledger.income': 'Income',
+   410→   410→  'ledger.spent': 'Spent',
+   411→   411→  'ledger.net': 'Net',
+   412→   412→  'ledger.date': 'Date',
+   413→   413→  'ledger.month': 'Month',
+   414→   414→  'ledger.noActivity': 'No income or expenses on this day.',
+   415→   415→  'ledger.receivedFrom': 'Received from',
+   416→   416→  'ledger.totalDue': 'Total balance due',
+   417→   417→  'ledger.receive': 'Receive',
+   418→   418→  'ledger.receiveAmount': 'Amount received ₹',
+   419→   419→  'ledger.receiveMode': 'Payment mode',
+   420→   420→  'ledger.receiveConfirm': 'Receive payment',
+   421→   421→  'ledger.receiveDone': 'Balance payment received — counted as income today',
+   422→   422→  'ledger.noDues': 'No dues pending — all bills are fully paid.',
+   423→   423→  'ledger.expCategory': 'Expense category',
+   424→   424→  'ledger.expAmount': 'Amount ₹',
+   425→   425→  'ledger.expNote': 'Note (optional)',
+   426→   426→  'ledger.time': 'Time',
+   427→   427→  'ledger.person': 'Person name',
+   428→   428→  'ledger.personPlaceholder': 'e.g. Ramesh (labour)',
+   429→   429→  'ledger.purpose': 'Purpose',
+   430→   430→  'ledger.purposePlaceholder': 'e.g. site labour, diesel…',
+   431→   431→  'ledger.addExpense': 'Add expense',
+   432→   432→  'ledger.expAdded': 'Expense added',
+   433→   433→  'ledger.monthSpent': 'Spent this month',
+   434→   434→  'ledger.noExpenses': 'No expenses yet. Add wages, diesel or raw-material costs above.',
+   435→   435→  'ledger.incName': 'Name / details',
+   436→   436→  'ledger.incPlaceholder': 'e.g. Ramesh · stone sale',
+   437→   437→  'ledger.addIncome': 'Add income',
+   438→   438→  'ledger.incAdded': 'Income added',
+   439→   439→  'ledger.monthIncome': 'Income this month',
+   440→   440→  'ledger.noIncomes': 'No manual income yet. Add cash or UPI receipts above.',
+   441→   441→  'ledger.noDuesSelected': 'No dues',
+   442→   442→  'ledger.dayTotal': 'Day total',
+   443→   443→  'ledger.monthTotal': 'Month total',
+   444→   444→  'ledger.todayIncome': "Today's income",
+   445→   445→  // labour work — own tab beside the ledger (who · when · what · product · money given)
+   446→   446→  'labour.title': 'Labour work',
+   447→   447→  'labour.moneyMonth': 'Money given this month',
+   448→   448→  'labour.worksMonth': 'Work entries this month',
+   449→   449→  'labour.name': 'Worker name',
+   450→   450→  'labour.namePlaceholder': 'e.g. Ramesh',
+   451→   451→  'labour.work': 'What work they did',
+   452→   452→  'labour.workPlaceholder': 'e.g. ring making, moulding…',
+   453→   453→  'labour.product': 'Product name',
+   454→   454→  'labour.productPlaceholder': 'e.g. 2FT well ring',
+   455→   455→  'labour.money': 'Money given ₹ (if paid)',
+   456→   456→  'labour.mode': 'How the money was given',
+   457→   457→  'labour.add': 'Add labour work',
+   458→   458→  'labour.added': 'Labour work added',
+   459→   459→  'labour.empty': 'No labour work yet. Add who worked, on which date, what they did, the product and the money given.',
+   460→   460→  // payment modes on UI
+   461→   461→  'mode.cash': 'Cash',
+   462→   462→  'mode.upi': 'UPI',
+   463→   463→  'mode.card': 'Card',
+   464→   464→  'mode.due': 'Due',
+   465→   465→  // status
+   466→   466→  'status.paid': 'Paid',
+   467→   467→  'status.partial': 'Partial',
+   468→   468→  'status.due': 'Due',
+   469→   469→  // settings
+   470→   470→  'settings.title': 'Settings',
+   471→   471→  'settings.appLang': 'App language · యాప్ భాష',
+   472→   472→  'settings.appLangDesc': 'Switch the whole app between English and తెలుగు.',
+   473→   473→  'settings.businessIdentity': 'Business Identity',
+   474→   474→  'settings.companyName': 'Company name',
+   475→   475→  'settings.companyNameTe': 'Company name in Telugu (బిల్లు పేరు — తెలుగు)',
+   476→   476→  'settings.ownerName': 'Owner / Proprietor name',
+   477→   477→  'settings.phone': 'Phone',
+   478→   478→  'settings.whatsapp': 'WhatsApp number',
+   479→   479→  'settings.address': 'Shop address',
+   480→   480→  'settings.upi': 'UPI ID (for balance QR)',
+   481→   481→  'settings.billingSlip': 'Billing & Slip',
+   482→   482→  'settings.invoicePrefix': 'Invoice prefix',
+   483→   483→  'settings.nextInvoiceNo': 'Next invoice no.',
+   484→   484→  'settings.slipWidth': 'Thermal slip width',
+   485→   485→  'settings.thankYouNote': 'Thank-you note',
+   486→   486→  'settings.returnPolicy': 'Terms / return policy',
+   487→   487→  'settings.data': 'Data',
+   488→   488→  'settings.resetCatalog': 'Reset products to factory catalog',
+   489→   489→  'settings.eraseAll': 'Erase all data',
+   490→   490→  'settings.checkUpdates': 'Check for updates now',
+   491→   491→  'settings.updateHint': 'Edit any detail, then press the Update button to save it.',
+   492→   492→  'settings.updateDetails': 'Update details',
+   493→   493→  'settings.updatedToast': 'Details updated',
+   494→   494→  'settings.updateBilling': 'Update bill settings',
+   495→   495→  'settings.billingUpdatedToast': 'Bill settings updated',
+   496→   496→  'settings.backup': 'Backup & restore',
+   497→   497→  'settings.backupDesc':
+   498→   498→    'Save a copy of everything — company details, products, bills, expenses & incomes — as one file. Keep it in Google Drive or send it to yourself on WhatsApp, and restore it on any phone.',
+   499→   499→  'settings.backupBtn': 'Backup data',
+   500→   500→  'settings.backupDone': 'Backup downloaded',
+   501→   501→  'settings.backupProducts': 'products',
+   502→   502→  'settings.backupBills': 'bills',
+   503→   503→  'settings.backupFailed': 'Backup failed — please try again',
+   504→   504→  'settings.restoreBtn': 'Restore backup',
+   505→   505→  'settings.restoreConfirmTitle': 'Restore this backup?',
+   506→   506→  'settings.restoreConfirmDesc':
+   507→   507→    'Company details, products, bills and ledger on this phone will be replaced with the backup file. This cannot be undone.',
+   508→   508→  'settings.restore': 'Restore',
+   509→   509→  'settings.restoredToast': 'Backup restored',
+   510→   510→  'settings.backupInvalid': 'That file is not a valid app backup',
+   511→   511→  'settings.appearance': 'Appearance',
+   512→   512→  'settings.appearanceDesc': 'Change the background, the header colour and your own watermark photo.',
+   513→   513→  'settings.bgTheme': 'Background theme',
+   514→   514→  'settings.headerColour': 'Header colour',
+   515→   515→  'settings.watermark': 'Watermark photo',
+   516→   516→  'settings.watermarkDesc': 'Pick a photo from your device — it shows faintly in the middle of the app and on the opening screen.',
+   517→   517→  'settings.watermarkPick': 'Choose photo from device',
+   518→   518→  'settings.watermarkReset': 'Use default logo',
+   519→   519→  'settings.watermarkDone': 'Watermark photo updated',
+   520→   520→  'settings.watermarkFailed': 'Could not use that photo',
+   521→   521→  // page headings
+   522→   522→  'page.currentBill': 'Current Bill',
+   523→   523→  'page.viewBill': 'View Bill',
+   524→   524→  'page.viewBillDesc': 'Review items, customer & payment — then generate the thermal slip.',
+   525→   525→  'page.loading': 'Loading…',
+   526→   526→  // install / update popup
+   527→   527→  'install.title': 'App updated — Install it on your phone',
+   528→   528→  'install.titleTe': 'యాప్ అప్‌డేట్ అయ్యింది — మీ ఫోన్‌లో ఇన్‌స్టాల్ చేయండి',
+   529→   529→  'install.desc': 'The app just updated to the latest version. Install it now — free, works offline.',
+   530→   530→  'install.benefitOffline': 'Works offline — no internet needed to bill',
+   531→   531→  'install.benefitFast': 'Opens instantly, full-screen like a real app',
+   532→   532→  'install.benefitSave': 'All bills saved safely on this device',
+   533→   533→  'install.installApp': 'Install App',
+   534→   534→  'install.howTo': 'How to Install',
+   535→   535→  'install.notNow': 'Close',
+   536→   536→} as const;
+   537→   537→
+   538→   538→export type AppLangKey = keyof typeof APP_EN;
+   539→   539→
+   540→   540→export const APP_TE: Record<AppLangKey, string> = {
+   541→   541→  'nav.bill': 'బిల్లు',
+   542→   542→  'nav.products': 'ఉత్పత్తులు',
+   543→   543→  'nav.ledger': 'లెడ్జర్',
+   544→   544→  'nav.labour': 'లేబర్',
+   545→   545→  'nav.history': 'చరిత్ర',
+   546→   546→  'nav.settings': 'సెట్టింగ్‌లు',
+   547→   547→  'nav.newBill': 'కొత్త బిల్లు',
+   548→   548→  'nav.invoiceHistory': 'బిల్లుల చరిత్ర',
+   549→   549→  'nav.switchLang': 'యాప్ భాష మార్చు',
+   550→   550→  'header.proprietor': 'యజమాని',
+   551→   551→  'header.offline': 'ఆఫ్‌లైన్',
+   552→   552→  'bill.customer': 'కస్టమర్',
+   553→   553→  'bill.customerName': 'కస్టమర్ పేరు',
+   554→   554→  'bill.mobile': 'మొబైల్ / WhatsApp',
+   555→   555→  'bill.addressOptional': 'చిరునామా (ఐచ్ఛికం)',
+   556→   556→  'bill.language': 'బిల్లు భాష · Bill language',
+   557→   557→  'bill.items': 'వస్తువులు',
+   558→   558→  'bill.clear': 'తొలగించు',
+   559→   559→  'bill.priceUnit': 'ధర ₹ (యూనిట్)',
+   560→   560→  'bill.discountItem': 'తగ్గింపు ₹',
+   561→   561→  'bill.size': 'సైజ్',
+   562→   562→  'bill.discount': 'తగ్గింపు',
+   563→   563→  'bill.labour': 'కూలి చార్జీలు (ఉంటే)',
+   564→   564→  'bill.auto': 'ఆటో చార్జీలు (ఉంటే)',
+   565→   565→  'bill.paymentMode': 'చెల్లింపు విధానం',
+   566→   566→  'bill.amountPaid': 'చెల్లించిన మొత్తం',
+   567→   567→  'bill.advance': '(అడ్వాన్స్)',
+   568→   568→  'bill.full': 'పూర్తి',
+   569→   569→  'bill.subtotal': 'ఉపమొత్తం',
+   570→   570→  'bill.itemDiscounts': 'వస్తువుల తగ్గింపు',
+   571→   571→  'bill.grandTotal': 'గ్రాండ్ టోటల్',
+   572→   572→  'bill.balanceDue': 'బాకీ',
+   573→   573→  'bill.complete': 'బిల్లు పూర్తి — థర్మల్ స్లిప్',
+   574→   574→  'bill.invoiceNumbered': 'బిల్లు నంబర్',
+   575→   575→  'bill.noItems': 'బిల్లులో వస్తువులు లేవు',
+   576→   576→  'bill.noItemsHint': 'వస్తువు జోడించడానికి ఏదైనా సైజ్ బటన్ నొక్కండి.',
+   577→   577→  'delivery.title': 'డెలివరీ',
+   578→   578→  'delivery.delivered': 'డెలివరీ — డ్రైవర్, వాహనం, చిరునామా జోడించు',
+   579→   579→  'delivery.driver': 'డ్రైవర్ పేరు',
+   580→   580→  'delivery.vehicle': 'వాహనం నంబర్',
+   581→   581→  'delivery.address': 'డెలివరీ చిరునామా',
+   582→   582→  'delivery.driverSlipNote': 'డ్రైవర్ స్లిప్: వస్తువులు & సంఖ్యలు మాత్రమే — ధరలు లేవు.',
+   583→   583→  'cat.search': 'ఉత్పత్తులు వెతకండి…',
+   584→   584→  'cat.custom': 'కస్టమ్',
+   585→   585→  'cat.noProducts': 'ఉత్పత్తులు కనబడలేదు. ఉత్పత్తుల ట్యాబ్‌లో జోడించండి.',
+   586→   586→  'cat.outOfStock': 'స్టాక్ లేదు',
+   587→   587→  'cat.stock': 'స్టాక్',
+   588→   588→  'cat.from': 'నుండి',
+   589→   589→  'cat.customItem': 'కస్టమ్ వస్తువు జోడించు',
+   590→   590→  'cat.customItemDesc': 'ఇప్పుడు బిల్లులో చేరుతుంది — ఈ పేరు, సైజ్, ధరతో మీ ఉత్పత్తుల జాబితాలో సేవ్ అవుతుంది.',
+   591→   591→  'cat.itemName': 'వస్తువు పేరు *',
+   592→   592→  'cat.itemNameTe': 'తెలుగులో వస్తువు పేరు (ఐచ్ఛికం)',
+   593→   593→  'cat.sizePh': 'సైజ్ (ఉదా: 10FT)',
+   594→   594→  'cat.pricePh': 'ధర ₹ *',
+   595→   595→  'cat.qty': 'సంఖ్య',
+   596→   596→  'cat.addToBill': 'బిల్లులో చేర్చు',
+   597→   597→  'products.catalog': 'ఉత్పత్తుల జాబితా',
+   598→   598→  'products.add': 'జోడించు',
+   599→   599→  'products.edit': 'మార్చు',
+   600→   600→  'products.editProduct': 'ఉత్పత్తి మార్చు',
+   601→   601→  'products.addProduct': 'ఉత్పత్తి జోడించు',
+   602→   602→  'products.formDesc': 'పేరు, ఫోటో, ధర, సైజులు, స్టాక్ సెట్ చేయండి.',
+   603→   603→  'products.uploadPhoto': 'ఫోటో అప్‌లోడ్',
+   604→   604→  'products.takePhoto': 'కెమెరాతో తీయు',
+   605→   605→  'products.removePhoto': 'ఫోటో తొలగించు',
+   606→   606→  'products.sampleImage': 'లేదా సాంపిల్ ఇమేజ్ ఎంచుకోండి',
+   607→   607→  'products.name': 'ఉత్పత్తి పేరు *',
+   608→   608→  'products.nameTe': 'తెలుగులో ఉత్పత్తి పేరు — తెలుగు బిల్లులపై అచ్చు అవుతుంది',
+   609→   609→  'products.category': 'వర్గం',
+   610→   610→  'products.basePrice': 'బేస్ ధర ₹ *',
+   611→   611→  'products.sizes': 'సైజులు (నొక్కి జోడించండి లేదా టైప్ చేయండి)',
+   612→   612→  'products.customSize': 'కస్టమ్ సైజ్ (ఉదా: 4x3 FT)',
+   613→   613→  'products.stock': 'స్టాక్ (ఐచ్ఛికం)',
+   614→   614→  'products.saveChanges': 'మార్పులు సేవ్ చేయు',
+   615→   615→  'products.noProductsYet': 'ఇంకా ఉత్పత్తులు లేవు — మొదటిది జోడించడానికి జోడించు నొక్కండి.',
+   616→   616→  'products.tapSize': 'ఉత్పత్తులు — బిల్లు చేయడానికి సైజ్ నొక్కండి',
+   617→   617→  'history.totalBilled': 'మొత్తం బిల్లులు',
+   618→   618→  'history.balanceDue': 'బాకీ మొత్తం',
+   619→   619→  'history.invoices': 'బిల్లులు',
+   620→   620→  'history.pending': 'పెండింగ్',
+   621→   621→  'history.search': 'బిల్లు నంబర్, కస్టమర్ లేదా ఫోన్‌తో వెతకండి…',
+   622→   622→  'history.markPaid': 'చెల్లించారు',
+   623→   623→  'history.invoice': 'ఇన్వాయిస్',
+   624→   624→  'history.slip': 'స్లిప్',
+   625→   625→  'history.driver': 'డ్రైవర్',
+   626→   626→  'history.delete': 'తొలగించు',
+   627→   627→  'history.deleteTitle': 'బిల్లు తొలగించాలా?',
+   628→   628→  'history.deleteDesc': 'శాశ్వతంగా తొలగించబడుతుంది.',
+   629→   629→  'history.cancel': 'రద్దు',
+   630→   630→  'history.walkin': 'నామవాచక కస్టమర్',
+   631→   631→  'history.noBills': 'ఇంకా బిల్లులు లేవు. బిల్లు ట్యాబ్ నుండి మొదటి బిల్లు పూర్తి చేయండి.',
+   632→   632→  'history.noMatch': 'మీ వెతుకులాటకు బిల్లులు లేవు.',
+   633→   633→  'history.items': 'వస్తువులు',
+   634→   634→  'ledger.title': 'లెడ్జర్',
+   635→   635→  'ledger.day': 'రోజు',
+   636→   636→  'ledger.allDays': 'అన్ని రోజులు',
+   637→   637→  'ledger.dues': 'బాకీలు',
+   638→   638→  'ledger.expenses': 'ఖర్చులు',
+   639→   639→  'ledger.income': 'ఆదాయం',
+   640→   640→  'ledger.spent': 'ఖర్చు',
+   641→   641→  'ledger.net': 'నికరం',
+   642→   642→  'ledger.date': 'తేదీ',
+   643→   643→  'ledger.month': 'నెల',
+   644→   644→  'ledger.noActivity': 'ఈ రోజు ఆదాయం లేదా ఖర్చు లేదు.',
+   645→   645→  'ledger.receivedFrom': 'స్వీకరించిన వారు',
+   646→   646→  'ledger.totalDue': 'మొత్తం బాకీ',
+   647→   647→  'ledger.receive': 'స్వీకరించు',
+   648→   648→  'ledger.receiveAmount': 'అందుకున్న మొత్తం ₹',
+   649→   649→  'ledger.receiveMode': 'చెల్లింపు విధానం',
+   650→   650→  'ledger.receiveConfirm': 'చెల్లింపు స్వీకరించు',
+   651→   651→  'ledger.receiveDone': 'బాకీ చెల్లింపు అందుకున్నారు — ఈ రోజు ఆదాయంగా లెక్క',
+   652→   652→  'ledger.noDues': 'బాకీలు లేవు — అన్ని బిల్లులు చెల్లించబడ్డాయి.',
+   653→   653→  'ledger.expCategory': 'ఖర్చు వర్గం',
+   654→   654→  'ledger.expAmount': 'మొత్తం ₹',
+   655→   655→  'ledger.expNote': 'గమనిక (ఐచ్ఛికం)',
+   656→   656→  'ledger.time': 'సమయం',
+   657→   657→  'ledger.person': 'వ్యక్తి పేరు',
+   658→   658→  'ledger.personPlaceholder': 'ఉదా: రమేష్ (కూలీ)',
+   659→   659→  'ledger.purpose': 'ఉద్దేశం',
+   660→   660→  'ledger.purposePlaceholder': 'ఉదా: సైటు కూలీ, డీజిల్…',
+   661→   661→  'ledger.addExpense': 'ఖర్చు జోడించు',
+   662→   662→  'ledger.expAdded': 'ఖర్చు జోడించబడింది',
+   663→   663→  'ledger.monthSpent': 'ఈ నెల ఖర్చు',
+   664→   664→  'ledger.noExpenses': 'ఇంకా ఖర్చులు లేవు. పైన వేతనాలు, డీజిల్, ముడి పదార్థం ఖర్చులు జోడించండి.',
+   665→   665→  'ledger.incName': 'పేరు / వివరాలు',
+   666→   666→  'ledger.incPlaceholder': 'ఉదా: రమేష్ · రాయి అమ్మకం',
+   667→   667→  'ledger.addIncome': 'ఆదాయం జోడించు',
+   668→   668→  'ledger.incAdded': 'ఆదాయం జోడించబడింది',
+   669→   669→  'ledger.monthIncome': 'ఈ నెల ఆదాయం',
+   670→   670→  'ledger.noIncomes': 'ఇంకా ఆదాయం లేదు. పైన నగదు లేదా UPI లో వచ్చిన డబ్బు జోడించండి.',
+   671→   671→  'ledger.noDuesSelected': 'బాకీలు లేవు',
+   672→   672→  'ledger.dayTotal': 'రోజు మొత్తం',
+   673→   673→  'ledger.monthTotal': 'నెల మొత్తం',
+   674→   674→  'ledger.todayIncome': 'ఈ రోజు ఆదాయం',
+   675→   675→  // labour work — own tab beside the ledger
+   676→   676→  'labour.title': 'కూలీ పనులు',
+   677→   677→  'labour.moneyMonth': 'ఈ నెల ఇచ్చిన డబ్బు',
+   678→   678→  'labour.worksMonth': 'ఈ నెల పనులు',
+   679→   679→  'labour.name': 'కూలీ పేరు',
+   680→   680→  'labour.namePlaceholder': 'ఉదా: రమేష్',
+   681→   681→  'labour.work': 'చేసిన పని',
+   682→   682→  'labour.workPlaceholder': 'ఉదా: రింగ్ తయారీ, అచ్చు పని…',
+   683→   683→  'labour.product': 'ఉత్పత్తి పేరు',
+   684→   684→  'labour.productPlaceholder': 'ఉదా: 2FT బావి రింగ్',
+   685→   685→  'labour.money': 'ఇచ్చిన డబ్బు ₹ (ఇచ్చి ఉంటే)',
+   686→   686→  'labour.mode': 'డబ్బు ఇచ్చిన విధానం',
+   687→   687→  'labour.add': 'కూలీ పని జోడించు',
+   688→   688→  'labour.added': 'కూలీ పని జోడించబడింది',
+   689→   689→  'labour.empty': 'ఇంకా కూలీ పనులు లేవు. ఎవరు, ఏ తేదీన, ఏ పని, ఏ ఉత్పత్తి, ఎంత డబ్బు ఇచ్చారో జోడించండి.',
+   690→   690→  'mode.cash': 'నగదు',
+   691→   691→  'mode.upi': 'UPI',
+   692→   692→  'mode.card': 'కార్డ్',
+   693→   693→  'mode.due': 'బాకీ',
+   694→   694→  'status.paid': 'చెల్లించారు',
+   695→   695→  'status.partial': 'పాక్షికం',
+   696→   696→  'status.due': 'బాకీ',
+   697→   697→  'settings.title': 'సెట్టింగ్‌లు',
+   698→   698→  'settings.appLang': 'యాప్ భాష · App language',
+   699→   699→  'settings.appLangDesc': 'మొత్తం యాప్‌ను English మరియు తెలుగు మధ్య మార్చండి.',
+   700→   700→  'settings.businessIdentity': 'వ్యాపార వివరాలు',
+   701→   701→  'settings.companyName': 'కంపెనీ పేరు',
+   702→   702→  'settings.companyNameTe': 'తెలుగులో కంపెనీ పేరు (బిల్లు పేరు)',
+   703→   703→  'settings.ownerName': 'యజమాని పేరు',
+   704→   704→  'settings.phone': 'ఫోన్',
+   705→   705→  'settings.whatsapp': 'WhatsApp నంబర్',
+   706→   706→  'settings.address': 'షాప్ చిరునామా',
+   707→   707→  'settings.upi': 'UPI ID (బాకీ QR కోసం)',
+   708→   708→  'settings.billingSlip': 'బిల్లింగ్ & స్లిప్',
+   709→   709→  'settings.invoicePrefix': 'బిల్లు ప్రీఫిక్స్',
+   710→   710→  'settings.nextInvoiceNo': 'తదుపరి బిల్లు నంబర్',
+   711→   711→  'settings.slipWidth': 'థర్మల్ స్లిప్ వెడల్పు',
+   712→   712→  'settings.thankYouNote': 'ధన్యవాద గమనిక',
+   713→   713→  'settings.returnPolicy': 'నిబంధనలు / రిటర్న్',
+   714→   714→  'settings.data': 'డేటా',
+   715→   715→  'settings.resetCatalog': 'ఉత్పత్తులను ఫ్యాక్టరీ జాబితాకు రీసెట్ చేయు',
+   716→   716→  'settings.eraseAll': 'మొత్తం డేటా తొలగించు',
+   717→   717→  'settings.checkUpdates': 'ఇప్పుడే అప్‌డేట్‌లు చెక్ చేయు',
+   718→   718→  'settings.updateHint': 'ఏదైనా వివరాలు మార్చి, Update బటన్ నొక్కి సేవ్ చేయండి.',
+   719→   719→  'settings.updateDetails': 'వివరాలు అప్‌డేట్ చేయు',
+   720→   720→  'settings.updatedToast': 'వివరాలు అప్‌డేట్ అయ్యాయి',
+   721→   721→  'settings.updateBilling': 'బిల్లు సెట్టింగ్‌లు అప్‌డేట్ చేయు',
+   722→   722→  'settings.billingUpdatedToast': 'బిల్లు సెట్టింగ్‌లు అప్‌డేట్ అయ్యాయి',
+   723→   723→  'settings.backup': 'బ్యాకప్ & రీస్టోర్',
+   724→   724→  'settings.backupDesc':
+   725→   725→    'కంపెనీ వివరాలు, ఉత్పత్తులు, బిల్లులు, ఖర్చులు & ఆదాయాలు — అంతా ఒకే ఫైల్‌లో సేవ్ చేయండి. Google Drive లో ఉంచండి లేదా WhatsApp లో మీకే పంపండి — ఏ ఫోన్‌లోనైనా రీస్టోర్ చేయవచ్చు.',
+   726→   726→  'settings.backupBtn': 'డేటా బ్యాకప్',
+   727→   727→  'settings.backupDone': 'బ్యాకప్ డౌన్‌లోడ్ అయింది',
+   728→   728→  'settings.backupProducts': 'ఉత్పత్తులు',
+   729→   729→  'settings.backupBills': 'బిల్లులు',
+   730→   730→  'settings.backupFailed': 'బ్యాకప్ విఫలమైంది — మళ్లీ ప్రయత్నించండి',
+   731→   731→  'settings.restoreBtn': 'బ్యాకప్ రీస్టోర్',
+   732→   732→  'settings.restoreConfirmTitle': 'ఈ బ్యాకప్ రీస్టోర్ చేయాలా?',
+   733→   733→  'settings.restoreConfirmDesc':
+   734→   734→    'ఈ ఫోన్‌లోని కంపెనీ వివరాలు, ఉత్పత్తులు, బిల్లులు మరియు లెడ్జర్ బ్యాకప్ ఫైల్‌తో మార్చబడతాయి. ఇది తిరిగి రాదు.',
+   735→   735→  'settings.restore': 'రీస్టోర్',
+   736→   736→  'settings.restoredToast': 'బ్యాకప్ రీస్టోర్ అయింది',
+   737→   737→  'settings.backupInvalid': 'ఈ ఫైల్ సరైన యాప్ బ్యాకప్ కాదు',
+   738→   738→  'settings.appearance': 'రూపం',
+   739→   739→  'settings.appearanceDesc': 'నేపథ్యం, పై పట్టీ రంగు మరియు మీ సొంత వాటర్‌మార్క్ ఫోటో మార్చండి.',
+   740→   740→  'settings.bgTheme': 'నేపథ్య థీమ్',
+   741→   741→  'settings.headerColour': 'పై పట్టీ రంగు',
+   742→   742→  'settings.watermark': 'వాటర్‌మార్క్ ఫోటో',
+   743→   743→  'settings.watermarkDesc': 'మీ పరికరం నుండి ఫోటో ఎంచుకోండి — అది యాప్ మధ్యలో మరియు ఓపెనింగ్ స్క్రీన్ మీద వెలుతుగా కనిపిస్తుంది.',
+   744→   744→  'settings.watermarkPick': 'పరికరం నుండి ఫోటో ఎంచుకోండి',
+   745→   745→  'settings.watermarkReset': 'డిఫాల్ట్ లోగో వాడు',
+   746→   746→  'settings.watermarkDone': 'వాటర్‌మార్క్ ఫోటో మార్చబడింది',
+   747→   747→  'settings.watermarkFailed': 'ఆ ఫోటో వాడలేకపోయాం',
+   748→   748→  'page.currentBill': 'ప్రస్తుత బిల్లు',
+   749→   749→  'page.viewBill': 'బిల్లు చూడు',
+   750→   750→  'page.viewBillDesc': 'వస్తువులు, కస్టమర్, చెల్లింపు సరిచూసి — థర్మల్ స్లిప్ జనరేట్ చేయండి.',
+   751→   751→  'page.loading': 'లోడ్ అవుతోంది…',
+   752→   752→  'install.title': 'యాప్ అప్‌డేట్ అయ్యింది — మీ ఫోన్‌లో ఇన్‌స్టాల్ చేయండి',
+   753→   753→  'install.titleTe': 'App updated — Install it on your phone',
+   754→   754→  'install.desc': 'యాప్ ఇప్పుడే కొత్త వెర్షన్‌కు అప్‌డేట్ అయ్యింది. ఇప్పుడే ఇన్‌స్టాల్ చేయండి — ఉచితం, ఆఫ్‌లైన్‌లో పనిచేస్తుంది.',
+   755→   755→  'install.benefitOffline': 'ఆఫ్‌లైన్‌లో పనిచేస్తుంది — బిల్లింగ్‌కు ఇంటర్నెట్ అవసరం లేదు',
+   756→   756→  'install.benefitFast': 'వెంటనే తెరుచుకుంటుంది, నిజమైన యాప్ లాగా ఫుల్-స్క్రీన్',
+   757→   757→  'install.benefitSave': 'అన్ని బిల్లులు ఈ డివైస్‌లో సురక్షితంగా సేవ్ అవుతాయి',
+   758→   758→  'install.installApp': 'యాప్ ఇన్‌స్టాల్',
+   759→   759→  'install.howTo': 'ఇన్‌స్టాల్ ఎలా?',
+   760→   760→  'install.notNow': 'మూసివేయి',
+   761→   761→};
+   762→   762→
+   763→   763→/** Translate an app-UI string */
+   764→   764→export function appT(lang: AppLanguage, key: AppLangKey): string {
+   765→   765→  return lang === 'te' ? APP_TE[key] : APP_EN[key];
+   766→   766→}
+   767→   767→

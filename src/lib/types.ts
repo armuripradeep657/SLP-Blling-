@@ -146,7 +146,7 @@ export interface IncomeEntry {
   mode?: PaymentMode;
 }
 
-/** Labour work register — who worked, on which date, doing what, on which product, money given */
+/** Labour work register — who worked, on which date, doing what, product quantity, money */
 export interface LabourWork {
   id: string;
   dateISO: string;
@@ -154,9 +154,16 @@ export interface LabourWork {
   name: string;
   /** What work they did that day */
   work: string;
-  /** Product they worked on (e.g. 2FT well ring) */
+  /** Product quantity they worked on that day (e.g. 40 rings) */
+  qty?: number;
+  /** Money paid to them NOW for that day's work (₹) — 0/undefined = not paid yet */
+  paid?: number;
+  /** Balance money still to be paid for that work (₹) */
+  balance?: number;
+  /* --- legacy fields from earlier versions (kept only so old rows still show) --- */
+  /** (old) product name they worked on */
   product?: string;
-  /** Money given to them for that day's work (₹) — 0/undefined = not paid yet */
+  /** (old) single money field — treated as "paid now" */
   amount?: number;
   /** How the money was given — Cash / UPI / Card */
   mode?: PaymentMode;
