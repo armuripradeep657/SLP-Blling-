@@ -5,6 +5,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from './defaultData';
 import { computeTotals, getStatus, priceForSize, applyPayment } from './billing';
 import type {
+  Appearance,
   BillConfig,
   BillLanguage,
   BusinessSettings,
@@ -13,6 +14,7 @@ import type {
   Expense,
   IncomeEntry,
   Invoice,
+  LabourWork,
   MainTab,
   PaymentMode,
   Product,
@@ -32,6 +34,10 @@ interface BillingStore {
   expenses: Expense[];
   /** Manual income entries (money received outside bills) */
   incomes: IncomeEntry[];
+  /** Labour work register — who worked, on what, on which product */
+  labourWorks: LabourWork[];
+  /** App look — background theme, header colour, owner's watermark photo */
+  appearance: Appearance;
 
   setActiveTab: (t: MainTab) => void;
   saveSettings: (s: Partial<BusinessSettings>) => void;
@@ -63,6 +69,11 @@ interface BillingStore {
   /** Add a manual income entry (name + Cash/UPI mode) — counts in the ledger day/month */
   addIncome: (e: Omit<IncomeEntry, 'id'>) => void;
   deleteIncome: (id: string) => void;
+  /** Add a labour work entry (worker, date, work done, product) */
+  addLabourWork: (e: Omit<LabourWork, 'id'>) => void;
+  deleteLabourWork: (id: string) => void;
+  /** Change the app look — background theme / header colour / watermark photo */
+  setAppearance: (a: Partial<Appearance>) => void;
 }
 
 const DEFAULT_CONFIG: BillConfig = {
@@ -90,6 +101,8 @@ export const useStore = create<BillingStore>()(
       lastInvoice: null,
       expenses: [],
       incomes: [],
+      labourWorks: [],
+      appearance: { bgTheme: 'blue', headerTheme: 'blue', watermark: '' },
 
       setActiveTab: (t) => set({ activeTab: t }),
 
@@ -321,6 +334,19 @@ export const useStore = create<BillingStore>()(
 
       deleteIncome: (id) =>
         set((st) => ({ incomes: st.incomes.filter((x) => x.id !== id) })),
+
+      addLabourWork: (e) =>
+        set((st) => ({
+          labourWorks: [
+            { ...e, id: `lw-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` },
+            ...st.labourWorks,
+          ],
+        })),
+
+      deleteLabourWork: (id) =>
+        set((st) => ({ labourWorks: st.labourWorks.filter((x) => x.id !== id) })),
+
+      setAppearance: (a) => set((st) => ({ appearance: { ...st.appearance, ...a } })),
     }),
     {
       name: 'slp-cement-billing-v1',
@@ -337,6 +363,7 @@ export const useStore = create<BillingStore>()(
           settings: { ...current.settings, ...(p.settings ?? {}) },
           billConfig: { ...current.billConfig, ...(p.billConfig ?? {}) },
           customer: { ...current.customer, ...(p.customer ?? {}) },
+          appearance: { ...current.appearance, ...(p.appearance ?? {}) },
         };
       },
       partialize: (st) => ({
@@ -349,6 +376,8 @@ export const useStore = create<BillingStore>()(
         activeTab: st.activeTab,
         expenses: st.expenses,
         incomes: st.incomes,
+        labourWorks: st.labourWorks,
+        appearance: st.appearance,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) state.hydrated = true;

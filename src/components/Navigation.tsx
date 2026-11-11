@@ -1,10 +1,21 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { WifiOff, ReceiptText, Package, History, Settings, BookText, Languages } from 'lucide-react';
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
+import type { HeaderThemeId } from '@/lib/types';
+
+/** Header colour themes — applied to the top bar from Settings → Appearance */
+const HEADER_STYLES: Record<HeaderThemeId, string> = {
+  blue: 'from-blue-700 to-blue-600',
+  green: 'from-emerald-700 to-emerald-600',
+  maroon: 'from-rose-900 to-rose-800',
+  navy: 'from-slate-900 to-slate-800',
+  teal: 'from-teal-700 to-teal-600',
+};
 
 const subscribeOnline = (cb: () => void) => {
   window.addEventListener('online', cb);
@@ -20,43 +31,75 @@ export function Header() {
   const appLang = useAppLang();
   const settings = useStore((s) => s.settings);
   const saveSettings = useStore((s) => s.saveSettings);
+  const headerTheme = useStore((s) => s.appearance.headerTheme);
+  const watermark = useStore((s) => s.appearance.watermark);
+  const [logoOpen, setLogoOpen] = useState(false);
   // SSR snapshot true matches most clients; updates reactively after hydration
   const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
 
+  // company name follows the app language — Telugu name in Telugu mode
   const companyName = appLang === 'te' && settings.companyNameTe ? settings.companyNameTe : settings.companyName;
+  const logoSrc = watermark || '/narasimha-logo.jpg';
 
   return (
-    <header className="sticky top-0 z-50 border-b bg-gradient-to-r from-blue-700 to-blue-600 text-white shadow-md">
-      <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
-        <img
-          src="/narasimha-logo.jpg"
-          alt="Sri Lakshmi Penchil Narasimha Swamy logo"
-          className="size-10 shrink-0 rounded-full object-cover ring-2 ring-white/60"
-        />
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-sm font-bold leading-tight sm:text-base">{companyName}</h1>
-          <p className="truncate text-[11px] text-blue-100">
-            {t('header.proprietor')}: {settings.ownerName}
-            {settings.phone ? ` · ${settings.phone}` : ''}
-          </p>
+    <>
+      <header
+        data-header
+        className={`sticky top-0 z-50 border-b bg-gradient-to-r ${HEADER_STYLES[headerTheme]} text-white shadow-md`}
+      >
+        <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
+          <button
+            type="button"
+            onClick={() => setLogoOpen(true)}
+            aria-label="Open logo"
+            title={t('header.proprietor')}
+            className="shrink-0 rounded-full transition-transform active:scale-90"
+          >
+            <img
+              src={logoSrc}
+              alt="Company logo"
+              className="size-10 rounded-full object-cover ring-2 ring-white/60"
+            />
+          </button>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-sm font-bold leading-tight sm:text-base">{companyName}</h1>
+            <p className="truncate text-[11px] text-blue-100">
+              {t('header.proprietor')}: {settings.ownerName}
+              {settings.phone ? ` · ${settings.phone}` : ''}
+            </p>
+          </div>
+          {/* Quick app-language switch: English ↔ తెలుగు */}
+          <button
+            onClick={() => saveSettings({ appLang: appLang === 'te' ? 'en' : 'te' })}
+            aria-label="Switch app language"
+            title="Switch app language · భాష మార్చు"
+            className="flex shrink-0 items-center gap-1 rounded-full border border-white/40 bg-white/15 px-2.5 py-1.5 text-[11px] font-bold hover:bg-white/25"
+          >
+            <Languages className="size-3.5" />
+            {appLang === 'te' ? 'English' : 'తెలుగు'}
+          </button>
+          {!online && (
+            <Badge variant="secondary" className="shrink-0 gap-1 bg-white/20 text-white">
+              <WifiOff className="size-3" /> {t('header.offline')}
+            </Badge>
+          )}
         </div>
-        {/* Quick app-language switch: English ↔ తెలుగు */}
-        <button
-          onClick={() => saveSettings({ appLang: appLang === 'te' ? 'en' : 'te' })}
-          aria-label="Switch app language"
-          title="Switch app language · భాష మార్చు"
-          className="flex shrink-0 items-center gap-1 rounded-full border border-white/40 bg-white/15 px-2.5 py-1.5 text-[11px] font-bold hover:bg-white/25"
-        >
-          <Languages className="size-3.5" />
-          {appLang === 'te' ? 'English' : 'తెలుగు'}
-        </button>
-        {!online && (
-          <Badge variant="secondary" className="shrink-0 gap-1 bg-white/20 text-white">
-            <WifiOff className="size-3" /> {t('header.offline')}
-          </Badge>
-        )}
-      </div>
-    </header>
+      </header>
+
+      {/* Tap the header logo → full logo view */}
+      <Dialog open={logoOpen} onOpenChange={setLogoOpen}>
+        <DialogContent className="max-w-xs rounded-2xl" aria-label="Logo preview">
+          <DialogHeader>
+            <DialogTitle className="text-center text-sm">{companyName}</DialogTitle>
+          </DialogHeader>
+          <img
+            src={logoSrc}
+            alt="Company logo full view"
+            className="mx-auto max-h-[60vh] w-auto max-w-full rounded-xl object-contain shadow-md"
+          />
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

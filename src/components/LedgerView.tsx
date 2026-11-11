@@ -17,6 +17,7 @@ import {
   ArrowUpRight,
   CalendarDays,
   ChevronDown,
+  Hammer,
   IndianRupee,
   Trash2,
   TrendingUp,
@@ -49,7 +50,7 @@ function nowHM(): string {
   return fmtTime(new Date());
 }
 
-type LedgerTab = 'day' | 'allDays' | 'income' | 'expenses' | 'dues';
+type LedgerTab = 'day' | 'allDays' | 'income' | 'expenses' | 'labour' | 'dues';
 
 /** One money row in the ledger — income (bill payment) or spent (expense) */
 interface LedgerRow {
@@ -164,6 +165,9 @@ export default function LedgerView() {
   const deleteExpense = useStore((s) => s.deleteExpense);
   const addIncome = useStore((s) => s.addIncome);
   const deleteIncome = useStore((s) => s.deleteIncome);
+  const labourWorks = useStore((s) => s.labourWorks);
+  const addLabourWork = useStore((s) => s.addLabourWork);
+  const deleteLabourWork = useStore((s) => s.deleteLabourWork);
   const { toast } = useToast();
 
   const today = localDateKey(new Date());
@@ -282,6 +286,14 @@ export default function LedgerView() {
     [incomes, month]
   );
 
+  const monthWorks = useMemo(
+    () =>
+      labourWorks
+        .filter((e) => localMonthKey(new Date(e.dateISO)) === month)
+        .sort((a, b) => b.dateISO.localeCompare(a.dateISO)),
+    [labourWorks, month]
+  );
+
   /* ---------------- Receive-due inline panel ---------------- */
   const [receiving, setReceiving] = useState<string | null>(null);
   const [recvAmount, setRecvAmount] = useState('');
@@ -366,11 +378,34 @@ export default function LedgerView() {
     });
   };
 
+  /* ---------------- Labour work register ---------------- */
+  const [lwDate, setLwDate] = useState(today);
+  const [lwName, setLwName] = useState('');
+  const [lwWork, setLwWork] = useState('');
+  const [lwProduct, setLwProduct] = useState('');
+
+  const submitLabourWork = () => {
+    const name = lwName.trim();
+    const work = lwWork.trim();
+    if (!name || !work) return;
+    addLabourWork({
+      dateISO: new Date(`${lwDate || today}T12:00:00`).toISOString(),
+      name,
+      work,
+      product: lwProduct.trim() || undefined,
+    });
+    setLwName('');
+    setLwWork('');
+    setLwProduct('');
+    toast({ title: t('ledger.lwAdded'), description: `${name} · ${work}` });
+  };
+
   const tabs: { id: LedgerTab; label: string }[] = [
     { id: 'day', label: t('ledger.day') },
     { id: 'allDays', label: t('ledger.allDays') },
     { id: 'income', label: t('ledger.income') },
     { id: 'expenses', label: t('ledger.expenses') },
+    { id: 'labour', label: t('ledger.labourTab') },
     { id: 'dues', label: `${t('ledger.dues')}${totalDue > 0 ? ` (${dues.length})` : ''}` },
   ];
 
@@ -770,6 +805,79 @@ export default function LedgerView() {
             ))}
             {monthExpenses.length === 0 && (
               <li className="py-10 text-center text-sm text-muted-foreground">{t('ledger.noExpenses')}</li>
+            )}
+          </ul>
+        </div>
+      )}
+
+      {/* ---------- LABOUR WORK REGISTER ---------- */}
+      {tab === 'labour' && (
+        <div className="space-y-3">
+          <div className="space-y-2.5 rounded-xl border bg-card p-3">
+            <p className="text-sm font-bold text-blue-800">
+              {t('ledger.monthWorks')}: <span className="tabular-nums">{monthWorks.length}</span>
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('ledger.date')}</Label>
+                <Input type="date" value={lwDate} max={today} onChange={(e) => setLwDate(e.target.value)} className="h-10" aria-label="Work date" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('ledger.lwName')}</Label>
+                <Input value={lwName} onChange={(e) => setLwName(e.target.value)} placeholder={t('ledger.lwNamePlaceholder')} className="h-10" aria-label="Worker name" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground">{t('ledger.lwWork')}</Label>
+              <Input value={lwWork} onChange={(e) => setLwWork(e.target.value)} placeholder={t('ledger.lwWorkPlaceholder')} className="h-10" aria-label="Work done" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground">{t('ledger.lwProduct')}</Label>
+              <Input value={lwProduct} onChange={(e) => setLwProduct(e.target.value)} placeholder={t('ledger.lwProductPlaceholder')} className="h-10" aria-label="Work product" />
+            </div>
+            <Button
+              onClick={submitLabourWork}
+              className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+              disabled={!(lwName.trim() && lwWork.trim())}
+            >
+              <Hammer className="size-4" />
+              {t('ledger.addLabour')}
+            </Button>
+          </div>
+          <ul className="space-y-1.5">
+            {monthWorks.map((e, i) => (
+              <li
+                key={e.id}
+                className="anim-fade-up flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2"
+                style={{ animationDelay: `${Math.min(i, 10) * 40}ms` }}
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                    <Hammer className="size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{e.name}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">
+                      {new Date(e.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      {' · '}
+                      {e.work}
+                      {e.product ? ` · ${e.product}` : ''}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => deleteLabourWork(e.id)}
+                  aria-label={`Delete work ${e.name}`}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </li>
+            ))}
+            {monthWorks.length === 0 && (
+              <li className="py-10 text-center text-sm text-muted-foreground">{t('ledger.noWorks')}</li>
             )}
           </ul>
         </div>

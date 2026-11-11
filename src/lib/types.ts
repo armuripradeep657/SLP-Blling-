@@ -146,4 +146,29 @@ export interface IncomeEntry {
   mode?: PaymentMode;
 }
 
+/** Labour work register — who worked, on which date, doing what, on which product */
+export interface LabourWork {
+  id: string;
+  dateISO: string;
+  /** Worker name */
+  name: string;
+  /** What work they did that day */
+  work: string;
+  /** Product they worked on (e.g. 2FT well ring) */
+  product?: string;
+}
+
+/** Background themes for the whole app */
+export type BgThemeId = 'blue' | 'cream' | 'mint' | 'lavender' | 'slate';
+/** Colour themes for the top header bar */
+export type HeaderThemeId = 'blue' | 'green' | 'maroon' | 'navy' | 'teal';
+
+/** App appearance — background theme, header colour and owner's watermark photo */
+export interface Appearance {
+  bgTheme: BgThemeId;
+  headerTheme: HeaderThemeId;
+  /** Custom watermark photo (base64 JPEG data URL) — '' = default Narasimha logo */
+  watermark: string;
+}
+
 export type MainTab = 'bill' | 'products' | 'ledger' | 'history' | 'settings';

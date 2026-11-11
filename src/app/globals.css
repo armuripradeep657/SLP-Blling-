@@ -211,6 +211,34 @@
   }
 }
 
+/* opening splash — the company logo zooms in when the app starts */
+@keyframes slp-splash-zoom {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  78% {
+    transform: scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slp-splash-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
 .anim-fade-up {
   animation: slp-fade-up 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -229,6 +257,12 @@
 .anim-glow {
   animation: slp-glow 2.2s ease-in-out infinite;
 }
+.anim-splash-zoom {
+  animation: slp-splash-zoom 1.15s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.anim-splash-fade {
+  animation: slp-splash-fade 0.5s ease both;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .anim-fade-up,
@@ -236,7 +270,11 @@
   .anim-slide-right,
   .anim-sheet,
   .anim-badge,
-  .anim-glow {
+  .anim-glow,
+  .anim-splash-zoom,
+  .anim-splash-fade {
     animation: none;
   }
 }
+
+/* v22 splash utilities marker */

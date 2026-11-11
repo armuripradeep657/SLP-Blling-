@@ -12,26 +12,76 @@ import InvoiceModal, { type DocView } from '@/components/InvoiceModal';
 import PwaInstall, { ServiceWorkerRegister } from '@/components/PwaInstall';
 import ConnectivityToast from '@/components/ConnectivityToast';
 import { useStore } from '@/lib/store';
-import { useT } from '@/hooks/use-app-lang';
+import { useAppLang, useT } from '@/hooks/use-app-lang';
 import { computeTotals, fmt } from '@/lib/billing';
-import type { Invoice } from '@/lib/types';
+import type { BgThemeId, Invoice } from '@/lib/types';
 
 const subscribeNoop = () => () => undefined;
 
+/** Background themes — applied to the whole app from Settings → Appearance */
+const BG_STYLES: Record<BgThemeId, string> = {
+  blue: 'from-blue-50/70 to-neutral-100',
+  cream: 'from-amber-50/90 to-stone-100',
+  mint: 'from-emerald-50/80 to-neutral-100',
+  lavender: 'from-violet-50/80 to-neutral-100',
+  slate: 'from-slate-200/80 to-slate-100',
+};
+
+/**
+ * Opening splash — the company logo zooms in for a moment when the app starts,
+ * then the overlay fades away into the app.
+ */
+function Splash({ logoSrc, name }: { logoSrc: string; name: string }) {
+  const [phase, setPhase] = useState<'in' | 'out' | 'gone'>('in');
+  useEffect(() => {
+    const t1 = setTimeout(() => setPhase('out'), 1600);
+    const t2 = setTimeout(() => setPhase('gone'), 2100);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, []);
+  if (phase === 'gone') return null;
+  return (
+    <div
+      data-splash="logo"
+      aria-hidden
+      className={`pointer-events-none fixed inset-0 z-[100] flex flex-col items-center justify-center gap-5 bg-gradient-to-b from-white via-blue-50 to-blue-100 ${
+        phase === 'out' ? 'anim-splash-fade' : ''
+      }`}
+    >
+      <img
+        src={logoSrc}
+        alt=""
+        className="anim-splash-zoom size-44 rounded-full object-cover shadow-2xl ring-4 ring-white"
+      />
+      <p className="anim-fade-up max-w-xs px-6 text-center text-lg font-extrabold leading-snug text-blue-900" style={{ animationDelay: '250ms' }}>
+        {name}
+      </p>
+    </div>
+  );
+}
+
 export default function Home() {
   const t = useT();
+  const appLang = useAppLang();
   const activeTab = useStore((s) => s.activeTab);
   const setActiveTab = useStore((s) => s.setActiveTab);
   const cart = useStore((s) => s.cart);
   const cfg = useStore((s) => s.billConfig);
+  const bgTheme = useStore((s) => s.appearance.bgTheme);
+  const watermark = useStore((s) => s.appearance.watermark);
+  const settings = useStore((s) => s.settings);
 
   const [modalInvoice, setModalInvoice] = useState<Invoice | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalView, setModalView] = useState<DocView>('slip');
+  const [showSplash, setShowSplash] = useState(false);
 
   // Rehydrate persisted store AFTER mount (skipHydration) — avoids SSR mismatch
   useEffect(() => {
     useStore.persist.rehydrate();
+    setShowSplash(true); // opening animation — logo zoom (once per app open)
   }, []);
 
   // true on client after hydration, false on the server (avoids SSR mismatch)
@@ -42,6 +92,11 @@ export default function Home() {
   );
 
   const totals = computeTotals(cart, cfg);
+
+  // company name follows the app language (same rule as the header)
+  const companyName =
+    appLang === 'te' && settings.companyNameTe ? settings.companyNameTe : settings.companyName;
+  const logoSrc = watermark || '/narasimha-logo.jpg';
 
   const openInvoice = (inv: Invoice, view: DocView = 'slip') => {
     setModalInvoice(inv);
@@ -55,7 +110,8 @@ export default function Home() {
   };
 
   return (
-    <div className="relative min-h-dvh bg-gradient-to-b from-blue-50/70 to-neutral-100">
+    <div data-app-root className={`relative min-h-dvh bg-gradient-to-b ${BG_STYLES[bgTheme]}`}>
+      {showSplash && <Splash logoSrc={logoSrc} name={companyName} />}
       {/* Company logo watermark — centred ON the whole app like a printed seal:
           floats over content, never blocks touches, sits under header/nav/sheets */}
       <div
@@ -64,7 +120,7 @@ export default function Home() {
         className="pointer-events-none fixed inset-0 z-20 flex items-center justify-center overflow-hidden"
       >
         <img
-          src="/narasimha-logo.jpg"
+          src={logoSrc}
           alt=""
           className="w-[74vmin] max-w-[420px] min-w-[260px] select-none rounded-full object-cover opacity-[0.06]"
         />

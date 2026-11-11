@@ -22,8 +22,18 @@ import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from '@/lib/defaultData';
 import { normalizePhone } from '@/lib/billing';
 import InstallAppSection from '@/components/InstallAppSection';
 import { useT, useAppLang } from '@/hooks/use-app-lang';
-import { Download, RefreshCw, Upload } from 'lucide-react';
-import type { BusinessSettings, Expense, IncomeEntry, Invoice, Product } from '@/lib/types';
+import { Download, ImageUp, RefreshCw, RotateCcw, Upload } from 'lucide-react';
+import type {
+  Appearance,
+  BgThemeId,
+  BusinessSettings,
+  Expense,
+  HeaderThemeId,
+  IncomeEntry,
+  Invoice,
+  LabourWork,
+  Product,
+} from '@/lib/types';
 
 /* ------------------------------------------------------------------ */
 /* Draft shapes — edits stay LOCAL until the owner presses Update      */
@@ -77,7 +87,27 @@ interface BackupFile {
   invoices?: Invoice[];
   expenses?: Expense[];
   incomes?: IncomeEntry[];
+  labourWorks?: LabourWork[];
+  appearance?: Appearance;
 }
+
+/** Background themes shown in Settings → Appearance */
+const BG_THEMES: { id: BgThemeId; en: string; te: string; swatch: string }[] = [
+  { id: 'blue', en: 'Blue', te: 'నీలం', swatch: 'from-blue-50 to-neutral-100' },
+  { id: 'cream', en: 'Cream', te: 'క్రీమ్', swatch: 'from-amber-50 to-stone-100' },
+  { id: 'mint', en: 'Mint', te: 'మింట్', swatch: 'from-emerald-50 to-neutral-100' },
+  { id: 'lavender', en: 'Lavender', te: 'లావెండర్', swatch: 'from-violet-50 to-neutral-100' },
+  { id: 'slate', en: 'Grey', te: 'గ్రే', swatch: 'from-slate-200 to-slate-100' },
+];
+
+/** Header colour themes shown in Settings → Appearance */
+const HEADER_COLOURS: { id: HeaderThemeId; en: string; te: string; swatch: string }[] = [
+  { id: 'blue', en: 'Blue', te: 'నీలం', swatch: 'from-blue-700 to-blue-600' },
+  { id: 'green', en: 'Green', te: 'ఆకుపచ్చ', swatch: 'from-emerald-700 to-emerald-600' },
+  { id: 'maroon', en: 'Maroon', te: 'మరూన్', swatch: 'from-rose-900 to-rose-800' },
+  { id: 'navy', en: 'Navy', te: 'నేవీ', swatch: 'from-slate-900 to-slate-800' },
+  { id: 'teal', en: 'Teal', te: 'టీల్', swatch: 'from-teal-700 to-teal-600' },
+];
 
 export default function SettingsView() {
   const t = useT();
@@ -123,6 +153,10 @@ export default function SettingsView() {
       <Separator />
 
       <BillingSlipSection />
+
+      <Separator />
+
+      <AppearanceSection />
 
       <Separator />
 
@@ -395,6 +429,136 @@ function BillingSlipSection() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Appearance — background theme, header colour & owner's own photo     */
+/* Changes apply instantly so the owner sees the look right away.       */
+/* ------------------------------------------------------------------ */
+
+function AppearanceSection() {
+  const t = useT();
+  const appLang = useAppLang();
+  const appearance = useStore((s) => s.appearance);
+  const setAppearance = useStore((s) => s.setAppearance);
+  const { toast } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  /** Downscale the picked photo so it stays small enough for local storage */
+  const pickWatermark = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    try {
+      const url = URL.createObjectURL(f);
+      const img = await new Promise<HTMLImageElement>((res, rej) => {
+        const im = new Image();
+        im.onload = () => res(im);
+        im.onerror = () => rej(new Error('bad image'));
+        im.src = url;
+      });
+      const max = 640;
+      const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.max(1, Math.round(img.naturalWidth * scale));
+      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d')?.drawImage(img, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+      URL.revokeObjectURL(url);
+      setAppearance({ watermark: dataUrl });
+      toast({ title: t('settings.watermarkDone') });
+    } catch {
+      toast({ title: t('settings.watermarkFailed') });
+    }
+  };
+
+  return (
+    <section aria-label="Appearance" className="space-y-3">
+      <h3 className="text-sm font-bold text-blue-800">{t('settings.appearance')}</h3>
+      <p className="text-xs text-muted-foreground">{t('settings.appearanceDesc')}</p>
+
+      {/* Background theme */}
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">{t('settings.bgTheme')}</Label>
+        <div className="grid grid-cols-5 gap-1.5">
+          {BG_THEMES.map((b) => (
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => setAppearance({ bgTheme: b.id })}
+              aria-label={`Background theme ${b.id}`}
+              aria-pressed={appearance.bgTheme === b.id}
+              className={`flex flex-col items-center gap-1 rounded-lg border p-1.5 transition-all active:scale-95 ${
+                appearance.bgTheme === b.id ? 'border-blue-600 ring-2 ring-blue-600/30' : 'border-border'
+              }`}
+            >
+              <span className={`h-8 w-full rounded bg-gradient-to-b ${b.swatch}`} />
+              <span className="text-[10px] font-medium">{appLang === 'te' ? b.te : b.en}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Header colour */}
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">{t('settings.headerColour')}</Label>
+        <div className="grid grid-cols-5 gap-1.5">
+          {HEADER_COLOURS.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setAppearance({ headerTheme: c.id })}
+              aria-label={`Header colour ${c.id}`}
+              aria-pressed={appearance.headerTheme === c.id}
+              className={`flex flex-col items-center gap-1 rounded-lg border p-1.5 transition-all active:scale-95 ${
+                appearance.headerTheme === c.id ? 'border-blue-600 ring-2 ring-blue-600/30' : 'border-border'
+              }`}
+            >
+              <span className={`h-8 w-full rounded bg-gradient-to-r ${c.swatch}`} />
+              <span className="text-[10px] font-medium">{appLang === 'te' ? c.te : c.en}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Watermark photo from the owner's device */}
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">{t('settings.watermark')}</Label>
+        <p className="text-xs text-muted-foreground">{t('settings.watermarkDesc')}</p>
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={appearance.watermark || '/narasimha-logo.jpg'}
+            alt="Watermark preview"
+            className="size-14 shrink-0 rounded-full border object-cover"
+            data-watermark-preview
+          />
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <Button variant="outline" className="h-10 w-full" onClick={() => fileRef.current?.click()} aria-label="Pick watermark photo">
+              <ImageUp className="size-4" />
+              {t('settings.watermarkPick')}
+            </Button>
+            {appearance.watermark && (
+              <Button variant="ghost" className="h-9 w-full" onClick={() => setAppearance({ watermark: '' })} aria-label="Reset watermark">
+                <RotateCcw className="size-4" />
+                {t('settings.watermarkReset')}
+              </Button>
+            )}
+          </div>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          aria-label="Watermark photo file"
+          onChange={pickWatermark}
+        />
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Backup & restore — one file with company details, products, bills   */
 /* and the whole ledger. Download it, keep it safe, restore anywhere.  */
 /* ------------------------------------------------------------------ */
@@ -406,6 +570,8 @@ function BackupSection() {
   const invoices = useStore((s) => s.invoices);
   const expenses = useStore((s) => s.expenses);
   const incomes = useStore((s) => s.incomes);
+  const labourWorks = useStore((s) => s.labourWorks);
+  const appearance = useStore((s) => s.appearance);
   const saveSettings = useStore((s) => s.saveSettings);
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -414,13 +580,15 @@ function BackupSection() {
   const doBackup = () => {
     const data: BackupFile = {
       app: 'slp-billing',
-      backupVersion: 1,
+      backupVersion: 2,
       exportedAt: new Date().toISOString(),
       settings,
       products,
       invoices,
       expenses,
       incomes,
+      labourWorks,
+      appearance,
     };
     try {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -464,6 +632,8 @@ function BackupSection() {
       invoices: pending.invoices ?? [],
       expenses: pending.expenses ?? [],
       incomes: pending.incomes ?? [],
+      labourWorks: pending.labourWorks ?? [],
+      ...(pending.appearance ? { appearance: { ...useStore.getState().appearance, ...pending.appearance } } : {}),
     });
     toast({
       title: t('settings.restoredToast'),
