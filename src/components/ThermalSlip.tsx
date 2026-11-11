@@ -176,7 +176,7 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
             {L.size}: {it.size} &nbsp;|&nbsp; {it.qty} x {fmtShort(it.price)}
           </div>
           {(it.discount || 0) > 0 ? (
-            <div style={{ color: '#333' }}>&nbsp;&nbsp;{L.lessDiscount} - Rs. {fmt(it.discount)}</div>
+            <div style={{ color: '#333' }}>&nbsp;&nbsp;{L.lessDiscount} - Rs. {fmt(it.discount || 0)}</div>
           ) : null}
         </div>
       ))}

@@ -146,7 +146,7 @@ export interface IncomeEntry {
   mode?: PaymentMode;
 }
 
-/** Labour work register — who worked, on which date, doing what, on which product */
+/** Labour work register — who worked, on which date, doing what, on which product, money given */
 export interface LabourWork {
   id: string;
   dateISO: string;
@@ -156,6 +156,10 @@ export interface LabourWork {
   work: string;
   /** Product they worked on (e.g. 2FT well ring) */
   product?: string;
+  /** Money given to them for that day's work (₹) — 0/undefined = not paid yet */
+  amount?: number;
+  /** How the money was given — Cash / UPI / Card */
+  mode?: PaymentMode;
 }
 
 /** Background themes for the whole app */
@@ -171,4 +175,4 @@ export interface Appearance {
   watermark: string;
 }
 
-export type MainTab = 'bill' | 'products' | 'ledger' | 'history' | 'settings';
+export type MainTab = 'bill' | 'products' | 'ledger' | 'labour' | 'history' | 'settings';

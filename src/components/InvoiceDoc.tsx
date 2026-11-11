@@ -312,7 +312,7 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
                   <div style={{ fontWeight: 700, color: '#0f172a' }}>{itemLabel(it, lang)}</div>
                   {(it.discount || 0) > 0 ? (
                     <div style={{ fontSize: 9.5, color: '#dc2626' }}>
-                      {L.lessDiscount} - {rupee} {fmt(it.discount)}
+                      {L.lessDiscount} - {rupee} {fmt(it.discount || 0)}
                     </div>
                   ) : null}
                 </td>

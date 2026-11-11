@@ -25,7 +25,7 @@ export function whatsappMessage(inv: Invoice, s: BusinessSettings): string {
   inv.items.forEach((it, i) => {
     lines.push(`${i + 1}. ${itemLabel(it, inv.language)}`);
     lines.push(`   ${L.size}: ${it.size} | ${it.qty} x ${fmtShort(it.price)} = *${fmt(it.price * it.qty)}*`);
-    if ((it.discount || 0) > 0) lines.push(`   ${L.mDiscount}: -${fmt(it.discount)}`);
+    if ((it.discount || 0) > 0) lines.push(`   ${L.mDiscount}: -${fmt(it.discount || 0)}`);
   });
   lines.push('------------------------------');
   lines.push(`${L.mSubtotal}: ${fmt(inv.totals.subtotal)}`);

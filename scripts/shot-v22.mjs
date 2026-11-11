@@ -8,8 +8,10 @@ import fs from 'fs';
  *  3. Tap header logo → full logo view dialog opens & closes
  *  4. Settings → Appearance: background theme, header colour, custom watermark
  *     photo from device (upload + reset) — applied instantly
- *  5. Ledger → Labour work tab: worker + date + work done + product, list + delete
- *  6. Appearance & labour entry persist across reload; backup includes them
+ *  5. Labour — its own bottom-nav tab beside Ledger: worker + date + work done +
+ *     product + MONEY given that day (Cash/UPI) + month money total, delete
+ *  6. Appearance & labour entry (with money) persist across reload
+ *  7. Backup carries labour (with money) + appearance; restore brings them back
  */
 const BASE = 'http://localhost:3000';
 let pass = 0;
@@ -114,27 +116,60 @@ await page.getByRole('button', { name: 'Reset watermark' }).click();
 await page.waitForTimeout(400);
 ok((await page.locator('[data-watermark="logo"] img').getAttribute('src')).includes('/narasimha-logo.jpg'), 'reset brings back the default logo');
 
-console.log('\n— 5. Ledger → Labour work —');
+console.log('\n— 5. Labour — its own tab beside Ledger, with money —');
+// Ledger no longer holds the labour register
 await page.getByRole('button', { name: 'Ledger', exact: true }).click();
 await page.waitForTimeout(500);
-await page.getByRole('tab', { name: 'Labour work', exact: true }).click();
-await page.waitForTimeout(400);
+ok((await page.getByRole('tab', { name: 'Labour work', exact: true }).count()) === 0, 'ledger no longer contains a labour chip');
+const navBtns = await page.locator('[aria-label="Main navigation"] button').allTextContents();
+const ledgerIdx = navBtns.findIndex((s) => s.includes('Ledger'));
+const labourIdx = navBtns.findIndex((s) => s.includes('Labour'));
+ok(labourIdx === ledgerIdx + 1, `labour sits right beside ledger in the bottom bar (${navBtns.join(' | ')})`);
+
+await page.getByRole('button', { name: 'Labour', exact: true }).click();
+await page.waitForTimeout(500);
 ok(await page.getByLabel('Work date').isVisible(), 'work DATE input visible');
 ok(await page.getByLabel('Worker name').isVisible(), 'worker NAME input visible');
 ok(await page.getByLabel('Work done').isVisible(), 'work-done input visible');
 ok(await page.getByLabel('Work product').isVisible(), 'PRODUCT input visible');
+ok(await page.getByLabel('Labour money', { exact: true }).isVisible(), 'MONEY GIVEN input visible');
+ok(await page.getByLabel('Labour money mode').isVisible(), 'money MODE picker visible');
+
+// entry 1 — Ramesh, ₹800 cash for that day's work
 await page.getByLabel('Worker name').fill('Ramesh');
 await page.getByLabel('Work done').fill('Ring making & moulding');
 await page.getByLabel('Work product').fill('2FT well ring');
-await page.getByRole('button', { name: 'Add work' }).click();
+await page.getByLabel('Labour money', { exact: true }).fill('800');
+await page.getByRole('button', { name: 'Add labour work' }).click();
 await page.waitForTimeout(700);
-const workRow = page.locator('ul li', { hasText: 'Ramesh' }).first();
+const workRow = page.locator('[data-labour-row="Ramesh"]');
+ok(await workRow.isVisible(), 'labour row appears');
 const wTxt = (await workRow.textContent()) || '';
 ok(wTxt.includes('Ramesh'), 'row shows the worker NAME');
 ok(wTxt.includes('Ring making & moulding'), 'row shows WHAT they did');
 ok(wTxt.includes('2FT well ring'), 'row shows the PRODUCT name');
 ok(wTxt.includes('Nov'), 'row shows the DATE');
+ok(wTxt.includes('800.00'), 'row shows the MONEY given (₹800)');
+ok(wTxt.includes('Cash'), 'row shows the money mode CASH');
+ok(((await page.locator('[data-labour-month-money]').textContent()) || '').includes('800.00'), 'month money total = ₹800');
 await page.screenshot({ path: '/home/z/my-project/download/v22-labour.png' });
+
+// entry 2 — Suresh, ₹450 by UPI — money adds up
+await page.getByLabel('Worker name').fill('Suresh');
+await page.getByLabel('Work done').fill('Pole casting');
+await page.getByLabel('Work product').fill('Fencing pole');
+await page.getByLabel('Labour money', { exact: true }).fill('450');
+await page.getByLabel('Labour money mode').click();
+await page.getByRole('option', { name: 'UPI' }).click();
+await page.getByRole('button', { name: 'Add labour work' }).click();
+await page.waitForTimeout(700);
+const sTxt = (await page.locator('[data-labour-row="Suresh"]').textContent()) || '';
+ok(sTxt.includes('450.00') && sTxt.includes('UPI'), 'second row shows ₹450 by UPI');
+ok(((await page.locator('[data-labour-month-money]').textContent()) || '').includes('1,250.00'), 'month money total = ₹1,250 (800 + 450)');
+await page.getByRole('button', { name: 'Delete work Suresh' }).click();
+await page.waitForTimeout(500);
+ok((await page.locator('[data-labour-row="Suresh"]').count()) === 0, 'delete removes the work row');
+ok(((await page.locator('[data-labour-month-money]').textContent()) || '').includes('800.00'), 'month money total back to ₹800 after delete');
 
 console.log('\n— 6. Persists across reload —');
 await page.reload({ waitUntil: 'networkidle' });
@@ -146,16 +181,13 @@ if (await popup2.count()) {
 }
 ok((await page.locator('[data-app-root]').getAttribute('class')).includes('from-emerald-50'), 'mint background still applied after reload');
 ok((await page.locator('[data-header]').getAttribute('class')).includes('from-emerald-700'), 'green header still applied after reload');
-await page.getByRole('button', { name: 'Ledger', exact: true }).click();
+await page.getByRole('button', { name: 'Labour', exact: true }).click();
 await page.waitForTimeout(500);
-await page.getByRole('tab', { name: 'Labour work', exact: true }).click();
-await page.waitForTimeout(400);
-ok(await page.locator('ul li', { hasText: 'Ramesh' }).first().isVisible(), 'labour entry still there after reload');
-await page.getByRole('button', { name: 'Delete work Ramesh' }).click();
-await page.waitForTimeout(400);
-ok((await page.locator('ul li', { hasText: 'Ramesh' }).count()) === 0, 'delete work removes the row');
+const rRow = page.locator('[data-labour-row="Ramesh"]');
+ok(await rRow.isVisible(), 'labour entry still there after reload');
+ok(((await rRow.textContent()) || '').includes('800.00'), 'money still on the entry after reload');
 
-console.log('\n— 7. Backup carries labour + appearance —');
+console.log('\n— 7. Backup carries labour (with money) + appearance —');
 await page.getByRole('button', { name: 'Settings', exact: true }).click();
 await page.waitForTimeout(500);
 const [download] = await Promise.all([
@@ -166,14 +198,14 @@ const bkPath = '/tmp/v22-backup.json';
 await download.saveAs(bkPath);
 const bk = JSON.parse(fs.readFileSync(bkPath, 'utf8'));
 ok(bk.backupVersion === 2, 'backup file version 2');
-ok(Array.isArray(bk.labourWorks), 'backup contains LABOUR WORKS');
+ok(bk.labourWorks?.some((w) => w.name === 'Ramesh' && w.amount === 800 && w.mode === 'Cash'), 'backup contains LABOUR WORKS with the money given');
 ok(bk.appearance?.bgTheme === 'mint', 'backup contains background theme');
 ok(bk.appearance?.headerTheme === 'green', 'backup contains header colour');
 
 // restore it back (with a tweak) and confirm appearance + labour come back
 bk.appearance.bgTheme = 'cream';
 bk.labourWorks = [
-  { id: 'lw-x', dateISO: new Date().toISOString(), name: 'Srinu', work: 'Pole casting', product: 'Fencing pole' },
+  { id: 'lw-x', dateISO: new Date().toISOString(), name: 'Srinu', work: 'Pole casting', product: 'Fencing pole', amount: 500, mode: 'UPI' },
 ];
 fs.writeFileSync('/tmp/v22-restore.json', JSON.stringify(bk));
 await page.getByRole('button', { name: 'Restore backup' }).click();
@@ -182,12 +214,13 @@ await page.waitForTimeout(500);
 await page.getByRole('button', { name: 'Confirm restore' }).click();
 await page.waitForTimeout(900);
 ok((await page.locator('[data-app-root]').getAttribute('class')).includes('from-amber-50'), 'restored backup brings the CREAM background');
-ok((await stored()).labourWorks?.some((w) => w.name === 'Srinu'), 'restored backup brings labour works');
-await page.getByRole('button', { name: 'Ledger', exact: true }).click();
+ok((await stored()).labourWorks?.some((w) => w.name === 'Srinu' && w.amount === 500), 'restored backup brings labour works with money');
+await page.getByRole('button', { name: 'Labour', exact: true }).click();
 await page.waitForTimeout(500);
-await page.getByRole('tab', { name: 'Labour work', exact: true }).click();
-await page.waitForTimeout(400);
-ok(await page.locator('ul li', { hasText: 'Srinu' }).first().isVisible(), 'restored work row visible in the ledger');
+const sRow = page.locator('[data-labour-row="Srinu"]');
+ok(await sRow.isVisible(), 'restored work row visible in the labour tab');
+const sRowTxt = (await sRow.textContent()) || '';
+ok(sRowTxt.includes('500.00') && sRowTxt.includes('UPI'), 'restored row shows ₹500 by UPI');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 await browser.close();

@@ -72,7 +72,7 @@ export function ServiceWorkerRegister() {
 
     const check = async () => {
       try {
-        reg = reg ?? (await navigator.serviceWorker.getRegistration());
+        reg = reg ?? (await navigator.serviceWorker.getRegistration()) ?? null;
         await reg?.update();
       } catch {
         /* offline — the cached version keeps working; update happens next time online */

@@ -2,7 +2,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { WifiOff, ReceiptText, Package, History, Settings, BookText, Languages } from 'lucide-react';
+import { WifiOff, ReceiptText, Package, History, Settings, BookText, Languages, Hammer } from 'lucide-react';
 import { useSyncExternalStore, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
@@ -114,6 +114,7 @@ export function BottomNav() {
     { id: 'bill', label: t('nav.bill'), icon: ReceiptIcon },
     { id: 'products', label: t('nav.products'), icon: PackageIcon },
     { id: 'ledger', label: t('nav.ledger'), icon: LedgerIcon },
+    { id: 'labour', label: t('nav.labour'), icon: LabourIcon },
     { id: 'history', label: t('nav.history'), icon: HistoryIcon },
     { id: 'settings', label: t('nav.settings'), icon: SettingsIcon },
   ] as const;
@@ -124,7 +125,7 @@ export function BottomNav() {
       className="fixed bottom-0 left-0 right-0 z-50 border-t bg-white/95 backdrop-blur lg:hidden"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      <div className="mx-auto grid max-w-md grid-cols-5">
+      <div className="mx-auto grid max-w-md grid-cols-6">
         {tabs.map((x) => {
           const Icon = x.icon;
           const active = activeTab === x.id;
@@ -161,6 +162,7 @@ export function DesktopTabs() {
     { id: 'bill', label: t('nav.newBill') },
     { id: 'products', label: t('nav.products') },
     { id: 'ledger', label: t('nav.ledger') },
+    { id: 'labour', label: t('nav.labour') },
     { id: 'history', label: t('nav.invoiceHistory') },
     { id: 'settings', label: t('nav.settings') },
   ] as const;
@@ -193,6 +195,9 @@ function PackageIcon({ className, active }: { className?: string; active?: boole
 }
 function LedgerIcon({ className, active }: { className?: string; active?: boolean }) {
   return <BookText className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
+}
+function LabourIcon({ className, active }: { className?: string; active?: boolean }) {
+  return <Hammer className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
 }
 function HistoryIcon({ className, active }: { className?: string; active?: boolean }) {
   return <History className={`${className} ${active ? 'fill-blue-100' : ''}`} />;

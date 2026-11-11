@@ -42,7 +42,7 @@ await page.waitForTimeout(1800);
 const popup = page.locator('[aria-label="Install app notification"]');
 if (await popup.count()) {
   const ptxt = (await popup.first().textContent()) || '';
-  ok(ptxt.includes('v21'), 'update popup advertises v21');
+  ok(ptxt.includes('v22'), 'update popup advertises the current version (v22)');
   await popup.getByRole('button', { name: 'Close install notification' }).click();
   await page.waitForTimeout(300);
 }

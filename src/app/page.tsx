@@ -5,6 +5,7 @@ import { Header, BottomNav, DesktopTabs } from '@/components/Navigation';
 import BillTab from '@/components/BillTab';
 import ProductsView from '@/components/ProductsView';
 import LedgerView from '@/components/LedgerView';
+import LabourView from '@/components/LabourView';
 import HistoryView from '@/components/HistoryView';
 import SettingsView from '@/components/SettingsView';
 import BillPanel from '@/components/BillPanel';
@@ -162,6 +163,13 @@ export default function Home() {
               <div className="mx-auto max-w-2xl">
                 <h2 className="mb-3 text-base font-bold text-neutral-800">{t('ledger.title')}</h2>
                 <LedgerView />
+              </div>
+            )}
+
+            {activeTab === 'labour' && (
+              <div className="mx-auto max-w-2xl">
+                <h2 className="mb-3 text-base font-bold text-neutral-800">{t('labour.title')}</h2>
+                <LabourView />
               </div>
             )}
 
