@@ -327,3 +327,21 @@ Work Log:
 
 Stage Summary:
 - Bill page is clean (products + View bill only); every bill starts with a blank customer so name and mobile are typed new each time
+
+---
+Task ID: 19
+Agent: main
+Task: "In Ledger in expenses also I have to add date and time direct and add name person purpose and amount and add full app background company logo in the middle of the app"
+
+Work Log:
+- Expense form (Ledger → Expenses): direct Time input added next to Date (defaults to now, fully editable), Person name ("paid to whom"), Purpose (replaces the bare note), Amount ₹; Category and Cash/UPI/Card mode kept — stampFrom() combines date+time into a local ISO stamp with invalid-input fallback
+- Income form: Time input added too (symmetry) — both manual ledger entries now record exact times
+- Ledger rows everywhere (Day view, All-days detail, month lists) show the person as the row name with category · purpose as detail; month list rows show date · time; delete buttons labelled with the person
+- Row times display as 24-hour HH:MM (matches the picked time inputs; the old en-IN "03:45 pm" rendering mismatched) and day rows sort by real timestamp (ts) so am/pm no longer breaks newest-first order
+- types.ts: Expense.person added; i18n: ledger.time / person / personPlaceholder / purpose / purposePlaceholder (EN + TE)
+- Full-app background logo: page.tsx renders the Narasimha badge (/narasimha-logo.jpg, rounded-full) as a fixed centred watermark — 74vmin, opacity 0.06, pointer-events-none, z-20 over content but under header/nav/sheets (z-50+) so it reads like a printed seal on every tab
+- lib/version.ts 19 → 20; sw.js CACHE v19 → v20
+- Verified: shot-v20.mjs 34/34 assertions green — watermark fixed/centred/subtle/over-content, no inline bill + fresh-customer sheet twice, expense date+time+person+purpose+amount flow with UPI chip and picked 15:45 in month + day rows, income time 10:30 in day view; screenshots v20-home-watermark / v20-billpage / v20-sheet-fresh / v20-expense-row / v20-day-rows; tsc clean for changed files (4 pre-existing errors in InvoiceDoc/PwaInstall/ThermalSlip/messages untouched)
+
+Stage Summary:
+- Expenses now record WHEN (date + time), WHO (person), WHAT FOR (purpose) and HOW MUCH (amount) with the payment mode — and the Narasimha company seal sits centred over the whole app as a subtle watermark

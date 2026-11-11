@@ -127,6 +127,9 @@ export interface Expense {
   dateISO: string;
   category: ExpenseCategory;
   amount: number;
+  /** Person the money was paid to — shown as the ledger row name */
+  person?: string;
+  /** Purpose / note for the spend — shown as the ledger row sub line */
   note?: string;
   /** How the money was paid out — shown in the ledger (Cash / UPI / Card) */
   mode?: PaymentMode;

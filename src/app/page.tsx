@@ -55,13 +55,26 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-dvh bg-gradient-to-b from-blue-50/70 to-neutral-100">
+    <div className="relative min-h-dvh bg-gradient-to-b from-blue-50/70 to-neutral-100">
+      {/* Company logo watermark — centred ON the whole app like a printed seal:
+          floats over content, never blocks touches, sits under header/nav/sheets */}
+      <div
+        aria-hidden
+        data-watermark="logo"
+        className="pointer-events-none fixed inset-0 z-20 flex items-center justify-center overflow-hidden"
+      >
+        <img
+          src="/narasimha-logo.jpg"
+          alt=""
+          className="w-[74vmin] max-w-[420px] min-w-[260px] select-none rounded-full object-cover opacity-[0.06]"
+        />
+      </div>
       <ServiceWorkerRegister />
       <Header />
       <PwaInstall />
       <ConnectivityToast />
 
-      <main className="mx-auto max-w-5xl px-3 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-4 lg:pb-10">
+      <main className="relative z-10 mx-auto max-w-5xl px-3 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-4 lg:pb-10">
         <DesktopTabs />
 
         {!mounted ? (

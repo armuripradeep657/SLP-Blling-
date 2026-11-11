@@ -39,11 +39,23 @@ const CATEGORY_TE: Record<ExpenseCategory, string> = {
 
 const MODES: PaymentMode[] = ['Cash', 'UPI', 'Card'];
 
+/** 24-hour HH:MM — matches the direct time inputs picked by the owner */
+function fmtTime(d: Date): string {
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Current local time as HH:MM — default value for the direct time inputs */
+function nowHM(): string {
+  return fmtTime(new Date());
+}
+
 type LedgerTab = 'day' | 'allDays' | 'income' | 'expenses' | 'dues';
 
 /** One money row in the ledger — income (bill payment) or spent (expense) */
 interface LedgerRow {
   time: string;
+  /** raw timestamp — sort key so rows stay chronological across am/pm */
+  ts: number;
   /** main line — customer name for income, category for spent */
   label: string;
   /** secondary line — invoice no / note */
@@ -175,8 +187,10 @@ export default function LedgerView() {
     };
     invoices.forEach((inv) => {
       paymentsOf(inv).forEach((p) => {
-        push(localDateKey(new Date(p.dateISO)), {
-          time: new Date(p.dateISO).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        const d = new Date(p.dateISO);
+        push(localDateKey(d), {
+          time: fmtTime(d),
+          ts: d.getTime(),
           label: `${t('ledger.receivedFrom')} ${inv.customer.name || inv.no}`,
           sub: inv.no,
           amount: p.amount,
@@ -186,10 +200,15 @@ export default function LedgerView() {
       });
     });
     expenses.forEach((e) => {
-      push(localDateKey(new Date(e.dateISO)), {
-        time: new Date(e.dateISO).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        label: categoryLabel(e.category, appLang),
-        sub: e.note || '',
+      const d = new Date(e.dateISO);
+      push(localDateKey(d), {
+        time: fmtTime(d),
+        ts: d.getTime(),
+        // person is the row name when given — else the category
+        label: e.person ? e.person : categoryLabel(e.category, appLang),
+        sub: [e.person ? categoryLabel(e.category, appLang) : '', e.note || '']
+          .filter(Boolean)
+          .join(' · '),
         amount: e.amount,
         kind: 'out',
         mode: e.mode,
@@ -197,8 +216,10 @@ export default function LedgerView() {
     });
     // manual income entries — money received outside a bill, with its own name
     incomes.forEach((e) => {
-      push(localDateKey(new Date(e.dateISO)), {
-        time: new Date(e.dateISO).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+      const d = new Date(e.dateISO);
+      push(localDateKey(d), {
+        time: fmtTime(d),
+        ts: d.getTime(),
         label: e.name,
         sub: '',
         amount: e.amount,
@@ -206,8 +227,8 @@ export default function LedgerView() {
         mode: e.mode,
       });
     });
-    // newest first within each day
-    map.forEach((list, k) => map.set(k, [...list].sort((a, b) => b.time.localeCompare(a.time))));
+    // newest first within each day (by real timestamp — safe across am/pm)
+    map.forEach((list, k) => map.set(k, [...list].sort((a, b) => b.ts - a.ts)));
     return map;
   }, [invoices, expenses, incomes, t, appLang]);
 
@@ -283,32 +304,46 @@ export default function LedgerView() {
 
   /* ---------------- Expense form ---------------- */
   const [expDate, setExpDate] = useState(today);
+  const [expTime, setExpTime] = useState(() => nowHM());
   const [expCat, setExpCat] = useState<ExpenseCategory>('Labour wages');
+  const [expPerson, setExpPerson] = useState('');
   const [expAmount, setExpAmount] = useState('');
-  const [expNote, setExpNote] = useState('');
+  const [expPurpose, setExpPurpose] = useState('');
   const [expMode, setExpMode] = useState<PaymentMode>('Cash');
+
+  /** Combine the picked date + time into a local ISO stamp (falls back to now) */
+  const stampFrom = (d: string, hm: string): string => {
+    const dt = new Date(`${d || today}T${hm || '12:00'}:00`);
+    return (isNaN(dt.getTime()) ? new Date() : dt).toISOString();
+  };
 
   const submitExpense = () => {
     const amt = Number(expAmount) || 0;
     if (amt <= 0) return;
-    // date input gives YYYY-MM-DD — keep it local (noon ISO to avoid TZ shifts)
+    const person = expPerson.trim();
+    const purpose = expPurpose.trim();
+    // date + time inputs give local values — combine them directly
     addExpense({
-      dateISO: new Date(`${expDate}T12:00:00`).toISOString(),
+      dateISO: stampFrom(expDate, expTime),
       category: expCat,
       amount: amt,
-      note: expNote.trim() || undefined,
+      person: person || undefined,
+      note: purpose || undefined,
       mode: expMode,
     });
+    setExpPerson('');
     setExpAmount('');
-    setExpNote('');
+    setExpPurpose('');
+    setExpTime(nowHM());
     toast({
       title: t('ledger.expAdded'),
-      description: `₹${fmt(amt)} · ${categoryLabel(expCat, appLang)} · ${modeLabel(expMode, appLang)}`,
+      description: `${person ? `${person} · ` : ''}₹${fmt(amt)} · ${categoryLabel(expCat, appLang)} · ${modeLabel(expMode, appLang)}`,
     });
   };
 
   /* ---------------- Manual income form ---------------- */
   const [incDate, setIncDate] = useState(today);
+  const [incTime, setIncTime] = useState(() => nowHM());
   const [incName, setIncName] = useState('');
   const [incAmount, setIncAmount] = useState('');
   const [incMode, setIncMode] = useState<PaymentMode>('Cash');
@@ -317,13 +352,14 @@ export default function LedgerView() {
     const amt = Number(incAmount) || 0;
     if (amt <= 0 || !incName.trim()) return;
     addIncome({
-      dateISO: new Date(`${incDate}T12:00:00`).toISOString(),
+      dateISO: stampFrom(incDate, incTime),
       name: incName.trim(),
       amount: amt,
       mode: incMode,
     });
     setIncName('');
     setIncAmount('');
+    setIncTime(nowHM());
     toast({
       title: t('ledger.incAdded'),
       description: `₹${fmt(amt)} · ${incName.trim()} · ${modeLabel(incMode, appLang)}`,
@@ -479,28 +515,34 @@ export default function LedgerView() {
                 <Input type="date" value={incDate} max={today} onChange={(e) => setIncDate(e.target.value)} className="h-10" aria-label="Income date" />
               </div>
               <div className="space-y-1">
-                <Label className="text-[11px] text-muted-foreground">{t('ledger.expAmount')}</Label>
-                <Input type="number" inputMode="decimal" min={0} value={incAmount} onChange={(e) => setIncAmount(e.target.value)} placeholder="0" className="h-10" aria-label="Income amount" />
+                <Label className="text-[11px] text-muted-foreground">{t('ledger.time')}</Label>
+                <Input type="time" value={incTime} onChange={(e) => setIncTime(e.target.value)} className="h-10" aria-label="Income time" />
               </div>
             </div>
             <div className="space-y-1">
               <Label className="text-[11px] text-muted-foreground">{t('ledger.incName')}</Label>
               <Input value={incName} onChange={(e) => setIncName(e.target.value)} placeholder={t('ledger.incPlaceholder')} className="h-10" aria-label="Income name" />
             </div>
-            <div className="space-y-1">
-              <Label className="text-[11px] text-muted-foreground">{t('ledger.receiveMode')}</Label>
-              <Select value={incMode} onValueChange={(v) => setIncMode(v as PaymentMode)}>
-                <SelectTrigger className="h-10" aria-label="Income payment mode">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MODES.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {modeLabel(m, appLang)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('ledger.expAmount')}</Label>
+                <Input type="number" inputMode="decimal" min={0} value={incAmount} onChange={(e) => setIncAmount(e.target.value)} placeholder="0" className="h-10" aria-label="Income amount" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('ledger.receiveMode')}</Label>
+                <Select value={incMode} onValueChange={(v) => setIncMode(v as PaymentMode)}>
+                  <SelectTrigger className="h-10" aria-label="Income payment mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MODES.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {modeLabel(m, appLang)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <Button onClick={submitIncome} className="h-11 w-full bg-green-700 text-white hover:bg-green-800" disabled={!(Number(incAmount) > 0) || !incName.trim()}>
               {t('ledger.addIncome')}
@@ -524,6 +566,8 @@ export default function LedgerView() {
                     </p>
                     <p className="truncate text-[11px] text-muted-foreground">
                       {new Date(e.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      {' · '}
+                      {fmtTime(new Date(e.dateISO))}
                     </p>
                   </div>
                 </div>
@@ -637,6 +681,12 @@ export default function LedgerView() {
                 <Input type="date" value={expDate} max={today} onChange={(e) => setExpDate(e.target.value)} className="h-10" aria-label="Expense date" />
               </div>
               <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('ledger.time')}</Label>
+                <Input type="time" value={expTime} onChange={(e) => setExpTime(e.target.value)} className="h-10" aria-label="Expense time" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">{t('ledger.expCategory')}</Label>
                 <Select value={expCat} onValueChange={(v) => setExpCat(v as ExpenseCategory)}>
                   <SelectTrigger className="h-10" aria-label="Expense category">
@@ -651,11 +701,15 @@ export default function LedgerView() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">{t('ledger.expAmount')}</Label>
                 <Input type="number" inputMode="decimal" min={0} value={expAmount} onChange={(e) => setExpAmount(e.target.value)} placeholder="0" className="h-10" aria-label="Expense amount" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('ledger.person')}</Label>
+                <Input value={expPerson} onChange={(e) => setExpPerson(e.target.value)} placeholder={t('ledger.personPlaceholder')} className="h-10" aria-label="Expense person" />
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">{t('ledger.receiveMode')}</Label>
@@ -674,8 +728,8 @@ export default function LedgerView() {
               </div>
             </div>
             <div className="space-y-1">
-              <Label className="text-[11px] text-muted-foreground">{t('ledger.expNote')}</Label>
-              <Input value={expNote} onChange={(e) => setExpNote(e.target.value)} className="h-10" aria-label="Expense note" />
+              <Label className="text-[11px] text-muted-foreground">{t('ledger.purpose')}</Label>
+              <Input value={expPurpose} onChange={(e) => setExpPurpose(e.target.value)} placeholder={t('ledger.purposePlaceholder')} className="h-10" aria-label="Expense purpose" />
             </div>
             <Button onClick={submitExpense} className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700" disabled={!(Number(expAmount) > 0)}>
               {t('ledger.addExpense')}
@@ -694,18 +748,21 @@ export default function LedgerView() {
                   </span>
                   <div className="min-w-0">
                     <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                      <span className="truncate">{categoryLabel(e.category, appLang)}</span>
+                      <span className="truncate">{e.person || categoryLabel(e.category, appLang)}</span>
                       <ModeChip mode={e.mode} appLang={appLang} />
                     </p>
                     <p className="truncate text-[11px] text-muted-foreground">
                       {new Date(e.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      {' · '}
+                      {fmtTime(new Date(e.dateISO))}
+                      {e.person ? ` · ${categoryLabel(e.category, appLang)}` : ''}
                       {e.note ? ` · ${e.note}` : ''}
                     </p>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <span className="text-sm font-bold tabular-nums text-red-600">− ₹{fmt(e.amount)}</span>
-                  <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-destructive" onClick={() => deleteExpense(e.id)} aria-label={`Delete expense ${e.category}`}>
+                  <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-destructive" onClick={() => deleteExpense(e.id)} aria-label={`Delete expense ${e.person || e.category}`}>
                     <Trash2 className="size-3.5" />
                   </Button>
                 </div>
