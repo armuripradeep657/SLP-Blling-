@@ -1,0 +1,815 @@
+     1→'use client';
+     2→
+     3→import { useEffect, useRef, useState } from 'react';
+     4→import { Button } from '@/components/ui/button';
+     5→import { Input } from '@/components/ui/input';
+     6→import { Label } from '@/components/ui/label';
+     7→import {
+     8→  AlertDialog,
+     9→  AlertDialogAction,
+    10→  AlertDialogCancel,
+    11→  AlertDialogContent,
+    12→  AlertDialogDescription,
+    13→  AlertDialogFooter,
+    14→  AlertDialogHeader,
+    15→  AlertDialogTitle,
+    16→  AlertDialogTrigger,
+    17→} from '@/components/ui/alert-dialog';
+    18→import { Separator } from '@/components/ui/separator';
+    19→import { useToast } from '@/hooks/use-toast';
+    20→import { useStore } from '@/lib/store';
+    21→import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from '@/lib/defaultData';
+    22→import { normalizePhone } from '@/lib/billing';
+    23→import InstallAppSection from '@/components/InstallAppSection';
+    24→import { useT, useAppLang } from '@/hooks/use-app-lang';
+    25→import { Download, ImageUp, RefreshCw, RotateCcw, Upload } from 'lucide-react';
+    26→import type {
+    27→  Appearance,
+    28→  BgThemeId,
+    29→  BusinessSettings,
+    30→  Expense,
+    31→  HeaderThemeId,
+    32→  IncomeEntry,
+    33→  Invoice,
+    34→  LabourWork,
+    35→  Product,
+    36→} from '@/lib/types';
+    37→
+    38→/* ------------------------------------------------------------------ */
+    39→/* Draft shapes — edits stay LOCAL until the owner presses Update      */
+    40→/* ------------------------------------------------------------------ */
+    41→
+    42→/** Business Identity card fields (company name, owner, contact & UPI) */
+    43→interface IdentityDraft {
+    44→  companyName: string;
+    45→  companyNameTe: string;
+    46→  ownerName: string;
+    47→  phone: string;
+    48→  whatsappNumber: string;
+    49→  address: string;
+    50→  upiId: string;
+    51→}
+    52→
+    53→const identityOf = (s: BusinessSettings): IdentityDraft => ({
+    54→  companyName: s.companyName,
+    55→  companyNameTe: s.companyNameTe ?? '',
+    56→  ownerName: s.ownerName,
+    57→  phone: s.phone,
+    58→  whatsappNumber: s.whatsappNumber,
+    59→  address: s.address,
+    60→  upiId: s.upiId,
+    61→});
+    62→
+    63→/** Billing & Slip card fields */
+    64→interface BillingDraft {
+    65→  invoicePrefix: string;
+    66→  nextInvoiceNo: string;
+    67→  slipWidthMm: 58 | 80;
+    68→  thankYouNote: string;
+    69→  returnPolicy: string;
+    70→}
+    71→
+    72→const billingOf = (s: BusinessSettings): BillingDraft => ({
+    73→  invoicePrefix: s.invoicePrefix,
+    74→  nextInvoiceNo: String(s.nextInvoiceNo),
+    75→  slipWidthMm: s.slipWidthMm,
+    76→  thankYouNote: s.thankYouNote,
+    77→  returnPolicy: s.returnPolicy,
+    78→});
+    79→
+    80→/** Shape of the backup file the app writes & reads back */
+    81→interface BackupFile {
+    82→  app: string;
+    83→  backupVersion: number;
+    84→  exportedAt: string;
+    85→  settings: BusinessSettings;
+    86→  products: Product[];
+    87→  invoices?: Invoice[];
+    88→  expenses?: Expense[];
+    89→  incomes?: IncomeEntry[];
+    90→  labourWorks?: LabourWork[];
+    91→  appearance?: Appearance;
+    92→}
+    93→
+    94→/** Background themes shown in Settings → Appearance */
+    95→const BG_THEMES: { id: BgThemeId; en: string; te: string; swatch: string }[] = [
+    96→  { id: 'blue', en: 'Blue', te: 'నీలం', swatch: 'from-blue-50 to-neutral-100' },
+    97→  { id: 'cream', en: 'Cream', te: 'క్రీమ్', swatch: 'from-amber-50 to-stone-100' },
+    98→  { id: 'mint', en: 'Mint', te: 'మింట్', swatch: 'from-emerald-50 to-neutral-100' },
+    99→  { id: 'lavender', en: 'Lavender', te: 'లావెండర్', swatch: 'from-violet-50 to-neutral-100' },
+   100→  { id: 'slate', en: 'Grey', te: 'గ్రే', swatch: 'from-slate-200 to-slate-100' },
+   101→];
+   102→
+   103→/** Header colour themes shown in Settings → Appearance */
+   104→const HEADER_COLOURS: { id: HeaderThemeId; en: string; te: string; swatch: string }[] = [
+   105→  { id: 'blue', en: 'Blue', te: 'నీలం', swatch: 'from-blue-700 to-blue-600' },
+   106→  { id: 'green', en: 'Green', te: 'ఆకుపచ్చ', swatch: 'from-emerald-700 to-emerald-600' },
+   107→  { id: 'maroon', en: 'Maroon', te: 'మరూన్', swatch: 'from-rose-900 to-rose-800' },
+   108→  { id: 'navy', en: 'Navy', te: 'నేవీ', swatch: 'from-slate-900 to-slate-800' },
+   109→  { id: 'teal', en: 'Teal', te: 'టీల్', swatch: 'from-teal-700 to-teal-600' },
+   110→];
+   111→
+   112→export default function SettingsView() {
+   113→  const t = useT();
+   114→  const appLang = useAppLang();
+   115→  const settings = useStore((s) => s.settings);
+   116→  const saveSettings = useStore((s) => s.saveSettings);
+   117→  const { toast } = useToast();
+   118→
+   119→  const set = (patch: Partial<typeof settings>) => saveSettings(patch);
+   120→
+   121→  return (
+   122→    <div className="space-y-5">
+   123→      {/* App language — the whole app switches between English and తెలుగు */}
+   124→      <section aria-label="App language" className="space-y-2">
+   125→        <h3 className="text-sm font-bold text-blue-800">{t('settings.appLang')}</h3>
+   126→        <p className="text-xs text-muted-foreground">{t('settings.appLangDesc')}</p>
+   127→        <div className="grid grid-cols-2 gap-2">
+   128→          {([
+   129→            { id: 'en', label: 'English' },
+   130→            { id: 'te', label: 'తెలుగు' },
+   131→          ] as const).map((l) => (
+   132→            <button
+   133→              key={l.id}
+   134→              type="button"
+   135→              onClick={() => set({ appLang: l.id })}
+   136→              className={`h-11 rounded-lg border text-sm font-semibold transition-colors ${
+   137→                appLang === l.id
+   138→                  ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+   139→                  : 'bg-card hover:bg-accent'
+   140→              }`}
+   141→              aria-pressed={appLang === l.id}
+   142→            >
+   143→              {l.label}
+   144→            </button>
+   145→          ))}
+   146→        </div>
+   147→      </section>
+   148→
+   149→      <Separator />
+   150→
+   151→      <BusinessIdentitySection />
+   152→
+   153→      <Separator />
+   154→
+   155→      <BillingSlipSection />
+   156→
+   157→      <Separator />
+   158→
+   159→      <AppearanceSection />
+   160→
+   161→      <Separator />
+   162→
+   163→      <InstallAppSection />
+   164→
+   165→      <Separator />
+   166→
+   167→      <AppUpdatesSection />
+   168→
+   169→      <Separator />
+   170→
+   171→      <BackupSection />
+   172→
+   173→      <Separator />
+   174→
+   175→      <section aria-label="Data management" className="space-y-2">
+   176→        <h3 className="text-sm font-bold text-blue-800">{t('settings.data')}</h3>
+   177→        <p className="text-xs text-muted-foreground">
+   178→          All data (products, bills, settings) is stored on this device only — the app works fully offline.
+   179→        </p>
+   180→        <AlertDialog>
+   181→          <AlertDialogTrigger asChild>
+   182→            <Button variant="outline" className="w-full text-destructive hover:text-destructive">
+   183→              {t('settings.resetCatalog')}
+   184→            </Button>
+   185→          </AlertDialogTrigger>
+   186→          <AlertDialogContent className="max-w-xs">
+   187→            <AlertDialogHeader>
+   188→              <AlertDialogTitle>Reset catalog?</AlertDialogTitle>
+   189→              <AlertDialogDescription>
+   190→                Your custom products will be replaced with the default cement product list. Bills & settings are kept.
+   191→              </AlertDialogDescription>
+   192→            </AlertDialogHeader>
+   193→            <AlertDialogFooter>
+   194→              <AlertDialogCancel>Cancel</AlertDialogCancel>
+   195→              <AlertDialogAction
+   196→                onClick={() => {
+   197→                  saveSettings(DEFAULT_SETTINGS);
+   198→                  useStore.setState({ products: DEFAULT_PRODUCTS });
+   199→                  toast({ title: 'Catalog reset to defaults' });
+   200→                }}
+   201→              >
+   202→                Reset
+   203→              </AlertDialogAction>
+   204→            </AlertDialogFooter>
+   205→          </AlertDialogContent>
+   206→        </AlertDialog>
+   207→        <AlertDialog>
+   208→          <AlertDialogTrigger asChild>
+   209→            <Button variant="outline" className="w-full text-destructive hover:text-destructive">
+   210→              {t('settings.eraseAll')}
+   211→            </Button>
+   212→          </AlertDialogTrigger>
+   213→          <AlertDialogContent className="max-w-xs">
+   214→            <AlertDialogHeader>
+   215→              <AlertDialogTitle>Erase everything?</AlertDialogTitle>
+   216→              <AlertDialogDescription>
+   217→                All products, invoices and settings on this device will be permanently deleted.
+   218→              </AlertDialogDescription>
+   219→            </AlertDialogHeader>
+   220→            <AlertDialogFooter>
+   221→              <AlertDialogCancel>Cancel</AlertDialogCancel>
+   222→              <AlertDialogAction
+   223→                onClick={() => {
+   224→                  localStorage.removeItem('slp-cement-billing-v1');
+   225→                  location.reload();
+   226→                }}
+   227→                className="bg-destructive text-white hover:bg-destructive/90"
+   228→              >
+   229→                Erase
+   230→              </AlertDialogAction>
+   231→            </AlertDialogFooter>
+   232→          </AlertDialogContent>
+   233→        </AlertDialog>
+   234→      </section>
+   235→    </div>
+   236→  );
+   237→}
+   238→
+   239→/* ------------------------------------------------------------------ */
+   240→/* Business Identity — edit freely, save only with "Update details"    */
+   241→/* ------------------------------------------------------------------ */
+   242→
+   243→function BusinessIdentitySection() {
+   244→  const t = useT();
+   245→  const settings = useStore((s) => s.settings);
+   246→  const saveSettings = useStore((s) => s.saveSettings);
+   247→  const { toast } = useToast();
+   248→
+   249→  const [draft, setDraft] = useState<IdentityDraft>(() => identityOf(settings));
+   250→  // re-sync the draft whenever saved settings change (Update pressed / backup restored)
+   251→  useEffect(() => setDraft(identityOf(settings)), [settings]);
+   252→
+   253→  const saved = identityOf(settings);
+   254→  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+   255→  const upd = (patch: Partial<IdentityDraft>) => setDraft((d) => ({ ...d, ...patch }));
+   256→
+   257→  const save = () => {
+   258→    saveSettings({
+   259→      ...draft,
+   260→      companyName: draft.companyName.trim(),
+   261→      companyNameTe: draft.companyNameTe.trim(),
+   262→      ownerName: draft.ownerName.trim(),
+   263→      phone: normalizePhone(draft.phone),
+   264→      whatsappNumber: normalizePhone(draft.whatsappNumber),
+   265→      address: draft.address.trim(),
+   266→      upiId: draft.upiId.trim(),
+   267→    });
+   268→    toast({
+   269→      title: t('settings.updatedToast'),
+   270→      description: draft.companyName.trim() || undefined,
+   271→    });
+   272→  };
+   273→
+   274→  return (
+   275→    <section aria-label="Business identity" className="space-y-3">
+   276→      <h3 className="text-sm font-bold text-blue-800">{t('settings.businessIdentity')}</h3>
+   277→      <p className="text-xs text-muted-foreground">{t('settings.updateHint')}</p>
+   278→      <Field
+   279→        ariaLabel="Company name"
+   280→        label={t('settings.companyName')}
+   281→        value={draft.companyName}
+   282→        onChange={(v) => upd({ companyName: v })}
+   283→        textarea
+   284→      />
+   285→      <Field
+   286→        ariaLabel="Company name in Telugu"
+   287→        label={t('settings.companyNameTe')}
+   288→        value={draft.companyNameTe}
+   289→        onChange={(v) => upd({ companyNameTe: v })}
+   290→        textarea
+   291→        placeholder="శ్రీ లక్ష్మీ పెంచిల నరసింహ స్వామి సిమెంట్ వర్క్స్"
+   292→      />
+   293→      <Field
+   294→        ariaLabel="Owner name"
+   295→        label={t('settings.ownerName')}
+   296→        value={draft.ownerName}
+   297→        onChange={(v) => upd({ ownerName: v })}
+   298→        placeholder="A. Prasad"
+   299→      />
+   300→      <div className="grid grid-cols-2 gap-2">
+   301→        <Field
+   302→          ariaLabel="Phone"
+   303→          label={t('settings.phone')}
+   304→          value={draft.phone}
+   305→          onChange={(v) => upd({ phone: v })}
+   306→          type="tel"
+   307→          placeholder="98765 43210"
+   308→        />
+   309→        <Field
+   310→          ariaLabel="WhatsApp number"
+   311→          label={t('settings.whatsapp')}
+   312→          value={draft.whatsappNumber}
+   313→          onChange={(v) => upd({ whatsappNumber: v })}
+   314→          type="tel"
+   315→          placeholder="Used on bills"
+   316→        />
+   317→      </div>
+   318→      <Field
+   319→        ariaLabel="Shop address"
+   320→        label={t('settings.address')}
+   321→        value={draft.address}
+   322→        onChange={(v) => upd({ address: v })}
+   323→        textarea
+   324→        placeholder="Main Road, Village, District"
+   325→      />
+   326→      <Field
+   327→        ariaLabel="UPI ID"
+   328→        label={t('settings.upi')}
+   329→        value={draft.upiId}
+   330→        onChange={(v) => upd({ upiId: v })}
+   331→        placeholder="name@upi"
+   332→      />
+   333→      <Button
+   334→        onClick={save}
+   335→        disabled={!dirty}
+   336→        className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+   337→        aria-label="Update details"
+   338→      >
+   339→        {t('settings.updateDetails')}
+   340→      </Button>
+   341→    </section>
+   342→  );
+   343→}
+   344→
+   345→/* ------------------------------------------------------------------ */
+   346→/* Billing & Slip — edit freely, save only with "Update bill settings" */
+   347→/* ------------------------------------------------------------------ */
+   348→
+   349→function BillingSlipSection() {
+   350→  const t = useT();
+   351→  const settings = useStore((s) => s.settings);
+   352→  const saveSettings = useStore((s) => s.saveSettings);
+   353→  const { toast } = useToast();
+   354→
+   355→  const [draft, setDraft] = useState<BillingDraft>(() => billingOf(settings));
+   356→  useEffect(() => setDraft(billingOf(settings)), [settings]);
+   357→
+   358→  const dirty = JSON.stringify(draft) !== JSON.stringify(billingOf(settings));
+   359→  const upd = (patch: Partial<BillingDraft>) => setDraft((d) => ({ ...d, ...patch }));
+   360→
+   361→  const save = () => {
+   362→    saveSettings({
+   363→      invoicePrefix: draft.invoicePrefix.trim() || 'SLP-INV-',
+   364→      nextInvoiceNo: Math.max(1, Number(draft.nextInvoiceNo.replace(/\D/g, '')) || 1),
+   365→      slipWidthMm: draft.slipWidthMm,
+   366→      thankYouNote: draft.thankYouNote,
+   367→      returnPolicy: draft.returnPolicy,
+   368→    });
+   369→    toast({ title: t('settings.billingUpdatedToast') });
+   370→  };
+   371→
+   372→  return (
+   373→    <section aria-label="Billing preferences" className="space-y-3">
+   374→      <h3 className="text-sm font-bold text-blue-800">{t('settings.billingSlip')}</h3>
+   375→      <div className="grid grid-cols-2 gap-2">
+   376→        <Field
+   377→          ariaLabel="Invoice prefix"
+   378→          label={t('settings.invoicePrefix')}
+   379→          value={draft.invoicePrefix}
+   380→          onChange={(v) => upd({ invoicePrefix: v })}
+   381→          placeholder="SLP-INV-"
+   382→        />
+   383→        <Field
+   384→          ariaLabel="Next invoice no."
+   385→          label={t('settings.nextInvoiceNo')}
+   386→          value={draft.nextInvoiceNo}
+   387→          onChange={(v) => upd({ nextInvoiceNo: v.replace(/\D/g, '') })}
+   388→          type="number"
+   389→        />
+   390→      </div>
+   391→      <div className="space-y-1.5">
+   392→        <Label className="text-xs text-muted-foreground">{t('settings.slipWidth')}</Label>
+   393→        <div className="flex gap-2">
+   394→          {([58, 80] as const).map((mm) => (
+   395→            <button
+   396→              key={mm}
+   397→              onClick={() => upd({ slipWidthMm: mm })}
+   398→              className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-semibold ${
+   399→                draft.slipWidthMm === mm ? 'border-blue-600 bg-blue-600 text-white' : 'bg-card hover:bg-accent'
+   400→              }`}
+   401→            >
+   402→              {mm} mm {mm === 58 ? '(small)' : '(standard)'}
+   403→            </button>
+   404→          ))}
+   405→        </div>
+   406→      </div>
+   407→      <Field
+   408→        ariaLabel="Thank-you note"
+   409→        label={t('settings.thankYouNote')}
+   410→        value={draft.thankYouNote}
+   411→        onChange={(v) => upd({ thankYouNote: v })}
+   412→      />
+   413→      <Field
+   414→        ariaLabel="Return policy"
+   415→        label={t('settings.returnPolicy')}
+   416→        value={draft.returnPolicy}
+   417→        onChange={(v) => upd({ returnPolicy: v })}
+   418→      />
+   419→      <Button
+   420→        onClick={save}
+   421→        disabled={!dirty}
+   422→        className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+   423→        aria-label="Update bill settings"
+   424→      >
+   425→        {t('settings.updateBilling')}
+   426→      </Button>
+   427→    </section>
+   428→  );
+   429→}
+   430→
+   431→/* ------------------------------------------------------------------ */
+   432→/* Appearance — background theme, header colour & owner's own photo     */
+   433→/* Changes apply instantly so the owner sees the look right away.       */
+   434→/* ------------------------------------------------------------------ */
+   435→
+   436→function AppearanceSection() {
+   437→  const t = useT();
+   438→  const appLang = useAppLang();
+   439→  const appearance = useStore((s) => s.appearance);
+   440→  const setAppearance = useStore((s) => s.setAppearance);
+   441→  const { toast } = useToast();
+   442→  const fileRef = useRef<HTMLInputElement>(null);
+   443→
+   444→  /** Downscale the picked photo so it stays small enough for local storage */
+   445→  const pickWatermark = async (e: React.ChangeEvent<HTMLInputElement>) => {
+   446→    const f = e.target.files?.[0];
+   447→    e.target.value = '';
+   448→    if (!f) return;
+   449→    try {
+   450→      const url = URL.createObjectURL(f);
+   451→      const img = await new Promise<HTMLImageElement>((res, rej) => {
+   452→        const im = new Image();
+   453→        im.onload = () => res(im);
+   454→        im.onerror = () => rej(new Error('bad image'));
+   455→        im.src = url;
+   456→      });
+   457→      const max = 640;
+   458→      const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+   459→      const w = Math.max(1, Math.round(img.naturalWidth * scale));
+   460→      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+   461→      const canvas = document.createElement('canvas');
+   462→      canvas.width = w;
+   463→      canvas.height = h;
+   464→      canvas.getContext('2d')?.drawImage(img, 0, 0, w, h);
+   465→      const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+   466→      URL.revokeObjectURL(url);
+   467→      setAppearance({ watermark: dataUrl });
+   468→      toast({ title: t('settings.watermarkDone') });
+   469→    } catch {
+   470→      toast({ title: t('settings.watermarkFailed') });
+   471→    }
+   472→  };
+   473→
+   474→  return (
+   475→    <section aria-label="Appearance" className="space-y-3">
+   476→      <h3 className="text-sm font-bold text-blue-800">{t('settings.appearance')}</h3>
+   477→      <p className="text-xs text-muted-foreground">{t('settings.appearanceDesc')}</p>
+   478→
+   479→      {/* Background theme */}
+   480→      <div className="space-y-1.5">
+   481→        <Label className="text-xs text-muted-foreground">{t('settings.bgTheme')}</Label>
+   482→        <div className="grid grid-cols-5 gap-1.5">
+   483→          {BG_THEMES.map((b) => (
+   484→            <button
+   485→              key={b.id}
+   486→              type="button"
+   487→              onClick={() => setAppearance({ bgTheme: b.id })}
+   488→              aria-label={`Background theme ${b.id}`}
+   489→              aria-pressed={appearance.bgTheme === b.id}
+   490→              className={`flex flex-col items-center gap-1 rounded-lg border p-1.5 transition-all active:scale-95 ${
+   491→                appearance.bgTheme === b.id ? 'border-blue-600 ring-2 ring-blue-600/30' : 'border-border'
+   492→              }`}
+   493→            >
+   494→              <span className={`h-8 w-full rounded bg-gradient-to-b ${b.swatch}`} />
+   495→              <span className="text-[10px] font-medium">{appLang === 'te' ? b.te : b.en}</span>
+   496→            </button>
+   497→          ))}
+   498→        </div>
+   499→      </div>
+   500→
+   501→      {/* Header colour */}
+   502→      <div className="space-y-1.5">
+   503→        <Label className="text-xs text-muted-foreground">{t('settings.headerColour')}</Label>
+   504→        <div className="grid grid-cols-5 gap-1.5">
+   505→          {HEADER_COLOURS.map((c) => (
+   506→            <button
+   507→              key={c.id}
+   508→              type="button"
+   509→              onClick={() => setAppearance({ headerTheme: c.id })}
+   510→              aria-label={`Header colour ${c.id}`}
+   511→              aria-pressed={appearance.headerTheme === c.id}
+   512→              className={`flex flex-col items-center gap-1 rounded-lg border p-1.5 transition-all active:scale-95 ${
+   513→                appearance.headerTheme === c.id ? 'border-blue-600 ring-2 ring-blue-600/30' : 'border-border'
+   514→              }`}
+   515→            >
+   516→              <span className={`h-8 w-full rounded bg-gradient-to-r ${c.swatch}`} />
+   517→              <span className="text-[10px] font-medium">{appLang === 'te' ? c.te : c.en}</span>
+   518→            </button>
+   519→          ))}
+   520→        </div>
+   521→      </div>
+   522→
+   523→      {/* Watermark photo from the owner's device */}
+   524→      <div className="space-y-1.5">
+   525→        <Label className="text-xs text-muted-foreground">{t('settings.watermark')}</Label>
+   526→        <p className="text-xs text-muted-foreground">{t('settings.watermarkDesc')}</p>
+   527→        <div className="flex items-center gap-3">
+   528→          {/* eslint-disable-next-line @next/next/no-img-element */}
+   529→          <img
+   530→            src={appearance.watermark || '/narasimha-logo.jpg'}
+   531→            alt="Watermark preview"
+   532→            className="size-14 shrink-0 rounded-full border object-cover"
+   533→            data-watermark-preview
+   534→          />
+   535→          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+   536→            <Button variant="outline" className="h-10 w-full" onClick={() => fileRef.current?.click()} aria-label="Pick watermark photo">
+   537→              <ImageUp className="size-4" />
+   538→              {t('settings.watermarkPick')}
+   539→            </Button>
+   540→            {appearance.watermark && (
+   541→              <Button variant="ghost" className="h-9 w-full" onClick={() => setAppearance({ watermark: '' })} aria-label="Reset watermark">
+   542→                <RotateCcw className="size-4" />
+   543→                {t('settings.watermarkReset')}
+   544→              </Button>
+   545→            )}
+   546→          </div>
+   547→        </div>
+   548→        <input
+   549→          ref={fileRef}
+   550→          type="file"
+   551→          accept="image/*"
+   552→          className="hidden"
+   553→          aria-label="Watermark photo file"
+   554→          onChange={pickWatermark}
+   555→        />
+   556→      </div>
+   557→    </section>
+   558→  );
+   559→}
+   560→
+   561→/* ------------------------------------------------------------------ */
+   562→/* Backup & restore — one file with company details, products, bills   */
+   563→/* and the whole ledger. Download it, keep it safe, restore anywhere.  */
+   564→/* ------------------------------------------------------------------ */
+   565→
+   566→function BackupSection() {
+   567→  const t = useT();
+   568→  const settings = useStore((s) => s.settings);
+   569→  const products = useStore((s) => s.products);
+   570→  const invoices = useStore((s) => s.invoices);
+   571→  const expenses = useStore((s) => s.expenses);
+   572→  const incomes = useStore((s) => s.incomes);
+   573→  const labourWorks = useStore((s) => s.labourWorks);
+   574→  const appearance = useStore((s) => s.appearance);
+   575→  const saveSettings = useStore((s) => s.saveSettings);
+   576→  const { toast } = useToast();
+   577→  const fileRef = useRef<HTMLInputElement>(null);
+   578→  const [pending, setPending] = useState<BackupFile | null>(null);
+   579→
+   580→  const doBackup = () => {
+   581→    const data: BackupFile = {
+   582→      app: 'slp-billing',
+   583→      backupVersion: 2,
+   584→      exportedAt: new Date().toISOString(),
+   585→      settings,
+   586→      products,
+   587→      invoices,
+   588→      expenses,
+   589→      incomes,
+   590→      labourWorks,
+   591→      appearance,
+   592→    };
+   593→    try {
+   594→      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+   595→      const url = URL.createObjectURL(blob);
+   596→      const a = document.createElement('a');
+   597→      a.href = url;
+   598→      a.download = `slp-backup-${new Date().toISOString().slice(0, 10)}.json`;
+   599→      document.body.appendChild(a);
+   600→      a.click();
+   601→      a.remove();
+   602→      setTimeout(() => URL.revokeObjectURL(url), 5000);
+   603→      toast({
+   604→        title: t('settings.backupDone'),
+   605→        description: `${products.length} ${t('settings.backupProducts')} · ${invoices.length} ${t('settings.backupBills')}`,
+   606→      });
+   607→    } catch {
+   608→      toast({ title: t('settings.backupFailed') });
+   609→    }
+   610→  };
+   611→
+   612→  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+   613→    const f = e.target.files?.[0];
+   614→    e.target.value = '';
+   615→    if (!f) return;
+   616→    try {
+   617→      const data = JSON.parse(await f.text()) as BackupFile;
+   618→      if (data?.app !== 'slp-billing' || typeof data.settings !== 'object' || !Array.isArray(data.products)) {
+   619→        throw new Error('not a valid backup');
+   620→      }
+   621→      setPending(data);
+   622→    } catch {
+   623→      toast({ title: t('settings.backupInvalid') });
+   624→    }
+   625→  };
+   626→
+   627→  const doRestore = () => {
+   628→    if (!pending) return;
+   629→    saveSettings(pending.settings);
+   630→    useStore.setState({
+   631→      products: pending.products,
+   632→      invoices: pending.invoices ?? [],
+   633→      expenses: pending.expenses ?? [],
+   634→      incomes: pending.incomes ?? [],
+   635→      labourWorks: pending.labourWorks ?? [],
+   636→      ...(pending.appearance ? { appearance: { ...useStore.getState().appearance, ...pending.appearance } } : {}),
+   637→    });
+   638→    toast({
+   639→      title: t('settings.restoredToast'),
+   640→      description: `${pending.products.length} ${t('settings.backupProducts')} · ${(pending.invoices ?? []).length} ${t('settings.backupBills')}`,
+   641→    });
+   642→    setPending(null);
+   643→  };
+   644→
+   645→  return (
+   646→    <section aria-label="Backup and restore" className="space-y-2">
+   647→      <h3 className="text-sm font-bold text-blue-800">{t('settings.backup')}</h3>
+   648→      <p className="text-xs text-muted-foreground">{t('settings.backupDesc')}</p>
+   649→      <Button
+   650→        onClick={doBackup}
+   651→        className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+   652→        aria-label="Backup data"
+   653→      >
+   654→        <Download className="size-4" />
+   655→        {t('settings.backupBtn')}
+   656→      </Button>
+   657→      <Button
+   658→        variant="outline"
+   659→        className="h-11 w-full"
+   660→        onClick={() => fileRef.current?.click()}
+   661→        aria-label="Restore backup"
+   662→      >
+   663→        <Upload className="size-4" />
+   664→        {t('settings.restoreBtn')}
+   665→      </Button>
+   666→      <input
+   667→        ref={fileRef}
+   668→        type="file"
+   669→        accept=".json,application/json"
+   670→        className="hidden"
+   671→        aria-label="Restore backup file"
+   672→        onChange={onFile}
+   673→      />
+   674→
+   675→      <AlertDialog open={!!pending} onOpenChange={(o) => !o && setPending(null)}>
+   676→        <AlertDialogContent className="max-w-xs">
+   677→          <AlertDialogHeader>
+   678→            <AlertDialogTitle>{t('settings.restoreConfirmTitle')}</AlertDialogTitle>
+   679→            <AlertDialogDescription>
+   680→              {t('settings.restoreConfirmDesc')}
+   681→              {pending && (
+   682→                <span className="mt-1 block font-semibold text-foreground">
+   683→                  {pending.settings.companyName} · {pending.products.length} {t('settings.backupProducts')} ·{' '}
+   684→                  {(pending.invoices ?? []).length} {t('settings.backupBills')}
+   685→                </span>
+   686→              )}
+   687→            </AlertDialogDescription>
+   688→          </AlertDialogHeader>
+   689→          <AlertDialogFooter>
+   690→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+   691→            <AlertDialogAction
+   692→              onClick={doRestore}
+   693→              className="bg-blue-600 text-white hover:bg-blue-700"
+   694→              aria-label="Confirm restore"
+   695→            >
+   696→              {t('settings.restore')}
+   697→            </AlertDialogAction>
+   698→          </AlertDialogFooter>
+   699→        </AlertDialogContent>
+   700→      </AlertDialog>
+   701→    </section>
+   702→  );
+   703→}
+   704→
+   705→/**
+   706→ * Every device runs the SAME app link — when the owner (or we) change anything,
+   707→ * installed phones pick it up automatically: the app checks for updates while
+   708→ * open (and on every open/focus/back-online) and refreshes itself. This button
+   709→ * lets the owner force the check right now.
+   710→ */
+   711→function AppUpdatesSection() {
+   712→  const { toast } = useToast();
+   713→  const [checking, setChecking] = useState(false);
+   714→
+   715→  const checkNow = async () => {
+   716→    if (!('serviceWorker' in navigator)) {
+   717→      toast({ title: 'You are on the latest version' });
+   718→      return;
+   719→    }
+   720→    setChecking(true);
+   721→    try {
+   722→      const reg = await navigator.serviceWorker.getRegistration();
+   723→      if (!reg) {
+   724→        toast({ title: 'You are on the latest version' });
+   725→        return;
+   726→      }
+   727→      let found = false;
+   728→      const onUpdateFound = () => {
+   729→        found = true;
+   730→      };
+   731→      reg.addEventListener('updatefound', onUpdateFound, { once: true });
+   732→      await reg.update();
+   733→      // give a freshly found worker a moment to install (skipWaiting applies it)
+   734→      await new Promise((r) => setTimeout(r, 1200));
+   735→      reg.removeEventListener('updatefound', onUpdateFound);
+   736→      if (found || reg.waiting || reg.installing) {
+   737→        toast({
+   738→          title: 'Update found',
+   739→          description: 'The app refreshes to the latest version in a moment…',
+   740→        });
+   741→      } else {
+   742→        toast({ title: 'You are on the latest version' });
+   743→      }
+   744→    } catch {
+   745→      toast({
+   746→        title: 'Cannot check right now',
+   747→        description: 'Go online once and tap again — the app will update itself.',
+   748→      });
+   749→    } finally {
+   750→      setChecking(false);
+   751→    }
+   752→  };
+   753→
+   754→  return (
+   755→    <section aria-label="App updates" className="space-y-2">
+   756→      <h3 className="text-sm font-bold text-blue-800">App updates</h3>
+   757→      <p className="text-xs text-muted-foreground">
+   758→        The same app link works on every phone. When anything is updated here, all installed
+   759→        devices get the change automatically — no reinstall needed. Bills stay safe on each
+   760→        device.
+   761→      </p>
+   762→      <Button variant="outline" className="w-full" onClick={checkNow} disabled={checking}>
+   763→        {checking ? <RefreshCw className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+   764→        Check for updates now
+   765→      </Button>
+   766→    </section>
+   767→  );
+   768→}
+   769→
+   770→function Field({
+   771→  label,
+   772→  value,
+   773→  onChange,
+   774→  placeholder,
+   775→  type = 'text',
+   776→  textarea,
+   777→  ariaLabel,
+   778→}: {
+   779→  label: string;
+   780→  value: string;
+   781→  onChange: (v: string) => void;
+   782→  placeholder?: string;
+   783→  type?: string;
+   784→  textarea?: boolean;
+   785→  ariaLabel?: string;
+   786→}) {
+   787→  const isPhone = type === 'tel';
+   788→  return (
+   789→    <div className="space-y-1.5">
+   790→      <Label className="text-xs text-muted-foreground">{label}</Label>
+   791→      {textarea ? (
+   792→        <textarea
+   793→          aria-label={ariaLabel}
+   794→          value={value}
+   795→          onChange={(e) => onChange(e.target.value)}
+   796→          placeholder={placeholder}
+   797→          rows={2}
+   798→          className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+   799→        />
+   800→      ) : (
+   801→        <Input
+   802→          aria-label={ariaLabel}
+   803→          type={type}
+   804→          inputMode={isPhone ? 'numeric' : undefined}
+   805→          value={value}
+   806→          onChange={(e) => onChange(e.target.value)}
+   807→          onBlur={isPhone ? (e) => onChange(normalizePhone(e.target.value)) : undefined}
+   808→          placeholder={placeholder}
+   809→          className="h-11"
+   810→        />
+   811→      )}
+   812→    </div>
+   813→  );
+   814→}
+   815→
