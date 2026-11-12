@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -47,7 +47,12 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /** Ask the server whether this app already has an MPIN (setup vs unlock) */
+  /**
+   * Ask the server ONCE per mount whether this app already has an MPIN
+   * (setup vs unlock). Runs through a ref so re-renders (typing!) can never
+   * re-trigger it — re-running it would wipe the MPIN being typed.
+   */
+  const probeRef = useRef<(() => Promise<void>) | null>(null);
   const probe = useCallback(async () => {
     setError(null);
     setBusy(true);
@@ -63,10 +68,11 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
     setMpin2('');
     setStep(res.hasMpin ? 'unlock' : 'setup');
   }, [t]);
+  probeRef.current = probe;
 
   useEffect(() => {
-    void probe();
-  }, [probe]);
+    void probeRef.current?.();
+  }, []);
 
   /** First use: create MPIN, generate DEK, wrap it with MPIN — server gets the wrapped key only */
   const setupMpin = async () => {
@@ -228,6 +234,7 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
               <p className="text-center text-sm text-muted-foreground">{t('lock.checking')}</p>
               <Button
                 onClick={() => void probe()}
+                disabled={busy}
                 variant="outline"
                 className="h-11 w-full"
                 aria-label="Retry"

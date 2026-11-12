@@ -290,6 +290,44 @@ await p1.locator('[data-header]').waitFor({ state: 'visible', timeout: 15000 });
 ok(true, 're-login with the MPIN works after lock');
 await closePopup(p1);
 
+/* ---------------- 9. fits all mobiles — no horizontal overflow ---------------- */
+console.log('\n— 9. Fits all mobiles (no horizontal scroll at any screen size) —');
+const FIT_SIZES = [
+  { w: 320, h: 568, name: 'small (320×568)' },
+  { w: 360, h: 740, name: 'mid (360×740)' },
+  { w: 412, h: 915, name: 'big (412×915)' },
+];
+for (const size of FIT_SIZES) {
+  const d = await newDevice();
+  const pd = d.page;
+  await pd.setViewportSize({ width: size.w, height: size.h });
+  await pd.goto(BASE, { waitUntil: 'networkidle' });
+  await pd.waitForTimeout(2400);
+  await closePopup(pd);
+  const overflow = () =>
+    pd.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  const oLock = await overflow();
+  ok(oLock <= 1, `${size.name}: lock screen has no horizontal overflow (Δ ${oLock}px)`);
+  await unlockWithMpin(pd);
+  await closePopup(pd);
+  const oBill = await overflow();
+  ok(oBill <= 1, `${size.name}: bill tab fits (Δ ${oBill}px)`);
+  await pd.getByRole('button', { name: 'Labour', exact: true }).click();
+  await pd.waitForTimeout(400);
+  const oLab = await overflow();
+  ok(oLab <= 1, `${size.name}: labour tab fits (Δ ${oLab}px)`);
+  await pd.getByRole('button', { name: 'Settings', exact: true }).click();
+  await pd.waitForTimeout(400);
+  const oSet = await overflow();
+  ok(oSet <= 1, `${size.name}: settings tab fits (Δ ${oSet}px)`);
+  if (size.w === 320) {
+    await pd.getByRole('button', { name: 'Bill', exact: true }).click();
+    await pd.waitForTimeout(400);
+    await pd.screenshot({ path: '/home/z/my-project/download/v24-fit-320.png' });
+  }
+  await d.ctx.close();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 await browser.close();
 process.exit(fail ? 1 : 0);
