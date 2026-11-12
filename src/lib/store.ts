@@ -426,7 +426,7 @@ export const useStore = create<BillingStore>()(
         invoices: st.invoices,
         billConfig: st.billConfig,
         customer: st.customer,
-        activeTab: st.activeTab,
+        // activeTab intentionally NOT persisted — a fresh app open always lands on Bill
         expenses: st.expenses,
         incomes: st.incomes,
         labourWorks: st.labourWorks,

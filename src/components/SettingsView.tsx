@@ -573,7 +573,7 @@ function AppearanceSection() {
 
 /* ------------------------------------------------------------------ */
 /* Sync & security — encrypted cloud sync between the owner's phones   */
-/* (mobile + OTP login, PIN-protected data) and the manual lock.       */
+/* (MPIN login, MPIN-protected data) and the manual lock.              */
 /* ------------------------------------------------------------------ */
 
 function SyncSecuritySection() {
@@ -608,7 +608,7 @@ function SyncSecuritySection() {
   };
 
   const doLock = () => {
-    lockApp(); // wipes session + key on this device → the OTP + PIN gate returns
+    lockApp(); // wipes session + key on this device → the MPIN gate returns
     toast({ title: t('sync.lockedToast') });
     setTimeout(() => location.reload(), 400);
   };
@@ -631,9 +631,7 @@ function SyncSecuritySection() {
 
       <div className="space-y-1 rounded-lg border bg-neutral-50 px-3 py-2 text-xs" data-sync-status>
         {auth && (
-          <p className="font-semibold text-blue-800">
-            {t('sync.loginAs').replace('{phone}', auth.phone)}
-          </p>
+          <p className="font-semibold text-blue-800">{t('sync.mpinOn')}</p>
         )}
         <p className={online ? 'text-emerald-700' : 'text-amber-700'}>
           {online ? t('sync.statusOn') : t('sync.statusOff')}

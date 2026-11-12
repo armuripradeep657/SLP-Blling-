@@ -1,21 +1,21 @@
 import { db } from '@/lib/db';
-import { bearerToken, MAX_CIPHERTEXT_BYTES, sessionPhone } from '@/lib/server/auth';
+import { bearerToken, MAX_CIPHERTEXT_BYTES, sessionSlot } from '@/lib/server/auth';
 
 /**
- * Encrypted vault — one opaque blob per mobile number.
+ * Encrypted vault — one opaque blob per app (the owner's account).
  *
- * GET  /api/vault   → { empty: true } | { ciphertext, dataIv, dataVersion }
+ * GET  /api/vault   → { empty: true } | { ciphertext, dataIv, dataVersion, dekWrapped, dekSalt }
  * PUT  /api/vault   { ciphertext, dataIv } → { ok, dataVersion }
  *
- * The server can only store and hand back ciphertext — it has no key,
- * so it can never read bills, labour records or ledger entries.
+ * The server can only store and hand back ciphertext — it has no MPIN
+ * and no key, so it can never read bills, labour records or ledger entries.
  */
 export async function GET(req: Request) {
-  const phone = await sessionPhone(bearerToken(req));
-  if (!phone) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  const slot = await sessionSlot(bearerToken(req));
+  if (!slot) return Response.json({ error: 'unauthorized' }, { status: 401 });
 
   const account = await db.syncAccount.findUnique({
-    where: { phone },
+    where: { slot },
     select: {
       ciphertext: true,
       dataIv: true,
@@ -27,22 +27,28 @@ export async function GET(req: Request) {
   if (!account) return Response.json({ error: 'unauthorized' }, { status: 401 });
 
   if (!account.ciphertext || !account.dataIv) {
-    return Response.json({ empty: true });
+    // no data pushed yet — still hand back the wrapped key so a new device
+    // opens the SAME key (devices stay compatible once data starts flowing)
+    return Response.json({
+      empty: true,
+      dekWrapped: account.dekWrapped ?? '',
+      dekSalt: account.dekSalt ?? '',
+    });
   }
   return Response.json({
     ciphertext: account.ciphertext,
     dataIv: account.dataIv,
     dataVersion: account.dataVersion,
-    // needed on a NEW device to unwrap the key with the owner's PIN —
-    // still useless without the PIN (PBKDF2), so this stays end-to-end safe
+    // needed on a NEW device to unwrap the key with the owner's MPIN —
+    // still useless without the MPIN (PBKDF2), so this stays end-to-end safe
     dekWrapped: account.dekWrapped ?? '',
     dekSalt: account.dekSalt ?? '',
   });
 }
 
 export async function PUT(req: Request) {
-  const phone = await sessionPhone(bearerToken(req));
-  if (!phone) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  const slot = await sessionSlot(bearerToken(req));
+  if (!slot) return Response.json({ error: 'unauthorized' }, { status: 401 });
 
   let body: { ciphertext?: string; dataIv?: string };
   try {
@@ -63,7 +69,7 @@ export async function PUT(req: Request) {
   }
 
   const updated = await db.syncAccount.update({
-    where: { phone },
+    where: { slot },
     data: {
       ciphertext,
       dataIv,

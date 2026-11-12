@@ -2,12 +2,13 @@
 /* End-to-end encryption for cloud sync (WebCrypto, browser only).     */
 /*                                                                     */
 /*  DEK  — random AES-256-GCM key that encrypts the business data.     */
-/*  KEK  — derived from phone + PIN (PBKDF2-SHA256, 210k rounds) and   */
+/*  KEK  — derived from the MPIN (PBKDF2-SHA256, 210k rounds) and      */
 /*         used only to wrap/unwrap the DEK.                           */
 /*                                                                     */
-/*  The PIN and the raw DEK never leave the device: the server only    */
-/*  ever receives (a) the wrapped DEK + public salt, and (b) the       */
-/*  AES-GCM ciphertext of the data. Wrong PIN → unwrap fails.          */
+/*  The MPIN and the raw DEK never leave the device: the server only   */
+/*  ever receives (a) the wrapped DEK + public salt, (b) SHA-256 of    */
+/*  the derived key as a login verifier, and (c) the AES-GCM           */
+/*  ciphertext of the data. Wrong MPIN → unwrap fails.                 */
 /* ------------------------------------------------------------------ */
 
 const PBKDF2_ITERATIONS = 210_000;
@@ -55,22 +56,36 @@ export async function importDek(b64: string): Promise<CryptoKey> {
   ]);
 }
 
-/** KEK from phone + PIN + stored salt (PBKDF2-SHA256) */
-export async function deriveKek(phone: string, pin: string, saltB64: string): Promise<CryptoKey> {
+/**
+ * KEK from the MPIN + stored salt (PBKDF2-SHA256), plus a login proof:
+ * SHA-256 hex of the derived key — the server can check the MPIN from it
+ * without ever learning the MPIN or the key itself.
+ */
+export async function deriveKek(
+  mpin: string,
+  saltB64: string
+): Promise<{ kek: CryptoKey; proof: string }> {
   const base = await crypto.subtle.importKey(
     'raw',
-    enc.encode(`slp-cement|${phone}|${pin}`),
+    enc.encode(`slp-cement|mpin|${mpin}`),
     'PBKDF2',
     false,
-    ['deriveKey']
+    ['deriveBits']
   );
-  return crypto.subtle.deriveKey(
+  const bits = await crypto.subtle.deriveBits(
     { name: 'PBKDF2', salt: b64ToBuf(saltB64), iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     base,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
+    256
   );
+  const proofBuf = await crypto.subtle.digest('SHA-256', bits);
+  const hex = [...new Uint8Array(new ArrayBuffer(proofBuf.byteLength))]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  const kek = await crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, [
+    'encrypt',
+    'decrypt',
+  ]);
+  return { kek, proof: hex };
 }
 
 /** Wrap the DEK with the KEK → { wrapped, iv } (both base64, sent to server) */

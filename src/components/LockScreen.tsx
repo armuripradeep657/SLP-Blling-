@@ -1,44 +1,38 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { KeyRound, Lock, ShieldCheck, Smartphone } from 'lucide-react';
+import { KeyRound, Lock, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useT } from '@/hooks/use-app-lang';
 import {
+  apiAuthState,
+  apiMpinSetup,
+  apiMpinUnlock,
   apiPullVault,
-  apiRequestOtp,
-  apiSavePin,
-  apiVerifyOtp,
   setAuth,
   setDeviceDek,
   lockApp,
 } from '@/lib/cloud';
-import {
-  deriveKek,
-  exportDek,
-  generateDek,
-  randomB64,
-  unwrapDek,
-  wrapDek,
-} from '@/lib/crypto';
-import { buildPayload, mergeVaultBlob, pushVaultNow } from '@/lib/sync';
+import { deriveKek, exportDek, generateDek, randomB64, unwrapDek, wrapDek } from '@/lib/crypto';
+import { mergeVaultBlob, pushVaultNow } from '@/lib/sync';
 
-type Step = 'phone' | 'otp' | 'pin-setup' | 'pin-unlock';
+type Step = 'checking' | 'setup' | 'unlock';
 
-const errKey = (code: string | undefined): 'lock.errOtp' | 'lock.errTooMany' | 'lock.errNetwork' => {
-  if (code === 'wrongOtp' || code === 'otpExpired' || code === 'noOtp' || code === 'otpKilled')
-    return 'lock.errOtp';
-  if (code === 'tooManySends' || code === 'resendCooldown') return 'lock.errTooMany';
+const errKey = (code: string | undefined): 'lock.errWrongPin' | 'lock.errTooMany' | 'lock.errNetwork' | 'lock.errExists' => {
+  if (code === 'wrongMpin') return 'lock.errWrongPin';
+  if (code === 'rateLimited') return 'lock.errTooMany';
+  if (code === 'exists' || code === 'noMpin') return 'lock.errExists';
   return 'lock.errNetwork'; // network / offline / unknown
 };
 
 /**
- * Full-screen gate in front of the app: mobile number + real OTP login the
- * first time (or on a new phone), then the security PIN that unlocks the
- * end-to-end encrypted data. The device stays unlocked until "Lock app".
+ * Full-screen gate in front of the app: the owner's MPIN is the only login.
+ * First use creates the MPIN (it wraps the end-to-end encryption key);
+ * every later time the MPIN opens the encrypted data. The device stays
+ * unlocked until "Lock app".
  */
 export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
   const t = useT();
@@ -46,94 +40,64 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
     useStore((s) => s.settings.companyName) || 'Sri Lakshmi Cement Works';
   const logoSrc = useStore((s) => s.appearance.watermark) || '/narasimha-logo.jpg';
 
-  const [step, setStep] = useState<Step>('phone');
-  const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState('');
-  const [demoOtp, setDemoOtp] = useState<string | null>(null);
-  const [pin, setPin] = useState('');
-  const [pin2, setPin2] = useState('');
+  const [step, setStep] = useState<Step>('checking');
+  const [salt, setSalt] = useState<string | null>(null);
+  const [mpin, setMpin] = useState('');
+  const [mpin2, setMpin2] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [resendIn, setResendIn] = useState(0);
 
-  // resend cooldown ticker
-  useEffect(() => {
-    if (resendIn <= 0) return;
-    const iv = setInterval(() => setResendIn((s) => (s > 0 ? s - 1 : 0)), 1000);
-    return () => clearInterval(iv);
-  }, [resendIn]);
-
-  const sendOtp = async () => {
+  /** Ask the server whether this app already has an MPIN (setup vs unlock) */
+  const probe = useCallback(async () => {
     setError(null);
-    const p = phone.replace(/\D/g, '').slice(-10);
-    if (!/^[6-9]\d{9}$/.test(p)) {
-      setError(t('lock.errPhone'));
-      return;
-    }
     setBusy(true);
-    const res = await apiRequestOtp(p);
+    const res = await apiAuthState();
     setBusy(false);
     if (!res.ok) {
-      setError(t(errKey(res.error)));
+      setStep('checking');
+      setError(t('lock.errNetwork'));
       return;
     }
-    setPhone(p);
-    setDemoOtp(res.demo ? res.otp ?? null : null);
-    setOtp('');
-    setStep('otp');
-    setResendIn(30);
-  };
+    setSalt(res.dekSalt ?? null);
+    setMpin('');
+    setMpin2('');
+    setStep(res.hasMpin ? 'unlock' : 'setup');
+  }, [t]);
 
-  const verifyOtp = async () => {
-    setError(null);
-    const code = otp.replace(/\D/g, '');
-    if (code.length !== 6) {
-      setError(t('lock.errOtp'));
-      return;
-    }
-    setBusy(true);
-    const res = await apiVerifyOtp(phone, code);
-    setBusy(false);
-    if (!res.ok || !res.token) {
-      setError(t(errKey(res.error)));
-      return;
-    }
-    setAuth(res.phone ?? phone, res.token);
-    if (res.hasPin) {
-      // returning device / new device: ask the PIN that opens the data
-      setPin('');
-      setStep('pin-unlock');
-    } else {
-      // first time ever: create the PIN that encrypts everything
-      setPin('');
-      setPin2('');
-      setStep('pin-setup');
-    }
-  };
+  useEffect(() => {
+    void probe();
+  }, [probe]);
 
-  /** First login: create DEK, wrap it with phone+PIN, hand the server only the wrapped key */
-  const setupPin = async () => {
+  /** First use: create MPIN, generate DEK, wrap it with MPIN — server gets the wrapped key only */
+  const setupMpin = async () => {
     setError(null);
-    if (!/^\d{4,8}$/.test(pin)) {
+    if (!/^\d{4,8}$/.test(mpin)) {
       setError(t('lock.errPin'));
       return;
     }
-    if (pin !== pin2) {
+    if (mpin !== mpin2) {
       setError(t('lock.errPinMatch'));
       return;
     }
     setBusy(true);
     try {
-      const salt = randomB64(16);
+      const newSalt = randomB64(16);
       const dek = await generateDek();
-      const kek = await deriveKek(phone, pin, salt);
+      const { kek, proof } = await deriveKek(mpin, newSalt);
       const { wrapped, iv } = await wrapDek(dek, kek);
-      const saved = await apiSavePin(`${iv}.${wrapped}`, salt);
+      const saved = await apiMpinSetup(`${iv}.${wrapped}`, newSalt, proof);
       if (!saved.ok) {
         setBusy(false);
+        if (saved.error === 'exists') {
+          // another device already created the MPIN — switch to entering it
+          await probe();
+          setError(t('lock.errExists'));
+          return;
+        }
         setError(t(errKey(saved.error)));
         return;
       }
+      setAuth(saved.token ?? '');
       // keep the raw key on THIS device only — it stays unlocked until "Lock app"
       setDeviceDek(await exportDek(dek));
       setBusy(false);
@@ -145,22 +109,37 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
     }
   };
 
-  /** Returning login: PIN → unwrap the DEK → open the encrypted data */
+  /** Every later login: MPIN → proof → session → unwrap the DEK → open the encrypted data */
   const unlockData = async () => {
     setError(null);
-    if (!/^\d{4,8}$/.test(pin)) {
+    if (!/^\d{4,8}$/.test(mpin)) {
       setError(t('lock.errPin'));
+      return;
+    }
+    if (!salt) {
+      // no salt from the probe — re-probe (server may have restarted / state changed)
+      await probe();
       return;
     }
     setBusy(true);
     try {
+      const { kek, proof } = await deriveKek(mpin, salt);
+      const res = await apiMpinUnlock(proof);
+      if (!res.ok || !res.token) {
+        setBusy(false);
+        if (res.error === 'noMpin') {
+          await probe();
+          return;
+        }
+        setError(t(errKey(res.error)));
+        return;
+      }
+      setAuth(res.token);
       const pull = await apiPullVault();
       if (pull.kind === 'auth') {
-        // session died — start the login over
         lockApp();
         setBusy(false);
-        setStep('phone');
-        setError(t('lock.errOtp'));
+        setError(t(errKey('wrongMpin')));
         return;
       }
       if (pull.kind === 'offline') {
@@ -168,9 +147,30 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
         setError(t('lock.errNetwork'));
         return;
       }
-      if (pull.kind === 'empty' || !pull.dekWrapped || !pull.dekSalt) {
+      if (pull.kind === 'empty') {
+        // no data pushed yet — open the SAME wrapped key (if any) so devices stay compatible
+        const wrappedEmpty = pull.dekWrapped ?? '';
+        const dotE = wrappedEmpty.indexOf('.');
+        if (dotE > 0 && pull.dekSalt) {
+          const dekSame = await unwrapDek(
+            wrappedEmpty.slice(dotE + 1),
+            wrappedEmpty.slice(0, dotE),
+            kek
+          ).catch(() => null);
+          if (dekSame) {
+            setDeviceDek(await exportDek(dekSame));
+            setBusy(false);
+            void pushVaultNow();
+            onUnlocked();
+            return;
+          }
+        }
+        // nothing stored at all — start with a fresh key
+        const dekNew = await generateDek();
+        setDeviceDek(await exportDek(dekNew));
         setBusy(false);
-        setError(t('lock.errWrongPin'));
+        void pushVaultNow();
+        onUnlocked();
         return;
       }
       const dot = pull.dekWrapped.indexOf('.');
@@ -179,7 +179,6 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
         setError(t('lock.errNetwork'));
         return;
       }
-      const kek = await deriveKek(phone, pin, pull.dekSalt);
       const dek = await unwrapDek(
         pull.dekWrapped.slice(dot + 1),
         pull.dekWrapped.slice(0, dot),
@@ -224,92 +223,22 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
         </div>
 
         <div className="space-y-3 rounded-2xl border bg-card p-4 shadow-sm">
-          {step === 'phone' && (
+          {step === 'checking' && (
             <>
-              <div className="space-y-1.5">
-                <Label htmlFor="lock-phone" className="text-xs text-muted-foreground">
-                  {t('lock.phoneLabel')}
-                </Label>
-                <Input
-                  id="lock-phone"
-                  type="tel"
-                  inputMode="numeric"
-                  autoComplete="tel-national"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder={t('lock.phonePlaceholder')}
-                  className="h-11 text-base tracking-wide"
-                  aria-label="Login mobile number"
-                  onKeyDown={(e) => e.key === 'Enter' && !busy && sendOtp()}
-                />
-              </div>
+              <p className="text-center text-sm text-muted-foreground">{t('lock.checking')}</p>
               <Button
-                onClick={sendOtp}
-                disabled={busy}
-                className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
-                aria-label="Send OTP"
+                onClick={() => void probe()}
+                variant="outline"
+                className="h-11 w-full"
+                aria-label="Retry"
               >
-                <Smartphone className="size-4" />
-                {busy ? t('lock.sending') : t('lock.sendOtp')}
+                <RefreshCw className="size-4" />
+                {t('lock.retry')}
               </Button>
-              <p className="text-center text-[11px] leading-relaxed text-muted-foreground">
-                {t('lock.needInternet')}
-              </p>
             </>
           )}
 
-          {step === 'otp' && (
-            <>
-              <p className="text-xs text-muted-foreground">
-                {t('lock.otpSentTo').replace('{phone}', phone)}
-              </p>
-              {demoOtp && (
-                <div
-                  data-demo-otp={demoOtp}
-                  className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-900"
-                >
-                  {t('lock.demoOtp').replace('{otp}', demoOtp)}
-                </div>
-              )}
-              <div className="space-y-1.5">
-                <Label htmlFor="lock-otp" className="text-xs text-muted-foreground">
-                  {t('lock.otpLabel')}
-                </Label>
-                <Input
-                  id="lock-otp"
-                  type="tel"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                  placeholder="••••••"
-                  className="h-11 text-center text-lg font-bold tracking-[0.4em]"
-                  aria-label="OTP code"
-                  onKeyDown={(e) => e.key === 'Enter' && !busy && verifyOtp()}
-                />
-              </div>
-              <Button
-                onClick={verifyOtp}
-                disabled={busy}
-                className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
-                aria-label="Verify OTP"
-              >
-                <ShieldCheck className="size-4" />
-                {busy ? t('lock.verifying') : t('lock.verify')}
-              </Button>
-              <button
-                onClick={sendOtp}
-                disabled={resendIn > 0 || busy}
-                className="w-full text-center text-xs font-semibold text-blue-700 underline-offset-2 disabled:text-muted-foreground disabled:no-underline"
-                aria-label="Resend OTP"
-              >
-                {resendIn > 0 ? t('lock.resendIn').replace('{s}', String(resendIn)) : t('lock.resend')}
-              </button>
-            </>
-          )}
-
-          {step === 'pin-setup' && (
+          {step === 'setup' && (
             <>
               <div className="text-center">
                 <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-900">
@@ -321,51 +250,51 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
                 </p>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="lock-pin" className="text-xs text-muted-foreground">
+                <Label htmlFor="lock-mpin" className="text-xs text-muted-foreground">
                   {t('lock.pinLabel')}
                 </Label>
                 <Input
-                  id="lock-pin"
+                  id="lock-mpin"
                   type="password"
                   inputMode="numeric"
                   autoComplete="new-password"
                   maxLength={8}
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                  value={mpin}
+                  onChange={(e) => setMpin(e.target.value.replace(/\D/g, ''))}
                   className="h-11 text-center text-lg font-bold tracking-[0.4em]"
-                  aria-label="New security PIN"
+                  aria-label="New MPIN"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="lock-pin2" className="text-xs text-muted-foreground">
+                <Label htmlFor="lock-mpin2" className="text-xs text-muted-foreground">
                   {t('lock.pinConfirm')}
                 </Label>
                 <Input
-                  id="lock-pin2"
+                  id="lock-mpin2"
                   type="password"
                   inputMode="numeric"
                   autoComplete="new-password"
                   maxLength={8}
-                  value={pin2}
-                  onChange={(e) => setPin2(e.target.value.replace(/\D/g, ''))}
+                  value={mpin2}
+                  onChange={(e) => setMpin2(e.target.value.replace(/\D/g, ''))}
                   className="h-11 text-center text-lg font-bold tracking-[0.4em]"
-                  aria-label="Confirm security PIN"
-                  onKeyDown={(e) => e.key === 'Enter' && !busy && setupPin()}
+                  aria-label="Confirm MPIN"
+                  onKeyDown={(e) => e.key === 'Enter' && !busy && setupMpin()}
                 />
               </div>
               <Button
-                onClick={setupPin}
+                onClick={setupMpin}
                 disabled={busy}
                 className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
-                aria-label="Save PIN"
+                aria-label="Save MPIN"
               >
                 <KeyRound className="size-4" />
-                {busy ? t('lock.verifying') : t('lock.unlockBtn')}
+                {busy ? t('lock.verifying') : t('lock.saveBtn')}
               </Button>
             </>
           )}
 
-          {step === 'pin-unlock' && (
+          {step === 'unlock' && (
             <>
               <div className="text-center">
                 <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-900">
@@ -377,19 +306,19 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
                 </p>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="lock-unlockpin" className="text-xs text-muted-foreground">
+                <Label htmlFor="lock-unlockmpin" className="text-xs text-muted-foreground">
                   {t('lock.pinLabel')}
                 </Label>
                 <Input
-                  id="lock-unlockpin"
+                  id="lock-unlockmpin"
                   type="password"
                   inputMode="numeric"
                   autoComplete="current-password"
                   maxLength={8}
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                  value={mpin}
+                  onChange={(e) => setMpin(e.target.value.replace(/\D/g, ''))}
                   className="h-11 text-center text-lg font-bold tracking-[0.4em]"
-                  aria-label="Security PIN"
+                  aria-label="MPIN"
                   onKeyDown={(e) => e.key === 'Enter' && !busy && unlockData()}
                 />
               </div>
@@ -397,7 +326,7 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
                 onClick={unlockData}
                 disabled={busy}
                 className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
-                aria-label="Unlock data"
+                aria-label="Open app"
               >
                 <Lock className="size-4" />
                 {busy ? t('lock.verifying') : t('lock.unlockBtn')}

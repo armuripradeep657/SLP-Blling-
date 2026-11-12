@@ -7,38 +7,34 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// One cloud account per mobile number — holds ONLY encrypted data.
-/// The server never sees the PIN or the encryption key, so it can never
-/// read the business data (end-to-end encryption).
+/// One app = one owner account. Login is the owner's MPIN only — there is
+/// no phone number or OTP. The server NEVER sees the MPIN or the encryption
+/// key: it stores only a verifier (SHA-256 of the key derived from the MPIN)
+/// and the encrypted data blob the phone sends it (end-to-end encryption).
 model SyncAccount {
-  id             String    @id @default(cuid())
-  phone          String    @unique
-  /// Data-encryption key wrapped (AES-GCM) with a key derived from phone+PIN
-  dekWrapped     String?
-  /// PBKDF2 salt for the PIN key — not a secret, needed to unwrap
-  dekSalt        String?
+  id        String  @id @default(cuid())
+  /// Fixed singleton slot — this deployment belongs to one owner
+  slot      String  @unique @default("owner")
+  /// Data-encryption key wrapped (AES-GCM) with a key derived from the MPIN
+  dekWrapped String?
+  /// PBKDF2 salt for the MPIN key — not a secret, needed to unwrap
+  dekSalt   String?
+  /// SHA-256 of the key derived from the MPIN — proves the MPIN without storing it
+  pinVerifier String?
   /// Encrypted snapshot of the whole business data (settings, products, bills, ledger)
-  ciphertext     String?
-  dataIv         String?
-  dataVersion    Int       @default(0)
-  /// OTP login — only a SHA-256 hash of the code is stored
-  otpHash        String?
-  otpExpiresAt   DateTime?
-  otpAttempts    Int       @default(0)
-  lastOtpSentAt  DateTime?
-  /// Simple rate limiting: max sends per rolling hour
-  otpSendCount   Int       @default(0)
-  otpWindowStart DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  sessions       Session[]
+  ciphertext  String?
+  dataIv      String?
+  dataVersion Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  sessions    Session[]
 }
 
 model Session {
   id        String      @id @default(cuid())
   tokenHash String      @unique
-  phone     String
+  slot      String
   expiresAt DateTime
   createdAt DateTime    @default(now())
-  account   SyncAccount @relation(fields: [phone], references: [phone], onDelete: Cascade)
+  account   SyncAccount @relation(fields: [slot], references: [slot], onDelete: Cascade)
 }

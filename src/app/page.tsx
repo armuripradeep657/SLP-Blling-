@@ -81,15 +81,19 @@ export default function Home() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalView, setModalView] = useState<DocView>('slip');
   const [showSplash, setShowSplash] = useState(true); // opening zoom — plays once per app open
-  /** app gate: checking → locked (OTP + PIN) or ready (unlocked device) */
+  /** app gate: checking → locked (MPIN) or ready (unlocked device) */
   const [gate, setGate] = useState<'checking' | 'locked' | 'ready'>('checking');
 
-  // Rehydrate persisted store AFTER mount (skipHydration) — avoids SSR mismatch
+  // Rehydrate persisted store AFTER mount (skipHydration) — avoids SSR mismatch.
+  // Fresh open ALWAYS lands on the Bill tab (so product selection is one tap away),
+  // even though the rest of the state (bills, settings, cart) is restored.
   useEffect(() => {
-    useStore.persist.rehydrate();
+    Promise.resolve(useStore.persist.rehydrate()).then(() => {
+      useStore.setState({ activeTab: 'bill' });
+    });
     let cancelled = false;
     (async () => {
-      // first-time use (or after "Lock app"): the OTP + PIN gate stands in front
+      // first-time use (or after "Lock app"): the MPIN gate stands in front
       if (!isUnlocked()) {
         setGate('locked');
         return;
@@ -140,7 +144,7 @@ export default function Home() {
     if (inv) openInvoice(inv);
   };
 
-  /* ----- gate: OTP + PIN lock stands in front of the whole app ----- */
+  /* ----- gate: the MPIN lock stands in front of the whole app ----- */
   if (gate === 'checking') {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-gradient-to-b from-blue-50 via-white to-blue-100">
