@@ -1,5 +1,5 @@
 /* Service worker for SLP Cement Works Billing PWA */
-const CACHE = 'slp-billing-v24';
+const CACHE = 'slp-billing-v25';
 
 const PRECACHE = [
   '/',
@@ -47,6 +47,9 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+
+  // API calls ALWAYS hit the network — never cached, never stalled by the SW
+  if (url.pathname.startsWith('/api/')) return;
 
   // Navigations: network first, fall back to cached shell (offline support)
   if (req.mode === 'navigate') {

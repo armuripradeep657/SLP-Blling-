@@ -98,7 +98,7 @@ await p1.getByRole('button', { name: 'Save MPIN' }).click();
 await p1.locator('[data-header]').waitFor({ state: 'visible', timeout: 20000 });
 ok(true, 'MPIN saved → app unlocks');
 const popupTxt = await closePopup(p1);
-ok(popupTxt.includes('v24'), `update popup advertises v24 (got: ${popupTxt.slice(0, 40)}…)`);
+ok(popupTxt.includes('v25'), `update popup advertises the current version (got: ${popupTxt.slice(0, 40)}…)`);
 const navBtns = await p1.locator('[aria-label="Main navigation"] button').allTextContents();
 const ledgerIdx = navBtns.findIndex((s) => s.includes('Ledger'));
 const labourIdx = navBtns.findIndex((s) => s.includes('Labour'));
