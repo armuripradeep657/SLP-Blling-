@@ -10,13 +10,21 @@ const ok = (c, n) => { if (c) { pass++; console.log('  PASS', n); } else { fail+
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
-// login (returning device: MPIN only)
+// login — works on a FRESH server (setup step) or a RETURNING device (unlock step)
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-await page.getByLabel('MPIN', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
-await page.getByLabel('MPIN', { exact: true }).fill(MPIN);
-await page.getByRole('button', { name: 'Open app' }).click();
+await page.waitForTimeout(2600); // splash
+const isNew = (await page.getByLabel('New MPIN').count()) > 0;
+if (isNew) {
+  await page.getByLabel('New MPIN').fill(MPIN);
+  await page.getByLabel('Confirm MPIN').fill(MPIN);
+  await page.getByRole('button', { name: 'Save MPIN' }).click();
+  ok(true, 'first use: MPIN created');
+} else {
+  await page.getByLabel('MPIN', { exact: true }).fill(MPIN);
+  await page.getByRole('button', { name: 'Open app' }).click();
+  ok(true, 'returning device: MPIN login works');
+}
 await page.locator('[data-header]').waitFor({ state: 'visible', timeout: 15000 });
-ok(true, 'MPIN login works');
 const popup = page.locator('[aria-label="Install app notification"]');
 try {
   await popup.waitFor({ state: 'visible', timeout: 9000 });
