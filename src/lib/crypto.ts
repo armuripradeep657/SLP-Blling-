@@ -78,7 +78,7 @@ export async function deriveKek(
     256
   );
   const proofBuf = await crypto.subtle.digest('SHA-256', bits);
-  const hex = [...new Uint8Array(new ArrayBuffer(proofBuf.byteLength))]
+  const hex = [...new Uint8Array(proofBuf)]
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
   const kek = await crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, [

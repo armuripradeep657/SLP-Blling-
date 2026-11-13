@@ -146,6 +146,17 @@ export interface IncomeEntry {
   mode?: PaymentMode;
 }
 
+/** One money-given record on a labour entry (initial pay, balance paid, extra money) */
+export interface LabourPayment {
+  id: string;
+  dateISO: string;
+  amount: number;
+  /** Cash / UPI / Card */
+  mode?: PaymentMode;
+  /** Optional note — e.g. "balance paid", "extra given", "advance" */
+  note?: string;
+}
+
 /** Labour work register — who worked, on which date, doing what, product quantity, money */
 export interface LabourWork {
   id: string;
@@ -156,10 +167,14 @@ export interface LabourWork {
   work: string;
   /** Product quantity they worked on that day (e.g. 40 rings) */
   qty?: number;
+  /** Total wage for this work (paid so far + balance). New entries always store it. */
+  wage?: number;
   /** Money paid to them NOW for that day's work (₹) — 0/undefined = not paid yet */
   paid?: number;
   /** Balance money still to be paid for that work (₹) */
   balance?: number;
+  /** Payment history — initial payment + later balance payments / extra money given */
+  payments?: LabourPayment[];
   /* --- legacy fields from earlier versions (kept only so old rows still show) --- */
   /** (old) product name they worked on */
   product?: string;

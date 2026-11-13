@@ -1,5 +1,5 @@
 /* Service worker for SLP Cement Works Billing PWA */
-const CACHE = 'slp-billing-v25';
+const CACHE = 'slp-billing-v27';
 
 const PRECACHE = [
   '/',

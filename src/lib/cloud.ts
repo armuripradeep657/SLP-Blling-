@@ -6,6 +6,47 @@
 
 const AUTH_KEY = 'slp-auth-v1'; // { token } — 30-day session
 const DEK_KEY = 'slp-dek-v1'; // raw DEK (b64) — device keeps itself unlocked
+const RECOVER_KEY = 'slp-recover-v1'; // { salt, verifier, wrapped } — unlock material
+
+/**
+ * The device's OWN copy of its credentials (public salt, the login verifier
+ * and the wrapped data key). Written the moment the MPIN is created or a
+ * login succeeds. With it the MPIN can be checked OFFLINE and the server
+ * account can be silently re-registered if the server ever loses it —
+ * the owner NEVER has to create the MPIN a second time.
+ */
+export interface RecoverMaterial {
+  salt: string;
+  verifier: string;
+  /** wrapped DEK in "iv.ciphertext" form */
+  wrapped: string;
+}
+
+export function getRecoverMaterial(): RecoverMaterial | null {
+  try {
+    const raw = localStorage.getItem(RECOVER_KEY);
+    if (!raw) return null;
+    const m = JSON.parse(raw) as Partial<RecoverMaterial>;
+    if (m?.salt && m?.verifier && m?.wrapped) {
+      return { salt: m.salt, verifier: m.verifier, wrapped: m.wrapped };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function setRecoverMaterial(m: RecoverMaterial): void {
+  try {
+    localStorage.setItem(RECOVER_KEY, JSON.stringify(m));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function clearRecoverMaterial(): void {
+  localStorage.removeItem(RECOVER_KEY);
+}
 
 export function getAuth(): { token: string } | null {
   try {
@@ -78,13 +119,28 @@ async function authedFetch(url: string, method: 'GET' | 'PUT', body?: unknown): 
   }
 }
 
-/** Public probe: has the MPIN been created yet? Carries the public salt. */
-export async function apiAuthState(): Promise<{ ok: boolean; hasMpin?: boolean; dekSalt?: string | null; error?: string }> {
+/** Public probe: has the MPIN been created yet? Carries the public salt.
+ *  Legacy accounts (created before the verifier fix) also carry the wrapped
+ *  key so the device can verify the MPIN locally and repair the account. */
+export async function apiAuthState(): Promise<{
+  ok: boolean;
+  hasMpin?: boolean;
+  dekSalt?: string | null;
+  legacy?: boolean;
+  dekWrapped?: string | null;
+  error?: string;
+}> {
   try {
     const res = await fetch('/api/auth/state', { signal: AbortSignal.timeout(15000) });
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (res.status === 200) {
-      return { ok: true, hasMpin: Boolean(data.hasMpin), dekSalt: (data.dekSalt as string) ?? null };
+      return {
+        ok: true,
+        hasMpin: Boolean(data.hasMpin),
+        dekSalt: (data.dekSalt as string) ?? null,
+        legacy: Boolean(data.legacy),
+        dekWrapped: (data.dekWrapped as string) ?? null,
+      };
     }
     return { ok: false, error: (data.error as string) ?? 'network' };
   } catch {
@@ -112,6 +168,19 @@ export async function apiMpinSetup(
 /** Every later login: prove the MPIN → 30-day session */
 export async function apiMpinUnlock(kekProof: string): Promise<MpinResult> {
   const { status, data } = await postJson('/api/auth/unlock', { kekProof });
+  if (status === 200) return { ok: true, token: data.token as string };
+  return { ok: false, error: (data.error as string) ?? 'network' };
+}
+
+/** One-time repair of a legacy (pre-fix, all-zero verifier) account: the
+ *  device proved the MPIN by unwrapping the stored key; store the real
+ *  verifier and hand back a session — the owner keeps the SAME MPIN. */
+export async function apiMpinRepair(
+  kekProof: string,
+  dekSalt: string,
+  dekWrapped: string
+): Promise<MpinResult> {
+  const { status, data } = await postJson('/api/auth/repair', { kekProof, dekSalt, dekWrapped });
   if (status === 200) return { ok: true, token: data.token as string };
   return { ok: false, error: (data.error as string) ?? 'network' };
 }

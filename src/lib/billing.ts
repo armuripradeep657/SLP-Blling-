@@ -1,4 +1,4 @@
-import type { BillConfig, CartItem, Invoice, PaymentMode, PaymentRecord, Totals } from './types';
+import type { BillConfig, CartItem, Invoice, LabourWork, PaymentMode, PaymentRecord, Totals } from './types';
 
 export const fmt = (n: number): string => {
   const v = Math.round(n * 100) / 100;
@@ -150,4 +150,35 @@ export function applyPayment(
     totals: { ...inv.totals, paid, balance: Math.max(inv.totals.total - paid, 0) },
     payments,
   };
+}
+
+/** Money summary of one labour entry — works for new (payments list) and legacy rows */
+export interface LabourMoney {
+  /** total wage agreed for the work */
+  wage: number;
+  /** total money given so far (includes extra money beyond the wage) */
+  paid: number;
+  /** balance still to pay (0 when fully paid or overpaid) */
+  balance: number;
+  /** money given beyond the wage (bonus / extra) */
+  extra: number;
+}
+
+const r2 = (n: number): number => Math.round(n * 100) / 100;
+
+export function labourMoney(e: LabourWork): LabourMoney {
+  const legacyPaid = r2(e.paid ?? e.amount ?? 0);
+  const legacyBal = r2(e.balance ?? 0);
+  if (e.payments && e.payments.length > 0) {
+    const paid = r2(e.payments.reduce((s, p) => s + p.amount, 0));
+    const wage = r2(e.wage ?? legacyPaid + legacyBal);
+    return {
+      wage,
+      paid,
+      balance: Math.max(0, r2(wage - paid)),
+      extra: Math.max(0, r2(paid - wage)),
+    };
+  }
+  // legacy row — only paid/balance/amount fields exist
+  return { wage: r2(legacyPaid + legacyBal), paid: legacyPaid, balance: legacyBal, extra: 0 };
 }

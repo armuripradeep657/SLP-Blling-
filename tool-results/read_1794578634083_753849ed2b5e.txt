@@ -1,0 +1,691 @@
+     1→'use client';
+     2→
+     3→import { useMemo, useState } from 'react';
+     4→import { Button } from '@/components/ui/button';
+     5→import { Input } from '@/components/ui/input';
+     6→import { Label } from '@/components/ui/label';
+     7→import {
+     8→  Select,
+     9→  SelectContent,
+    10→  SelectItem,
+    11→  SelectTrigger,
+    12→  SelectValue,
+    13→} from '@/components/ui/select';
+    14→import {
+    15→  Dialog,
+    16→  DialogContent,
+    17→  DialogDescription,
+    18→  DialogHeader,
+    19→  DialogTitle,
+    20→} from '@/components/ui/dialog';
+    21→import { useToast } from '@/hooks/use-toast';
+    22→import {
+    23→  ArrowDownRight,
+    24→  CalendarDays,
+    25→  Coins,
+    26→  Hammer,
+    27→  IndianRupee,
+    28→  Pencil,
+    29→  Trash2,
+    30→  Wallet,
+    31→} from 'lucide-react';
+    32→import { useStore } from '@/lib/store';
+    33→import { fmt, fmtShort, labourMoney, localDateKey, localMonthKey } from '@/lib/billing';
+    34→import { useAppLang, useT } from '@/hooks/use-app-lang';
+    35→import type { AppLanguage, LabourWork, PaymentMode } from '@/lib/types';
+    36→
+    37→const MODES: PaymentMode[] = ['Cash', 'UPI', 'Card'];
+    38→
+    39→function modeLabel(m: PaymentMode, appLang: AppLanguage): string {
+    40→  if (appLang !== 'te') return m;
+    41→  return m === 'Cash' ? 'నగదు' : m === 'Card' ? 'కార్డ్' : m === 'Due' ? 'బాకీ' : 'UPI';
+    42→}
+    43→
+    44→/** Cash / UPI / Card chip — how the money was given that day */
+    45→function ModeChip({ mode, appLang }: { mode?: PaymentMode; appLang: AppLanguage }) {
+    46→  if (!mode) return null;
+    47→  const cls =
+    48→    mode === 'Cash'
+    49→      ? 'bg-green-100 text-green-800'
+    50→      : mode === 'UPI'
+    51→        ? 'bg-blue-100 text-blue-800'
+    52→        : 'bg-purple-100 text-purple-800';
+    53→  return (
+    54→    <span
+    55→      className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${cls}`}
+    56→    >
+    57→      {modeLabel(mode, appLang)}
+    58→    </span>
+    59→  );
+    60→}
+    61→
+    62→export default function LabourView() {
+    63→  const t = useT();
+    64→  const appLang = useAppLang();
+    65→  const labourWorks = useStore((s) => s.labourWorks);
+    66→  const addLabourWork = useStore((s) => s.addLabourWork);
+    67→  const deleteLabourWork = useStore((s) => s.deleteLabourWork);
+    68→  const updateLabourWork = useStore((s) => s.updateLabourWork);
+    69→  const addLabourPayment = useStore((s) => s.addLabourPayment);
+    70→  const deleteLabourPayment = useStore((s) => s.deleteLabourPayment);
+    71→  const { toast } = useToast();
+    72→
+    73→  const today = localDateKey(new Date());
+    74→  const thisMonth = localMonthKey(new Date());
+    75→
+    76→  const [month, setMonth] = useState(thisMonth);
+    77→
+    78→  /* ---------------- add form ---------------- */
+    79→  const [lwDate, setLwDate] = useState(today);
+    80→  const [lwName, setLwName] = useState('');
+    81→  const [lwWork, setLwWork] = useState('');
+    82→  const [lwQty, setLwQty] = useState('');
+    83→  const [lwPaid, setLwPaid] = useState('');
+    84→  const [lwBalance, setLwBalance] = useState('');
+    85→  const [lwMode, setLwMode] = useState<PaymentMode>('Cash');
+    86→
+    87→  const previewPaid = Number(lwPaid) || 0;
+    88→  const previewBalance = Number(lwBalance) || 0;
+    89→  const previewTotal = Math.round((previewPaid + previewBalance) * 100) / 100;
+    90→
+    91→  const submitLabourWork = () => {
+    92→    const name = lwName.trim();
+    93→    const work = lwWork.trim();
+    94→    if (!name || !work) return;
+    95→    const paid = Math.round((Number(lwPaid) || 0) * 100) / 100;
+    96→    const balance = Math.round((Number(lwBalance) || 0) * 100) / 100;
+    97→    const qty = Math.round(Number(lwQty) || 0);
+    98→    const dateISO = new Date(`${lwDate || today}T12:00:00`).toISOString();
+    99→    addLabourWork({
+   100→      dateISO,
+   101→      name,
+   102→      work,
+   103→      qty: qty > 0 ? qty : undefined,
+   104→      // money: the wage is what was paid now + the balance still to pay;
+   105→      // the money handed over right now is recorded as the first payment
+   106→      wage: previewTotal > 0 ? previewTotal : undefined,
+   107→      paid: paid > 0 ? paid : undefined,
+   108→      balance: balance > 0 ? balance : undefined,
+   109→      mode: paid > 0 ? lwMode : undefined,
+   110→      payments:
+   111→        paid > 0
+   112→          ? [
+   113→              {
+   114→                id: `lwp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+   115→                dateISO,
+   116→                amount: paid,
+   117→                mode: lwMode,
+   118→              },
+   119→            ]
+   120→          : [],
+   121→    });
+   122→    setLwName('');
+   123→    setLwWork('');
+   124→    setLwQty('');
+   125→    setLwPaid('');
+   126→    setLwBalance('');
+   127→    toast({
+   128→      title: t('labour.added'),
+   129→      description: `${name} · ${fmt(previewTotal)} ${
+   130→        previewBalance > 0 ? `· ${t('labour.rowBalance')} ₹${fmt(previewBalance)}` : ''
+   131→      }`,
+   132→    });
+   133→  };
+   134→
+   135→  /* ---------------- edit dialog ---------------- */
+   136→  const [editOpen, setEditOpen] = useState(false);
+   137→  const [editId, setEditId] = useState<string | null>(null);
+   138→  const [edDate, setEdDate] = useState(today);
+   139→  const [edName, setEdName] = useState('');
+   140→  const [edWork, setEdWork] = useState('');
+   141→  const [edQty, setEdQty] = useState('');
+   142→  const [edWage, setEdWage] = useState('');
+   143→  const [edMode, setEdMode] = useState<PaymentMode>('Cash');
+   144→  // payment form (balance paid / extra money given)
+   145→  const [payAmt, setPayAmt] = useState('');
+   146→  const [payMode, setPayMode] = useState<PaymentMode>('Cash');
+   147→  const [payNote, setPayNote] = useState('');
+   148→
+   149→  /** live entry while the dialog is open — payments appear the moment they are added */
+   150→  const editing = useMemo(
+   151→    () => (editId ? labourWorks.find((w) => w.id === editId) ?? null : null),
+   152→    [labourWorks, editId]
+   153→  );
+   154→  const editingMoney = useMemo(() => (editing ? labourMoney(editing) : null), [editing]);
+   155→
+   156→  const openEdit = (e: LabourWork) => {
+   157→    const m = labourMoney(e);
+   158→    setEditId(e.id);
+   159→    setEdDate(localDateKey(new Date(e.dateISO)));
+   160→    setEdName(e.name);
+   161→    setEdWork(e.work);
+   162→    setEdQty(e.qty ? String(e.qty) : '');
+   163→    setEdWage(m.wage > 0 ? String(m.wage) : '');
+   164→    setEdMode(e.mode ?? 'Cash');
+   165→    setPayAmt('');
+   166→    setPayMode('Cash');
+   167→    setPayNote('');
+   168→    setEditOpen(true);
+   169→  };
+   170→
+   171→  const saveEdit = () => {
+   172→    if (!editId) return;
+   173→    const name = edName.trim();
+   174→    const work = edWork.trim();
+   175→    if (!name || !work) return;
+   176→    updateLabourWork(editId, {
+   177→      dateISO: new Date(`${edDate || today}T12:00:00`).toISOString(),
+   178→      name,
+   179→      work,
+   180→      qty: Number(edQty) > 0 ? Math.round(Number(edQty)) : undefined,
+   181→      wage: Math.max(0, Math.round((Number(edWage) || 0) * 100) / 100),
+   182→      mode: edMode,
+   183→    });
+   184→    setEditOpen(false);
+   185→    toast({ title: t('labour.updated') });
+   186→  };
+   187→
+   188→  const submitPayment = () => {
+   189→    if (!editId) return;
+   190→    const amt = Math.round((Number(payAmt) || 0) * 100) / 100;
+   191→    if (amt <= 0) return;
+   192→    addLabourPayment(editId, {
+   193→      amount: amt,
+   194→      mode: payMode,
+   195→      note: payNote.trim() || undefined,
+   196→      dateISO: new Date().toISOString(),
+   197→    });
+   198→    setPayAmt('');
+   199→    setPayNote('');
+   200→    toast({ title: t('labour.paymentAdded') });
+   201→  };
+   202→
+   203→  /* ---------------- month register ---------------- */
+   204→  const monthWorks = useMemo(
+   205→    () =>
+   206→      labourWorks
+   207→        .filter((e) => localMonthKey(new Date(e.dateISO)) === month)
+   208→        .sort((a, b) => b.dateISO.localeCompare(a.dateISO)),
+   209→    [labourWorks, month]
+   210→  );
+   211→
+   212→  const monthPaid = useMemo(
+   213→    () => Math.round(monthWorks.reduce((s, w) => s + labourMoney(w).paid, 0) * 100) / 100,
+   214→    [monthWorks]
+   215→  );
+   216→  const monthBalance = useMemo(
+   217→    () => Math.round(monthWorks.reduce((s, w) => s + labourMoney(w).balance, 0) * 100) / 100,
+   218→    [monthWorks]
+   219→  );
+   220→  const monthExtra = useMemo(
+   221→    () => Math.round(monthWorks.reduce((s, w) => s + labourMoney(w).extra, 0) * 100) / 100,
+   222→    [monthWorks]
+   223→  );
+   224→  const monthWages = useMemo(
+   225→    () => Math.round(monthWorks.reduce((s, w) => s + labourMoney(w).wage, 0) * 100) / 100,
+   226→    [monthWorks]
+   227→  );
+   228→
+   229→  return (
+   230→    <div className="space-y-3">
+   231→      {/* month picker + paid / balance / entries this month */}
+   232→      <div className="space-y-2.5 rounded-xl border bg-card p-3">
+   233→        <div className="flex items-center gap-2">
+   234→          <CalendarDays className="size-4 shrink-0 text-blue-700" />
+   235→          <Input
+   236→            type="month"
+   237→            value={month}
+   238→            onChange={(e) => setMonth(e.target.value || thisMonth)}
+   239→            className="h-11 max-w-44"
+   240→            aria-label="Labour month"
+   241→          />
+   242→        </div>
+   243→        <div className="grid grid-cols-3 gap-2">
+   244→          <div className="anim-pop rounded-xl border bg-card p-2.5">
+   245→            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+   246→              <ArrowDownRight className="size-3 shrink-0 text-red-600" />
+   247→              <span className="truncate">{t('labour.paidMonth')}</span>
+   248→            </p>
+   249→            <p data-labour-month-paid className="mt-0.5 text-base font-extrabold tabular-nums text-red-600">
+   250→              ₹{fmt(monthPaid)}
+   251→            </p>
+   252→          </div>
+   253→          <div className="anim-pop rounded-xl border bg-card p-2.5">
+   254→            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+   255→              <Coins className="size-3 shrink-0 text-amber-600" />
+   256→              <span className="truncate">{t('labour.balanceMonth')}</span>
+   257→            </p>
+   258→            <p data-labour-month-balance className="mt-0.5 text-base font-extrabold tabular-nums text-amber-600">
+   259→              ₹{fmt(monthBalance)}
+   260→            </p>
+   261→          </div>
+   262→          <div className="anim-pop rounded-xl border bg-card p-2.5">
+   263→            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+   264→              <Hammer className="size-3 shrink-0 text-blue-700" />
+   265→              <span className="truncate">{t('labour.worksMonth')}</span>
+   266→            </p>
+   267→            <p data-labour-month-count className="mt-0.5 text-base font-extrabold tabular-nums text-blue-800">
+   268→              {monthWorks.length}
+   269→            </p>
+   270→          </div>
+   271→        </div>
+   272→      </div>
+   273→
+   274→      {/* add form — who / when / what / product QUANTITY / money paid now + balance */}
+   275→      <div className="space-y-2.5 rounded-xl border bg-card p-3">
+   276→        <div className="grid grid-cols-2 gap-2">
+   277→          <div className="space-y-1">
+   278→            <Label className="text-[11px] text-muted-foreground">{t('ledger.date')}</Label>
+   279→            <Input
+   280→              type="date"
+   281→              value={lwDate}
+   282→              max={today}
+   283→              onChange={(e) => setLwDate(e.target.value)}
+   284→              className="h-10"
+   285→              aria-label="Work date"
+   286→            />
+   287→          </div>
+   288→          <div className="space-y-1">
+   289→            <Label className="text-[11px] text-muted-foreground">{t('labour.name')}</Label>
+   290→            <Input
+   291→              value={lwName}
+   292→              onChange={(e) => setLwName(e.target.value)}
+   293→              placeholder={t('labour.namePlaceholder')}
+   294→              className="h-10"
+   295→              aria-label="Worker name"
+   296→            />
+   297→          </div>
+   298→        </div>
+   299→        <div className="space-y-1">
+   300→          <Label className="text-[11px] text-muted-foreground">{t('labour.work')}</Label>
+   301→          <Input
+   302→            value={lwWork}
+   303→            onChange={(e) => setLwWork(e.target.value)}
+   304→            placeholder={t('labour.workPlaceholder')}
+   305→            className="h-10"
+   306→            aria-label="Work done"
+   307→          />
+   308→        </div>
+   309→        <div className="grid grid-cols-2 gap-2">
+   310→          <div className="space-y-1">
+   311→            <Label className="text-[11px] text-muted-foreground">{t('labour.qty')}</Label>
+   312→            <Input
+   313→              type="number"
+   314→              inputMode="numeric"
+   315→              min={0}
+   316→              value={lwQty}
+   317→              onChange={(e) => setLwQty(e.target.value)}
+   318→              placeholder={t('labour.qtyPlaceholder')}
+   319→              className="h-10"
+   320→              aria-label="Work quantity"
+   321→            />
+   322→          </div>
+   323→          <div className="space-y-1">
+   324→            <Label className="text-[11px] text-muted-foreground">{t('labour.paid')}</Label>
+   325→            <Input
+   326→              type="number"
+   327→              inputMode="decimal"
+   328→              min={0}
+   329→              value={lwPaid}
+   330→              onChange={(e) => setLwPaid(e.target.value)}
+   331→              placeholder="0"
+   332→              className="h-10"
+   333→              aria-label="Labour paid"
+   334→            />
+   335→          </div>
+   336→        </div>
+   337→        <div className="grid grid-cols-2 gap-2">
+   338→          <div className="space-y-1">
+   339→            <Label className="text-[11px] text-muted-foreground">{t('labour.balance')}</Label>
+   340→            <Input
+   341→              type="number"
+   342→              inputMode="decimal"
+   343→              min={0}
+   344→              value={lwBalance}
+   345→              onChange={(e) => setLwBalance(e.target.value)}
+   346→              placeholder="0"
+   347→              className="h-10"
+   348→              aria-label="Labour balance"
+   349→            />
+   350→          </div>
+   351→          <div className="space-y-1">
+   352→            <Label className="text-[11px] text-muted-foreground">{t('labour.mode')}</Label>
+   353→            <Select value={lwMode} onValueChange={(v) => setLwMode(v as PaymentMode)}>
+   354→              <SelectTrigger className="h-10" aria-label="Labour money mode">
+   355→                <SelectValue />
+   356→              </SelectTrigger>
+   357→              <SelectContent>
+   358→                {MODES.map((m) => (
+   359→                  <SelectItem key={m} value={m}>
+   360→                    {modeLabel(m, appLang)}
+   361→                  </SelectItem>
+   362→                ))}
+   363→              </SelectContent>
+   364→            </Select>
+   365→          </div>
+   366→        </div>
+   367→        {(previewPaid > 0 || previewBalance > 0) && (
+   368→          <p className="text-xs font-semibold text-muted-foreground">
+   369→            {t('labour.wagesTotal')}: <span className="tabular-nums text-blue-800">₹{fmt(previewTotal)}</span>
+   370→            {previewBalance > 0 && (
+   371→              <span className="text-amber-600">
+   372→                {' '}
+   373→                · {t('labour.rowBalance')} ₹{fmt(previewBalance)}
+   374→              </span>
+   375→            )}
+   376→          </p>
+   377→        )}
+   378→        <Button
+   379→          onClick={submitLabourWork}
+   380→          className="h-11 w-full bg-amber-600 text-white hover:bg-amber-700"
+   381→          disabled={!(lwName.trim() && lwWork.trim())}
+   382→          aria-label="Add labour work"
+   383→        >
+   384→          <Hammer className="size-4" />
+   385→          {t('labour.add')}
+   386→        </Button>
+   387→      </div>
+   388→
+   389→      {/* register rows */}
+   390→      <ul className="space-y-1.5">
+   391→        {monthWorks.map((e, i) => {
+   392→          const m = labourMoney(e);
+   393→          return (
+   394→            <li
+   395→              key={e.id}
+   396→              data-labour-row={e.name}
+   397→              className="anim-fade-up flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2"
+   398→              style={{ animationDelay: `${Math.min(i, 10) * 40}ms` }}
+   399→            >
+   400→              <div className="flex min-w-0 items-center gap-2.5">
+   401→                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+   402→                  <Hammer className="size-4" />
+   403→                </span>
+   404→                <div className="min-w-0">
+   405→                  <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+   406→                    <span className="truncate">{e.name}</span>
+   407→                    <ModeChip mode={m.paid ? e.mode : undefined} appLang={appLang} />
+   408→                  </p>
+   409→                  <p className="truncate text-[11px] text-muted-foreground">
+   410→                    {new Date(e.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+   411→                    {' · '}
+   412→                    {e.work}
+   413→                    {e.product ? ` · ${e.product}` : ''}
+   414→                    {e.qty ? ` · ${e.qty} ${t('labour.qtyUnit')}` : ''}
+   415→                  </p>
+   416→                  {m.balance > 0 && (
+   417→                    <p className="text-[11px] font-bold text-amber-600">
+   418→                      {t('labour.rowBalance')} ₹{fmt(m.balance)}
+   419→                    </p>
+   420→                  )}
+   421→                  {m.extra > 0 && (
+   422→                    <p data-labour-extra className="text-[11px] font-bold text-emerald-600">
+   423→                      {t('labour.extra')} ₹{fmt(m.extra)}
+   424→                    </p>
+   425→                  )}
+   426→                </div>
+   427→              </div>
+   428→              <div className="flex shrink-0 items-center gap-0.5">
+   429→                {m.paid ? (
+   430→                  <span className="text-sm font-bold tabular-nums text-red-600">− ₹{fmt(m.paid)}</span>
+   431→                ) : null}
+   432→                <Button
+   433→                  variant="ghost"
+   434→                  size="icon"
+   435→                  className="size-8 text-muted-foreground hover:text-blue-700"
+   436→                  onClick={() => openEdit(e)}
+   437→                  aria-label={`Edit work ${e.name}`}
+   438→                >
+   439→                  <Pencil className="size-3.5" />
+   440→                </Button>
+   441→                <Button
+   442→                  variant="ghost"
+   443→                  size="icon"
+   444→                  className="size-8 text-muted-foreground hover:text-destructive"
+   445→                  onClick={() => deleteLabourWork(e.id)}
+   446→                  aria-label={`Delete work ${e.name}`}
+   447→                >
+   448→                  <Trash2 className="size-3.5" />
+   449→                </Button>
+   450→              </div>
+   451→            </li>
+   452→          );
+   453→        })}
+   454→        {monthWorks.length === 0 && (
+   455→          <li className="py-10 text-center text-sm text-muted-foreground">{t('labour.empty')}</li>
+   456→        )}
+   457→      </ul>
+   458→      {monthWorks.length > 0 && (
+   459→        <div className="space-y-0.5 rounded-lg border bg-neutral-50 px-3 py-2 text-xs font-bold">
+   460→          <div className="flex items-center justify-between">
+   461→            <span>{t('labour.wagesTotal')}</span>
+   462→            <span data-labour-month-money className="tabular-nums text-blue-800">
+   463→              ₹{fmtShort(monthWages)}
+   464→            </span>
+   465→          </div>
+   466→          <div className="flex items-center justify-between font-semibold text-muted-foreground">
+   467→            <span>
+   468→              {t('labour.paidMonth')} ₹{fmtShort(monthPaid)} · {t('labour.rowBalance')} ₹{fmtShort(monthBalance)}
+   469→              {monthExtra > 0 ? ` · ${t('labour.extra')} ₹${fmtShort(monthExtra)}` : ''}
+   470→            </span>
+   471→          </div>
+   472→        </div>
+   473→      )}
+   474→
+   475→      {/* edit dialog — change the entered details, record balance / extra money */}
+   476→      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+   477→        <DialogContent className="max-h-[85dvh] max-w-sm overflow-y-auto">
+   478→          <DialogHeader>
+   479→            <DialogTitle>{t('labour.editTitle')}</DialogTitle>
+   480→            <DialogDescription>
+   481→              {editing
+   482→                ? `${editing.name} · ${new Date(editing.dateISO).toLocaleDateString('en-IN', {
+   483→                    day: '2-digit',
+   484→                    month: 'short',
+   485→                  })}`
+   486→                : ''}
+   487→            </DialogDescription>
+   488→          </DialogHeader>
+   489→
+   490→          <div className="space-y-2.5">
+   491→            <div className="grid grid-cols-2 gap-2">
+   492→              <div className="space-y-1">
+   493→                <Label className="text-[11px] text-muted-foreground">{t('ledger.date')}</Label>
+   494→                <Input
+   495→                  type="date"
+   496→                  value={edDate}
+   497→                  max={today}
+   498→                  onChange={(e) => setEdDate(e.target.value)}
+   499→                  className="h-10"
+   500→                  aria-label="Edit work date"
+   501→                />
+   502→              </div>
+   503→              <div className="space-y-1">
+   504→                <Label className="text-[11px] text-muted-foreground">{t('labour.name')}</Label>
+   505→                <Input
+   506→                  value={edName}
+   507→                  onChange={(e) => setEdName(e.target.value)}
+   508→                  className="h-10"
+   509→                  aria-label="Edit worker name"
+   510→                />
+   511→              </div>
+   512→            </div>
+   513→            <div className="space-y-1">
+   514→              <Label className="text-[11px] text-muted-foreground">{t('labour.work')}</Label>
+   515→              <Input
+   516→                value={edWork}
+   517→                onChange={(e) => setEdWork(e.target.value)}
+   518→                className="h-10"
+   519→                aria-label="Edit work done"
+   520→              />
+   521→            </div>
+   522→            <div className="grid grid-cols-2 gap-2">
+   523→              <div className="space-y-1">
+   524→                <Label className="text-[11px] text-muted-foreground">{t('labour.qty')}</Label>
+   525→                <Input
+   526→                  type="number"
+   527→                  inputMode="numeric"
+   528→                  min={0}
+   529→                  value={edQty}
+   530→                  onChange={(e) => setEdQty(e.target.value)}
+   531→                  className="h-10"
+   532→                  aria-label="Edit work quantity"
+   533→                />
+   534→              </div>
+   535→              <div className="space-y-1">
+   536→                <Label className="text-[11px] text-muted-foreground">{t('labour.wage')}</Label>
+   537→                <Input
+   538→                  type="number"
+   539→                  inputMode="decimal"
+   540→                  min={0}
+   541→                  value={edWage}
+   542→                  onChange={(e) => setEdWage(e.target.value)}
+   543→                  className="h-10"
+   544→                  aria-label="Edit total wage"
+   545→                />
+   546→              </div>
+   547→            </div>
+   548→            <div className="space-y-1">
+   549→              <Label className="text-[11px] text-muted-foreground">{t('labour.mode')}</Label>
+   550→              <Select value={edMode} onValueChange={(v) => setEdMode(v as PaymentMode)}>
+   551→                <SelectTrigger className="h-10" aria-label="Edit money mode">
+   552→                  <SelectValue />
+   553→                </SelectTrigger>
+   554→                <SelectContent>
+   555→                  {MODES.map((m) => (
+   556→                    <SelectItem key={m} value={m}>
+   557→                      {modeLabel(m, appLang)}
+   558→                    </SelectItem>
+   559→                  ))}
+   560→                </SelectContent>
+   561→              </Select>
+   562→            </div>
+   563→
+   564→            {/* money summary of this entry */}
+   565→            {editingMoney && (
+   566→              <p data-edit-summary className="rounded-lg bg-neutral-50 px-3 py-2 text-xs font-semibold">
+   567→                {t('labour.wagesTotal')} <span className="tabular-nums text-blue-800">₹{fmt(editingMoney.wage)}</span>
+   568→                {' · '}
+   569→                {t('labour.paidSoFar')} <span className="tabular-nums text-red-600">₹{fmt(editingMoney.paid)}</span>
+   570→                {editingMoney.balance > 0 ? (
+   571→                  <>
+   572→                    {' · '}
+   573→                    <span className="text-amber-600">
+   574→                      {t('labour.rowBalance')} ₹{fmt(editingMoney.balance)}
+   575→                    </span>
+   576→                  </>
+   577→                ) : editingMoney.extra > 0 ? (
+   578→                  <>
+   579→                    {' · '}
+   580→                    <span className="text-emerald-600">
+   581→                      {t('labour.extra')} ₹{fmt(editingMoney.extra)}
+   582→                    </span>
+   583→                  </>
+   584→                ) : null}
+   585→              </p>
+   586→            )}
+   587→
+   588→            {/* payments history */}
+   589→            <div className="space-y-1.5">
+   590→              <p className="flex items-center gap-1.5 text-xs font-bold text-blue-800">
+   591→                <Wallet className="size-3.5" />
+   592→                {t('labour.payments')}
+   593→                {editing?.payments?.length ? ` (${editing.payments.length})` : ''}
+   594→              </p>
+   595→              <ul className="space-y-1">
+   596→                {(editing?.payments ?? []).map((p) => (
+   597→                  <li
+   598→                    key={p.id}
+   599→                    data-payment-row
+   600→                    className="flex items-center justify-between gap-2 rounded-lg border bg-card px-2.5 py-1.5"
+   601→                  >
+   602→                    <div className="min-w-0">
+   603→                      <p className="flex items-center gap-1.5 text-xs font-bold">
+   604→                        <IndianRupee className="size-3 shrink-0 text-red-600" />
+   605→                        <span className="tabular-nums">{fmt(p.amount)}</span>
+   606→                        <ModeChip mode={p.mode} appLang={appLang} />
+   607→                      </p>
+   608→                      <p className="truncate text-[10px] text-muted-foreground">
+   609→                        {new Date(p.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+   610→                        {p.note ? ` · ${p.note}` : ''}
+   611→                      </p>
+   612→                    </div>
+   613→                    <Button
+   614→                      variant="ghost"
+   615→                      size="icon"
+   616→                      className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
+   617→                      onClick={() => editId && deleteLabourPayment(editId, p.id)}
+   618→                      aria-label={`Delete payment ${p.amount}`}
+   619→                    >
+   620→                      <Trash2 className="size-3" />
+   621→                    </Button>
+   622→                  </li>
+   623→                ))}
+   624→                {(editing?.payments?.length ?? 0) === 0 && (
+   625→                  <li className="py-1 text-center text-[11px] text-muted-foreground">{t('labour.noPayments')}</li>
+   626→                )}
+   627→              </ul>
+   628→
+   629→              {/* record money given now — balance paid or extra money */}
+   630→              <div className="grid grid-cols-2 gap-2">
+   631→                <div className="space-y-1">
+   632→                  <Label className="text-[11px] text-muted-foreground">{t('labour.payAmount')}</Label>
+   633→                  <Input
+   634→                    type="number"
+   635→                    inputMode="decimal"
+   636→                    min={0}
+   637→                    value={payAmt}
+   638→                    onChange={(e) => setPayAmt(e.target.value)}
+   639→                    placeholder="0"
+   640→                    className="h-10"
+   641→                    aria-label="Payment amount"
+   642→                  />
+   643→                </div>
+   644→                <div className="space-y-1">
+   645→                  <Label className="text-[11px] text-muted-foreground">{t('labour.mode')}</Label>
+   646→                  <Select value={payMode} onValueChange={(v) => setPayMode(v as PaymentMode)}>
+   647→                    <SelectTrigger className="h-10" aria-label="Payment mode">
+   648→                      <SelectValue />
+   649→                    </SelectTrigger>
+   650→                    <SelectContent>
+   651→                      {MODES.map((m) => (
+   652→                        <SelectItem key={m} value={m}>
+   653→                          {modeLabel(m, appLang)}
+   654→                        </SelectItem>
+   655→                      ))}
+   656→                    </SelectContent>
+   657→                  </Select>
+   658→                </div>
+   659→              </div>
+   660→              <Input
+   661→                value={payNote}
+   662→                onChange={(e) => setPayNote(e.target.value)}
+   663→                placeholder={t('labour.payNote')}
+   664→                className="h-10"
+   665→                aria-label="Payment note"
+   666→              />
+   667→              <Button
+   668→                onClick={submitPayment}
+   669→                className="h-10 w-full bg-emerald-600 text-white hover:bg-emerald-700"
+   670→                disabled={!(Number(payAmt) > 0)}
+   671→                aria-label="Add payment"
+   672→              >
+   673→                <Wallet className="size-4" />
+   674→                {t('labour.addPayment')}
+   675→              </Button>
+   676→            </div>
+   677→
+   678→            <Button
+   679→              onClick={saveEdit}
+   680→              className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+   681→              aria-label="Save labour changes"
+   682→            >
+   683→              {t('labour.save')}
+   684→            </Button>
+   685→          </div>
+   686→        </DialogContent>
+   687→      </Dialog>
+   688→    </div>
+   689→  );
+   690→}
+   691→

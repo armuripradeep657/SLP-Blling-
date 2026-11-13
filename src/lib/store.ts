@@ -15,6 +15,7 @@ import type {
   Expense,
   IncomeEntry,
   Invoice,
+  LabourPayment,
   LabourWork,
   MainTab,
   PaymentMode,
@@ -38,6 +39,33 @@ function tomb(all: DeletedIds, key: keyof DeletedIds, id: string): DeletedIds {
 /** Helper: bump the sync LWW clock (config-level changes) */
 function touch(now = Date.now()): number {
   return now;
+}
+
+const r2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * Normalise a labour entry: guarantees the wage + payments list exist (legacy
+ * rows are converted once) and keeps the stored paid/balance fields in sync
+ * so older views and merged devices always agree.
+ */
+function normalizeLabourWork(e: LabourWork): LabourWork {
+  const legacyPaid = r2(e.paid ?? e.amount ?? 0);
+  const legacyBal = r2(e.balance ?? 0);
+  const wage = r2(e.wage ?? legacyPaid + legacyBal);
+  const payments = e.payments
+    ? e.payments
+    : legacyPaid > 0
+      ? [{ id: `${e.id}-pay0`, dateISO: e.dateISO, amount: legacyPaid, mode: e.mode }]
+      : [];
+  const paid = r2(payments.reduce((s, p) => s + p.amount, 0));
+  const balance = Math.max(0, r2(wage - paid));
+  return {
+    ...e,
+    wage,
+    payments,
+    paid: paid > 0 ? paid : undefined,
+    balance: balance > 0 ? balance : undefined,
+  };
 }
 
 interface BillingStore {
@@ -96,6 +124,15 @@ interface BillingStore {
   /** Add a labour work entry (worker, date, work done, product) */
   addLabourWork: (e: Omit<LabourWork, 'id'>) => void;
   deleteLabourWork: (id: string) => void;
+  /** Edit the details of an entered labour work (date, name, work, qty, wage, mode) */
+  updateLabourWork: (
+    id: string,
+    patch: Partial<Pick<LabourWork, 'dateISO' | 'name' | 'work' | 'qty' | 'wage' | 'mode'>>
+  ) => void;
+  /** Record money given to the labour later — balance paid or extra money */
+  addLabourPayment: (id: string, p: { amount: number; mode?: PaymentMode; note?: string; dateISO?: string }) => void;
+  /** Remove a wrongly-entered payment */
+  deleteLabourPayment: (id: string, paymentId: string) => void;
   /** Change the app look — background theme / header colour / watermark photo */
   setAppearance: (a: Partial<Appearance>) => void;
 }
@@ -386,16 +423,46 @@ export const useStore = create<BillingStore>()(
 
       addLabourWork: (e) =>
         set((st) => ({
-          labourWorks: [
-            { ...e, id: `lw-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` },
-            ...st.labourWorks,
-          ],
+          labourWorks: [normalizeLabourWork({ ...e, id: `lw-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }), ...st.labourWorks],
         })),
 
       deleteLabourWork: (id) =>
         set((st) => ({
           labourWorks: st.labourWorks.filter((x) => x.id !== id),
           deletedIds: tomb(st.deletedIds, 'labours', id),
+        })),
+
+      updateLabourWork: (id, patch) =>
+        set((st) => ({
+          labourWorks: st.labourWorks.map((x) => (x.id === id ? normalizeLabourWork({ ...x, ...patch }) : x)),
+        })),
+
+      addLabourPayment: (id, p) =>
+        set((st) => ({
+          labourWorks: st.labourWorks.map((x) => {
+            if (x.id !== id) return x;
+            const base = normalizeLabourWork(x);
+            const pay: LabourPayment = {
+              id: `lwp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              dateISO: p.dateISO ?? new Date().toISOString(),
+              amount: p.amount,
+              mode: p.mode,
+              note: p.note,
+            };
+            return normalizeLabourWork({ ...base, payments: [...(base.payments ?? []), pay] });
+          }),
+        })),
+
+      deleteLabourPayment: (id, paymentId) =>
+        set((st) => ({
+          labourWorks: st.labourWorks.map((x) => {
+            if (x.id !== id) return x;
+            const base = normalizeLabourWork(x);
+            return normalizeLabourWork({
+              ...base,
+              payments: (base.payments ?? []).filter((p) => p.id !== paymentId),
+            });
+          }),
         })),
 
       setAppearance: (a) =>

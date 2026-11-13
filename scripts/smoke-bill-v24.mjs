@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 
 /** v24 regression smoke — core bill flow still works behind the MPIN gate */
-const BASE = 'http://localhost:3000';
+const BASE = process.env.BASE_URL || 'http://localhost:3100';
 const MPIN = '1234';
 let pass = 0;
 let fail = 0;

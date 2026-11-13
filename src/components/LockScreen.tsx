@@ -9,17 +9,29 @@ import { useStore } from '@/lib/store';
 import { useT } from '@/hooks/use-app-lang';
 import {
   apiAuthState,
+  apiMpinRepair,
   apiMpinSetup,
   apiMpinUnlock,
   apiPullVault,
+  getDeviceDek,
+  getRecoverMaterial,
   setAuth,
   setDeviceDek,
+  setRecoverMaterial,
   lockApp,
 } from '@/lib/cloud';
-import { deriveKek, exportDek, generateDek, randomB64, unwrapDek, wrapDek } from '@/lib/crypto';
+import {
+  deriveKek,
+  exportDek,
+  generateDek,
+  importDek,
+  randomB64,
+  unwrapDek,
+  wrapDek,
+} from '@/lib/crypto';
 import { mergeVaultBlob, pushVaultNow } from '@/lib/sync';
 
-type Step = 'checking' | 'setup' | 'unlock';
+type Step = 'checking' | 'setup' | 'unlock' | 'reclaim';
 
 /**
  * Draft of the MPIN being typed, kept in sessionStorage so a page reload
@@ -39,12 +51,30 @@ const errKey = (code: string | undefined): 'lock.errWrongPin' | 'lock.errTooMany
 };
 
 /**
- * Full-screen gate in front of the app: the owner's MPIN is the only login.
- * First use creates the MPIN (it wraps the end-to-end encryption key);
- * every later time the MPIN opens the encrypted data. The device stays
- * unlocked until "Lock app".
+ * Full-screen gate in front of the app (variant="gate") or a small card used
+ * inside dialogs (variant="sheet").
+ *
+ * The MPIN is created ONCE. After that the app asks it EVERY time it opens —
+ * the owner asked for exactly this. It is never asked to CREATE it again:
+ *
+ * mode="auto"    — gate on app open. The device keeps its own copy of the
+ *                  credentials (salt + verifier + wrapped key), so the MPIN is
+ *                  verified right on the phone (works offline, instantly) and
+ *                  the "Create MPIN" screen can never reappear. Without a local
+ *                  copy (new browser / cleared storage) the server decides.
+ * mode="reclaim" — the device ALREADY holds its data key; the server lost the
+ *                  account (restart / reset), so one MPIN entry re-connects the
+ *                  encrypted sync WITHOUT creating anything new.
  */
-export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
+export default function LockScreen({
+  onUnlocked,
+  mode = 'auto',
+  variant = 'gate',
+}: {
+  onUnlocked: () => void;
+  mode?: 'auto' | 'reclaim';
+  variant?: 'gate' | 'sheet';
+}) {
   const t = useT();
   const companyName =
     useStore((s) => s.settings.companyName) || 'Sri Lakshmi Cement Works';
@@ -52,6 +82,9 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
 
   const [step, setStep] = useState<Step>('checking');
   const [salt, setSalt] = useState<string | null>(null);
+  /** legacy account (verifier broken by the old zero-proof bug) — its wrapped key
+   *  lets the device verify the MPIN locally and then repair the server account */
+  const [legacy, setLegacy] = useState<{ salt: string; wrapped: string } | null>(null);
   const [mpin, setMpin] = useState('');
   const [mpin2, setMpin2] = useState('');
   const [busy, setBusy] = useState(false);
@@ -68,9 +101,9 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
   };
 
   /**
-   * Ask the server whether this app already has an MPIN (setup vs unlock).
-   * Runs ONCE per mount through a ref — re-renders (typing!) can never
-   * re-trigger it, and it NEVER wipes what the user already typed.
+   * Ask the server whether it already has an MPIN. Runs through a ref so
+   * re-renders (typing!) can never re-trigger it, and it NEVER wipes what
+   * the user already typed.
    */
   const probe = useCallback(async () => {
     if (probingRef.current) return;
@@ -86,8 +119,18 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
       return;
     }
     setSalt(res.dekSalt ?? null);
-    setStep(res.hasMpin ? 'unlock' : 'setup');
-  }, [t]);
+    setLegacy(
+      res.legacy && res.dekSalt && res.dekWrapped
+        ? { salt: res.dekSalt, wrapped: res.dekWrapped }
+        : null
+    );
+    if (mode === 'reclaim') {
+      // device already holds the data key — the MPIN only re-connects sync
+      setStep(res.hasMpin ? 'unlock' : 'reclaim');
+    } else {
+      setStep(res.hasMpin ? 'unlock' : 'setup');
+    }
+  }, [t, mode]);
   const probeRef = useRef(probe);
   probeRef.current = probe;
 
@@ -105,6 +148,15 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
       } catch {
         /* storage unavailable */
       }
+    }
+    // The device keeps its OWN copy of the MPIN credentials (salt + verifier +
+    // wrapped key). With it the MPIN is verified right here on the phone —
+    // offline, instantly — and "Create your MPIN" can NEVER come back.
+    const mat = getRecoverMaterial();
+    if (mat) {
+      setSalt(mat.salt);
+      setStep('unlock');
+      return;
     }
     void probeRef.current?.();
   }, []);
@@ -157,7 +209,10 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
       setBusyBoth(true);
       try {
         const newSalt = randomB64(16);
-        const dek = await generateDek();
+        // keep the device's existing data key when it has one (upgrade path), else mint one
+        const dekB64 = getDeviceDek();
+        const existing = dekB64 ? await importDek(dekB64).catch(() => null) : null;
+        const dek = existing ?? (await generateDek());
         const { kek, proof } = await deriveKek(mpin, newSalt);
         const { wrapped, iv } = await wrapDek(dek, kek);
         const saved = await apiMpinSetup(`${iv}.${wrapped}`, newSalt, proof);
@@ -175,8 +230,11 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
           return;
         }
         setAuth(saved.token ?? '');
-        // keep the raw key on THIS device only — it stays unlocked until "Lock app"
+        // keep the raw key on THIS device only
         setDeviceDek(await exportDek(dek));
+        // remember the credentials here too — the MPIN was created ONCE; from
+        // now on every app open asks THIS MPIN to log in, never to create again
+        setRecoverMaterial({ salt: newSalt, verifier: proof, wrapped: `${iv}.${wrapped}` });
         clearDraft();
         setBusyBoth(false);
         void pushVaultNow(); // upload whatever this device already has
@@ -188,7 +246,58 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
     });
   };
 
-  /** Every later login: MPIN → proof → session → unwrap the DEK → open the encrypted data */
+  /**
+   * Re-connect flow: the device ALREADY holds the data key. The server lost
+   * its account (restart/reset) — re-register THE SAME key under the MPIN.
+   * Nothing is created and no data moves; sync simply continues.
+   */
+  const reclaimSync = async () => {
+    if (busyRef.current) return;
+    setError(null);
+    if (!/^\d{4,8}$/.test(mpin)) {
+      setError(t('lock.errPin'));
+      return;
+    }
+    const dekB64 = getDeviceDek();
+    if (!dekB64) {
+      // no local key (paranoia) — fall back to the normal unlock probe
+      await probe();
+      return;
+    }
+    await withWatchdog(async () => {
+      setBusyBoth(true);
+      try {
+        const newSalt = randomB64(16);
+        const dek = await importDek(dekB64);
+        const { kek, proof } = await deriveKek(mpin, newSalt);
+        const { wrapped, iv } = await wrapDek(dek, kek);
+        const saved = await apiMpinSetup(`${iv}.${wrapped}`, newSalt, proof);
+        if (!saved.ok) {
+          setBusyBoth(false);
+          if (saved.error === 'exists') {
+            // the server got an MPIN meanwhile — just log in with the typed one
+            await probe();
+            setError(t(errKey('exists')));
+            return;
+          }
+          setError(t(errKey(saved.error)));
+          return;
+        }
+        setAuth(saved.token ?? '');
+        setRecoverMaterial({ salt: newSalt, verifier: proof, wrapped: `${iv}.${wrapped}` });
+        clearDraft();
+        setBusyBoth(false);
+        void pushVaultNow(); // re-upload this device's data to the fresh vault
+        onUnlocked();
+      } catch {
+        setBusyBoth(false);
+        setError(t('lock.errNetwork'));
+      }
+    });
+  };
+
+  /** Every later login: the MPIN opens the app — verified on the phone when the
+   *  device holds its own credential copy (offline, instant), else via the server. */
   const unlockData = async () => {
     if (busyRef.current) return; // one submit at a time — double-taps are ignored
     setError(null);
@@ -196,6 +305,40 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
       setError(t('lock.errPin'));
       return;
     }
+    /* ---- path 1: local credentials — no network needed at all ---- */
+    const mat = getRecoverMaterial();
+    if (mat?.salt && mat?.verifier && mat?.wrapped) {
+      await withWatchdog(async () => {
+        setBusyBoth(true);
+        try {
+          const { kek, proof } = await deriveKek(mpin, mat.salt);
+          if (proof !== mat.verifier) {
+            setBusyBoth(false);
+            setError(t('lock.errWrongPin'));
+            return;
+          }
+          const dot = mat.wrapped.indexOf('.');
+          let dek: CryptoKey | null = null;
+          if (dot > 0) {
+            dek = await unwrapDek(mat.wrapped.slice(dot + 1), mat.wrapped.slice(0, dot), kek).catch(() => null);
+          }
+          if (!dek) {
+            const dekB64 = getDeviceDek();
+            dek = dekB64 ? await importDek(dekB64).catch(() => null) : null;
+          }
+          if (!dek) dek = await generateDek(); // last resort — sync re-keys silently
+          setDeviceDek(await exportDek(dek));
+          clearDraft();
+          setBusyBoth(false);
+          onUnlocked();
+        } catch {
+          setBusyBoth(false);
+          setError(t('lock.errNetwork'));
+        }
+      });
+      return;
+    }
+    /* ---- path 2: no local copy (new browser / cleared storage) — ask the server ---- */
     if (!salt) {
       // no salt from the probe — re-probe (server may have restarted / state changed)
       await probe();
@@ -205,6 +348,112 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
       setBusyBoth(true);
       try {
         const { kek, proof } = await deriveKek(mpin, salt);
+
+        /** shared tail: session stored → open the vault → remember the credentials here */
+        const finishWithToken = async (token: string) => {
+          setAuth(token);
+          const remember = async (wrappedStr: string, dekKey: CryptoKey) => {
+            setDeviceDek(await exportDek(dekKey));
+            setRecoverMaterial({ salt, verifier: proof, wrapped: wrappedStr });
+          };
+          const pull = await apiPullVault();
+          if (pull.kind === 'auth') {
+            lockApp();
+            setBusyBoth(false);
+            setError(t(errKey('wrongMpin')));
+            return;
+          }
+          if (pull.kind === 'offline') {
+            setBusyBoth(false);
+            setError(t('lock.errNetwork'));
+            return;
+          }
+          if (pull.kind === 'empty') {
+            // no data pushed yet — open the SAME wrapped key (if any) so devices stay compatible
+            const wrappedEmpty = pull.dekWrapped ?? '';
+            const dotE = wrappedEmpty.indexOf('.');
+            if (dotE > 0 && pull.dekSalt) {
+              const dekSame = await unwrapDek(
+                wrappedEmpty.slice(dotE + 1),
+                wrappedEmpty.slice(0, dotE),
+                kek
+              ).catch(() => null);
+              if (dekSame) {
+                await remember(wrappedEmpty, dekSame);
+                clearDraft();
+                setBusyBoth(false);
+                void pushVaultNow();
+                onUnlocked();
+                return;
+              }
+            }
+            // nothing stored at all — start with a fresh key and wrap it right here
+            const dekNew = await generateDek();
+            const w2 = await wrapDek(dekNew, kek);
+            await remember(`${w2.iv}.${w2.wrapped}`, dekNew);
+            clearDraft();
+            setBusyBoth(false);
+            void pushVaultNow();
+            onUnlocked();
+            return;
+          }
+          const dot = pull.dekWrapped.indexOf('.');
+          if (dot <= 0) {
+            setBusyBoth(false);
+            setError(t('lock.errNetwork'));
+            return;
+          }
+          const dek = await unwrapDek(
+            pull.dekWrapped.slice(dot + 1),
+            pull.dekWrapped.slice(0, dot),
+            kek
+          ).catch(() => null);
+          if (!dek) {
+            setBusyBoth(false);
+            setError(t('lock.errWrongPin'));
+            return;
+          }
+          await remember(pull.dekWrapped, dek);
+          const opened = await mergeVaultBlob(pull.ciphertext, pull.dataIv, dek);
+          setBusyBoth(false);
+          if (!opened) {
+            setError(t('lock.errWrongPin'));
+            return;
+          }
+          clearDraft();
+          onUnlocked();
+        };
+
+        /* ---- legacy account: the old app stored an all-zero verifier, so a
+           normal unlock can never match. The device proves the MPIN by
+           unwrapping the stored key right here (GCM auth fails for a wrong
+           MPIN), then repairs the server account with the REAL verifier. */
+        if (legacy?.salt === salt && legacy.wrapped) {
+          const dotL = legacy.wrapped.indexOf('.');
+          const dekL =
+            dotL > 0
+              ? await unwrapDek(legacy.wrapped.slice(dotL + 1), legacy.wrapped.slice(0, dotL), kek).catch(() => null)
+              : null;
+          if (!dekL) {
+            setBusyBoth(false);
+            setError(t('lock.errWrongPin'));
+            return;
+          }
+          const rep = await apiMpinRepair(proof, salt, legacy.wrapped);
+          if (!rep.ok || !rep.token) {
+            setBusyBoth(false);
+            if (rep.error === 'exists') {
+              // repaired meanwhile (another device) — normal login from here on
+              await probe();
+              return;
+            }
+            setError(t(errKey(rep.error)));
+            return;
+          }
+          await finishWithToken(rep.token);
+          return;
+        }
+
         const res = await apiMpinUnlock(proof);
         if (!res.ok || !res.token) {
           setBusyBoth(false);
@@ -215,72 +464,7 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
           setError(t(errKey(res.error)));
           return;
         }
-        setAuth(res.token);
-        const pull = await apiPullVault();
-        if (pull.kind === 'auth') {
-          lockApp();
-          setBusyBoth(false);
-          setError(t(errKey('wrongMpin')));
-          return;
-        }
-        if (pull.kind === 'offline') {
-          setBusyBoth(false);
-          setError(t('lock.errNetwork'));
-          return;
-        }
-        if (pull.kind === 'empty') {
-          // no data pushed yet — open the SAME wrapped key (if any) so devices stay compatible
-          const wrappedEmpty = pull.dekWrapped ?? '';
-          const dotE = wrappedEmpty.indexOf('.');
-          if (dotE > 0 && pull.dekSalt) {
-            const dekSame = await unwrapDek(
-              wrappedEmpty.slice(dotE + 1),
-              wrappedEmpty.slice(0, dotE),
-              kek
-            ).catch(() => null);
-            if (dekSame) {
-              setDeviceDek(await exportDek(dekSame));
-              clearDraft();
-              setBusyBoth(false);
-              void pushVaultNow();
-              onUnlocked();
-              return;
-            }
-          }
-          // nothing stored at all — start with a fresh key
-          const dekNew = await generateDek();
-          setDeviceDek(await exportDek(dekNew));
-          clearDraft();
-          setBusyBoth(false);
-          void pushVaultNow();
-          onUnlocked();
-          return;
-        }
-        const dot = pull.dekWrapped.indexOf('.');
-        if (dot <= 0) {
-          setBusyBoth(false);
-          setError(t('lock.errNetwork'));
-          return;
-        }
-        const dek = await unwrapDek(
-          pull.dekWrapped.slice(dot + 1),
-          pull.dekWrapped.slice(0, dot),
-          kek
-        ).catch(() => null);
-        if (!dek) {
-          setBusyBoth(false);
-          setError(t('lock.errWrongPin'));
-          return;
-        }
-        setDeviceDek(await exportDek(dek));
-        const opened = await mergeVaultBlob(pull.ciphertext, pull.dataIv, dek);
-        setBusyBoth(false);
-        if (!opened) {
-          setError(t('lock.errWrongPin'));
-          return;
-        }
-        clearDraft();
-        onUnlocked();
+        await finishWithToken(res.token);
       } catch {
         setBusyBoth(false);
         setError(t('lock.errNetwork'));
@@ -295,6 +479,136 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
     clearDraft();
     void probe();
   };
+
+  const card = (
+    <div className="space-y-3 rounded-2xl border bg-card p-4 shadow-sm">
+      {step === 'checking' && (
+        <>
+          <p className="text-center text-sm text-muted-foreground">{t('lock.checking')}</p>
+          <Button
+            onClick={retryProbe}
+            disabled={busy}
+            variant="outline"
+            className="h-11 w-full"
+            aria-label="Retry"
+          >
+            <RefreshCw className="size-4" />
+            {t('lock.retry')}
+          </Button>
+        </>
+      )}
+
+      {step === 'setup' && (
+        <>
+          <div className="text-center">
+            <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-900">
+              <KeyRound className="size-4" />
+              {t('lock.setPinTitle')}
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              {t('lock.setPinDesc')}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="lock-mpin" className="text-xs text-muted-foreground">
+              {t('lock.pinLabel')}
+            </Label>
+            <Input
+              id="lock-mpin"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              autoFocus
+              maxLength={8}
+              value={mpin}
+              onChange={(e) => setMpin(e.target.value.replace(/\D/g, ''))}
+              className="h-11 text-center text-lg font-bold tracking-[0.4em]"
+              aria-label="New MPIN"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="lock-mpin2" className="text-xs text-muted-foreground">
+              {t('lock.pinConfirm')}
+            </Label>
+            <Input
+              id="lock-mpin2"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={8}
+              value={mpin2}
+              onChange={(e) => setMpin2(e.target.value.replace(/\D/g, ''))}
+              className="h-11 text-center text-lg font-bold tracking-[0.4em]"
+              aria-label="Confirm MPIN"
+            />
+          </div>
+          <Button
+            onClick={setupMpin}
+            disabled={busy}
+            className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+            aria-label="Save MPIN"
+          >
+            <KeyRound className="size-4" />
+            {busy ? t('lock.saving') : t('lock.saveBtn')}
+          </Button>
+        </>
+      )}
+
+      {(step === 'unlock' || step === 'reclaim') && (
+        <>
+          <div className="text-center">
+            <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-900">
+              <KeyRound className="size-4" />
+              {step === 'reclaim' ? t('reauth.title') : t('lock.unlockTitle')}
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              {step === 'reclaim' ? t('reauth.desc') : t('lock.unlockDesc')}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="lock-unlockmpin" className="text-xs text-muted-foreground">
+              {t('lock.pinLabel')}
+            </Label>
+            <Input
+              id="lock-unlockmpin"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              autoFocus
+              maxLength={8}
+              value={mpin}
+              onChange={(e) => setMpin(e.target.value.replace(/\D/g, ''))}
+              className="h-11 text-center text-lg font-bold tracking-[0.4em]"
+              aria-label="MPIN"
+            />
+          </div>
+          <Button
+            onClick={step === 'reclaim' ? reclaimSync : unlockData}
+            disabled={busy}
+            className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+            aria-label={step === 'reclaim' ? 'Re-connect' : 'Open app'}
+          >
+            <Lock className="size-4" />
+            {busy
+              ? t('lock.verifying')
+              : step === 'reclaim'
+                ? t('reauth.btn')
+                : t('lock.unlockBtn')}
+          </Button>
+        </>
+      )}
+
+      {error && (
+        <p role="alert" data-lock-error className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+
+  if (variant === 'sheet') {
+    return <div className="w-full max-w-sm">{card}</div>;
+  }
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-blue-50 via-white to-blue-100 px-4 py-8">
@@ -315,125 +629,7 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
           </div>
         </div>
 
-        <div className="space-y-3 rounded-2xl border bg-card p-4 shadow-sm">
-          {step === 'checking' && (
-            <>
-              <p className="text-center text-sm text-muted-foreground">{t('lock.checking')}</p>
-              <Button
-                onClick={retryProbe}
-                disabled={busy}
-                variant="outline"
-                className="h-11 w-full"
-                aria-label="Retry"
-              >
-                <RefreshCw className="size-4" />
-                {t('lock.retry')}
-              </Button>
-            </>
-          )}
-
-          {step === 'setup' && (
-            <>
-              <div className="text-center">
-                <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-900">
-                  <KeyRound className="size-4" />
-                  {t('lock.setPinTitle')}
-                </p>
-                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                  {t('lock.setPinDesc')}
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="lock-mpin" className="text-xs text-muted-foreground">
-                  {t('lock.pinLabel')}
-                </Label>
-                <Input
-                  id="lock-mpin"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  autoFocus
-                  maxLength={8}
-                  value={mpin}
-                  onChange={(e) => setMpin(e.target.value.replace(/\D/g, ''))}
-                  className="h-11 text-center text-lg font-bold tracking-[0.4em]"
-                  aria-label="New MPIN"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="lock-mpin2" className="text-xs text-muted-foreground">
-                  {t('lock.pinConfirm')}
-                </Label>
-                <Input
-                  id="lock-mpin2"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  maxLength={8}
-                  value={mpin2}
-                  onChange={(e) => setMpin2(e.target.value.replace(/\D/g, ''))}
-                  className="h-11 text-center text-lg font-bold tracking-[0.4em]"
-                  aria-label="Confirm MPIN"
-                />
-              </div>
-              <Button
-                onClick={setupMpin}
-                disabled={busy}
-                className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
-                aria-label="Save MPIN"
-              >
-                <KeyRound className="size-4" />
-                {busy ? t('lock.saving') : t('lock.saveBtn')}
-              </Button>
-            </>
-          )}
-
-          {step === 'unlock' && (
-            <>
-              <div className="text-center">
-                <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-900">
-                  <KeyRound className="size-4" />
-                  {t('lock.unlockTitle')}
-                </p>
-                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                  {t('lock.unlockDesc')}
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="lock-unlockmpin" className="text-xs text-muted-foreground">
-                  {t('lock.pinLabel')}
-                </Label>
-                <Input
-                  id="lock-unlockmpin"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  autoFocus
-                  maxLength={8}
-                  value={mpin}
-                  onChange={(e) => setMpin(e.target.value.replace(/\D/g, ''))}
-                  className="h-11 text-center text-lg font-bold tracking-[0.4em]"
-                  aria-label="MPIN"
-                />
-              </div>
-              <Button
-                onClick={unlockData}
-                disabled={busy}
-                className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
-                aria-label="Open app"
-              >
-                <Lock className="size-4" />
-                {busy ? t('lock.verifying') : t('lock.unlockBtn')}
-              </Button>
-            </>
-          )}
-
-          {error && (
-            <p role="alert" data-lock-error className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-              {error}
-            </p>
-          )}
-        </div>
+        {card}
 
         <p className="flex items-start justify-center gap-1.5 px-2 text-center text-[11px] leading-relaxed text-muted-foreground">
           <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />

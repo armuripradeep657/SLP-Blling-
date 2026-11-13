@@ -11,12 +11,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowDownRight, CalendarDays, Coins, Hammer, Trash2 } from 'lucide-react';
+import {
+  ArrowDownRight,
+  CalendarDays,
+  Coins,
+  Hammer,
+  IndianRupee,
+  Pencil,
+  Trash2,
+  Wallet,
+} from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { fmt, fmtShort, localDateKey, localMonthKey } from '@/lib/billing';
+import { fmt, fmtShort, labourMoney, localDateKey, localMonthKey } from '@/lib/billing';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
-import type { AppLanguage, PaymentMode } from '@/lib/types';
+import type { AppLanguage, LabourWork, PaymentMode } from '@/lib/types';
 
 const MODES: PaymentMode[] = ['Cash', 'UPI', 'Card'];
 
@@ -49,6 +65,9 @@ export default function LabourView() {
   const labourWorks = useStore((s) => s.labourWorks);
   const addLabourWork = useStore((s) => s.addLabourWork);
   const deleteLabourWork = useStore((s) => s.deleteLabourWork);
+  const updateLabourWork = useStore((s) => s.updateLabourWork);
+  const addLabourPayment = useStore((s) => s.addLabourPayment);
+  const deleteLabourPayment = useStore((s) => s.deleteLabourPayment);
   const { toast } = useToast();
 
   const today = localDateKey(new Date());
@@ -56,7 +75,7 @@ export default function LabourView() {
 
   const [month, setMonth] = useState(thisMonth);
 
-  /* ---------------- form ---------------- */
+  /* ---------------- add form ---------------- */
   const [lwDate, setLwDate] = useState(today);
   const [lwName, setLwName] = useState('');
   const [lwWork, setLwWork] = useState('');
@@ -76,14 +95,29 @@ export default function LabourView() {
     const paid = Math.round((Number(lwPaid) || 0) * 100) / 100;
     const balance = Math.round((Number(lwBalance) || 0) * 100) / 100;
     const qty = Math.round(Number(lwQty) || 0);
+    const dateISO = new Date(`${lwDate || today}T12:00:00`).toISOString();
     addLabourWork({
-      dateISO: new Date(`${lwDate || today}T12:00:00`).toISOString(),
+      dateISO,
       name,
       work,
       qty: qty > 0 ? qty : undefined,
+      // money: the wage is what was paid now + the balance still to pay;
+      // the money handed over right now is recorded as the first payment
+      wage: previewTotal > 0 ? previewTotal : undefined,
       paid: paid > 0 ? paid : undefined,
       balance: balance > 0 ? balance : undefined,
       mode: paid > 0 ? lwMode : undefined,
+      payments:
+        paid > 0
+          ? [
+              {
+                id: `lwp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                dateISO,
+                amount: paid,
+                mode: lwMode,
+              },
+            ]
+          : [],
     });
     setLwName('');
     setLwWork('');
@@ -98,6 +132,74 @@ export default function LabourView() {
     });
   };
 
+  /* ---------------- edit dialog ---------------- */
+  const [editOpen, setEditOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [edDate, setEdDate] = useState(today);
+  const [edName, setEdName] = useState('');
+  const [edWork, setEdWork] = useState('');
+  const [edQty, setEdQty] = useState('');
+  const [edWage, setEdWage] = useState('');
+  const [edMode, setEdMode] = useState<PaymentMode>('Cash');
+  // payment form (balance paid / extra money given)
+  const [payAmt, setPayAmt] = useState('');
+  const [payMode, setPayMode] = useState<PaymentMode>('Cash');
+  const [payNote, setPayNote] = useState('');
+
+  /** live entry while the dialog is open — payments appear the moment they are added */
+  const editing = useMemo(
+    () => (editId ? labourWorks.find((w) => w.id === editId) ?? null : null),
+    [labourWorks, editId]
+  );
+  const editingMoney = useMemo(() => (editing ? labourMoney(editing) : null), [editing]);
+
+  const openEdit = (e: LabourWork) => {
+    const m = labourMoney(e);
+    setEditId(e.id);
+    setEdDate(localDateKey(new Date(e.dateISO)));
+    setEdName(e.name);
+    setEdWork(e.work);
+    setEdQty(e.qty ? String(e.qty) : '');
+    setEdWage(m.wage > 0 ? String(m.wage) : '');
+    setEdMode(e.mode ?? 'Cash');
+    setPayAmt('');
+    setPayMode('Cash');
+    setPayNote('');
+    setEditOpen(true);
+  };
+
+  const saveEdit = () => {
+    if (!editId) return;
+    const name = edName.trim();
+    const work = edWork.trim();
+    if (!name || !work) return;
+    updateLabourWork(editId, {
+      dateISO: new Date(`${edDate || today}T12:00:00`).toISOString(),
+      name,
+      work,
+      qty: Number(edQty) > 0 ? Math.round(Number(edQty)) : undefined,
+      wage: Math.max(0, Math.round((Number(edWage) || 0) * 100) / 100),
+      mode: edMode,
+    });
+    setEditOpen(false);
+    toast({ title: t('labour.updated') });
+  };
+
+  const submitPayment = () => {
+    if (!editId) return;
+    const amt = Math.round((Number(payAmt) || 0) * 100) / 100;
+    if (amt <= 0) return;
+    addLabourPayment(editId, {
+      amount: amt,
+      mode: payMode,
+      note: payNote.trim() || undefined,
+      dateISO: new Date().toISOString(),
+    });
+    setPayAmt('');
+    setPayNote('');
+    toast({ title: t('labour.paymentAdded') });
+  };
+
   /* ---------------- month register ---------------- */
   const monthWorks = useMemo(
     () =>
@@ -108,16 +210,20 @@ export default function LabourView() {
   );
 
   const monthPaid = useMemo(
-    () => monthWorks.reduce((s, w) => s + (w.paid ?? w.amount ?? 0), 0),
+    () => Math.round(monthWorks.reduce((s, w) => s + labourMoney(w).paid, 0) * 100) / 100,
     [monthWorks]
   );
   const monthBalance = useMemo(
-    () => monthWorks.reduce((s, w) => s + (w.balance ?? 0), 0),
+    () => Math.round(monthWorks.reduce((s, w) => s + labourMoney(w).balance, 0) * 100) / 100,
+    [monthWorks]
+  );
+  const monthExtra = useMemo(
+    () => Math.round(monthWorks.reduce((s, w) => s + labourMoney(w).extra, 0) * 100) / 100,
     [monthWorks]
   );
   const monthWages = useMemo(
-    () => Math.round((monthPaid + monthBalance) * 100) / 100,
-    [monthPaid, monthBalance]
+    () => Math.round(monthWorks.reduce((s, w) => s + labourMoney(w).wage, 0) * 100) / 100,
+    [monthWorks]
   );
 
   return (
@@ -283,8 +389,7 @@ export default function LabourView() {
       {/* register rows */}
       <ul className="space-y-1.5">
         {monthWorks.map((e, i) => {
-          const paid = e.paid ?? e.amount ?? 0; // legacy `amount` = paid that day
-          const balance = e.balance ?? 0;
+          const m = labourMoney(e);
           return (
             <li
               key={e.id}
@@ -299,7 +404,7 @@ export default function LabourView() {
                 <div className="min-w-0">
                   <p className="flex items-center gap-1.5 truncate text-sm font-medium">
                     <span className="truncate">{e.name}</span>
-                    <ModeChip mode={paid ? e.mode : undefined} appLang={appLang} />
+                    <ModeChip mode={m.paid ? e.mode : undefined} appLang={appLang} />
                   </p>
                   <p className="truncate text-[11px] text-muted-foreground">
                     {new Date(e.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
@@ -308,17 +413,31 @@ export default function LabourView() {
                     {e.product ? ` · ${e.product}` : ''}
                     {e.qty ? ` · ${e.qty} ${t('labour.qtyUnit')}` : ''}
                   </p>
-                  {balance > 0 && (
+                  {m.balance > 0 && (
                     <p className="text-[11px] font-bold text-amber-600">
-                      {t('labour.rowBalance')} ₹{fmt(balance)}
+                      {t('labour.rowBalance')} ₹{fmt(m.balance)}
+                    </p>
+                  )}
+                  {m.extra > 0 && (
+                    <p data-labour-extra className="text-[11px] font-bold text-emerald-600">
+                      {t('labour.extra')} ₹{fmt(m.extra)}
                     </p>
                   )}
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                {paid ? (
-                  <span className="text-sm font-bold tabular-nums text-red-600">− ₹{fmt(paid)}</span>
+              <div className="flex shrink-0 items-center gap-0.5">
+                {m.paid ? (
+                  <span className="text-sm font-bold tabular-nums text-red-600">− ₹{fmt(m.paid)}</span>
                 ) : null}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 text-muted-foreground hover:text-blue-700"
+                  onClick={() => openEdit(e)}
+                  aria-label={`Edit work ${e.name}`}
+                >
+                  <Pencil className="size-3.5" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -347,10 +466,225 @@ export default function LabourView() {
           <div className="flex items-center justify-between font-semibold text-muted-foreground">
             <span>
               {t('labour.paidMonth')} ₹{fmtShort(monthPaid)} · {t('labour.rowBalance')} ₹{fmtShort(monthBalance)}
+              {monthExtra > 0 ? ` · ${t('labour.extra')} ₹${fmtShort(monthExtra)}` : ''}
             </span>
           </div>
         </div>
       )}
+
+      {/* edit dialog — change the entered details, record balance / extra money */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-h-[85dvh] max-w-sm overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t('labour.editTitle')}</DialogTitle>
+            <DialogDescription>
+              {editing
+                ? `${editing.name} · ${new Date(editing.dateISO).toLocaleDateString('en-IN', {
+                    day: '2-digit',
+                    month: 'short',
+                  })}`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2.5">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('ledger.date')}</Label>
+                <Input
+                  type="date"
+                  value={edDate}
+                  max={today}
+                  onChange={(e) => setEdDate(e.target.value)}
+                  className="h-10"
+                  aria-label="Edit work date"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('labour.name')}</Label>
+                <Input
+                  value={edName}
+                  onChange={(e) => setEdName(e.target.value)}
+                  className="h-10"
+                  aria-label="Edit worker name"
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground">{t('labour.work')}</Label>
+              <Input
+                value={edWork}
+                onChange={(e) => setEdWork(e.target.value)}
+                className="h-10"
+                aria-label="Edit work done"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('labour.qty')}</Label>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={edQty}
+                  onChange={(e) => setEdQty(e.target.value)}
+                  className="h-10"
+                  aria-label="Edit work quantity"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('labour.wage')}</Label>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  value={edWage}
+                  onChange={(e) => setEdWage(e.target.value)}
+                  className="h-10"
+                  aria-label="Edit total wage"
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground">{t('labour.mode')}</Label>
+              <Select value={edMode} onValueChange={(v) => setEdMode(v as PaymentMode)}>
+                <SelectTrigger className="h-10" aria-label="Edit money mode">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MODES.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {modeLabel(m, appLang)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* money summary of this entry */}
+            {editingMoney && (
+              <p data-edit-summary className="rounded-lg bg-neutral-50 px-3 py-2 text-xs font-semibold">
+                {t('labour.wagesTotal')} <span className="tabular-nums text-blue-800">₹{fmt(editingMoney.wage)}</span>
+                {' · '}
+                {t('labour.paidSoFar')} <span className="tabular-nums text-red-600">₹{fmt(editingMoney.paid)}</span>
+                {editingMoney.balance > 0 ? (
+                  <>
+                    {' · '}
+                    <span className="text-amber-600">
+                      {t('labour.rowBalance')} ₹{fmt(editingMoney.balance)}
+                    </span>
+                  </>
+                ) : editingMoney.extra > 0 ? (
+                  <>
+                    {' · '}
+                    <span className="text-emerald-600">
+                      {t('labour.extra')} ₹{fmt(editingMoney.extra)}
+                    </span>
+                  </>
+                ) : null}
+              </p>
+            )}
+
+            {/* payments history */}
+            <div className="space-y-1.5">
+              <p className="flex items-center gap-1.5 text-xs font-bold text-blue-800">
+                <Wallet className="size-3.5" />
+                {t('labour.payments')}
+                {editing?.payments?.length ? ` (${editing.payments.length})` : ''}
+              </p>
+              <ul className="space-y-1">
+                {(editing?.payments ?? []).map((p) => (
+                  <li
+                    key={p.id}
+                    data-payment-row
+                    className="flex items-center justify-between gap-2 rounded-lg border bg-card px-2.5 py-1.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5 text-xs font-bold">
+                        <IndianRupee className="size-3 shrink-0 text-red-600" />
+                        <span className="tabular-nums">{fmt(p.amount)}</span>
+                        <ModeChip mode={p.mode} appLang={appLang} />
+                      </p>
+                      <p className="truncate text-[10px] text-muted-foreground">
+                        {new Date(p.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                        {p.note ? ` · ${p.note}` : ''}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => editId && deleteLabourPayment(editId, p.id)}
+                      aria-label={`Delete payment ${p.amount}`}
+                    >
+                      <Trash2 className="size-3" />
+                    </Button>
+                  </li>
+                ))}
+                {(editing?.payments?.length ?? 0) === 0 && (
+                  <li className="py-1 text-center text-[11px] text-muted-foreground">{t('labour.noPayments')}</li>
+                )}
+              </ul>
+
+              {/* record money given now — balance paid or extra money */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">{t('labour.payAmount')}</Label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    value={payAmt}
+                    onChange={(e) => setPayAmt(e.target.value)}
+                    placeholder="0"
+                    className="h-10"
+                    aria-label="Payment amount"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">{t('labour.mode')}</Label>
+                  <Select value={payMode} onValueChange={(v) => setPayMode(v as PaymentMode)}>
+                    <SelectTrigger className="h-10" aria-label="Payment mode">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MODES.map((m) => (
+                        <SelectItem key={m} value={m}>
+                          {modeLabel(m, appLang)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <Input
+                value={payNote}
+                onChange={(e) => setPayNote(e.target.value)}
+                placeholder={t('labour.payNote')}
+                className="h-10"
+                aria-label="Payment note"
+              />
+              <Button
+                onClick={submitPayment}
+                className="h-10 w-full bg-emerald-600 text-white hover:bg-emerald-700"
+                disabled={!(Number(payAmt) > 0)}
+                aria-label="Add payment"
+              >
+                <Wallet className="size-4" />
+                {t('labour.addPayment')}
+              </Button>
+            </div>
+
+            <Button
+              onClick={saveEdit}
+              className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+              aria-label="Save labour changes"
+            >
+              {t('labour.save')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,13 +1,16 @@
 import { chromium } from 'playwright';
 import fs from 'fs';
 
+/** current app version straight from the source — the popup check never goes stale */
+const APP_V = (fs.readFileSync('/home/z/my-project/src/lib/version.ts', 'utf8').match(/APP_VERSION = '(\d+)'/) || [])[1] ?? '';
+
 /**
  * v24 verification
  *  1. FIRST-TIME LOCK: the whole app stands behind an MPIN gate — NO mobile number,
  *     NO OTP anywhere (no header/nav visible)
  *  2. MPIN setup: mismatch rejected → 1234 saved → app unlocks; update popup advertises v24
  *  3. LABOUR: product QUANTITY + Paid now ₹ + Balance ₹; rows + month cards add up; delete works
- *  4. Persists across reload with auto-unlock (no MPIN asked) AND a fresh open ALWAYS
+ *  4. MPIN asked on every app open (login, never create) AND a fresh open ALWAYS
  *     lands on the BILL tab even if old storage says another tab
  *  5. Backup carries labourWorks with qty/paid/balance
  *  6. TWO-DEVICE SYNC: a second browser enters the SAME MPIN → sees device 1's data;
@@ -16,7 +19,7 @@ import fs from 'fs';
  *  8. Sync & security settings (MPIN-protected status) + Lock app → gate returns →
  *     wrong MPIN rejected → correct MPIN re-opens
  */
-const BASE = 'http://localhost:3000';
+const BASE = process.env.BASE_URL || 'http://localhost:3100';
 const MPIN = '1234';
 let pass = 0;
 let fail = 0;
@@ -98,7 +101,7 @@ await p1.getByRole('button', { name: 'Save MPIN' }).click();
 await p1.locator('[data-header]').waitFor({ state: 'visible', timeout: 20000 });
 ok(true, 'MPIN saved → app unlocks');
 const popupTxt = await closePopup(p1);
-ok(popupTxt.includes('v25'), `update popup advertises the current version (got: ${popupTxt.slice(0, 40)}…)`);
+ok(popupTxt.includes(`v${APP_V}`), `update popup advertises the current version (got: ${popupTxt.slice(0, 40)}…)`);
 const navBtns = await p1.locator('[aria-label="Main navigation"] button').allTextContents();
 const ledgerIdx = navBtns.findIndex((s) => s.includes('Ledger'));
 const labourIdx = navBtns.findIndex((s) => s.includes('Labour'));
@@ -167,7 +170,14 @@ await p1.evaluate(() => {
 await p1.reload({ waitUntil: 'networkidle' });
 await p1.waitForTimeout(2500);
 await closePopup(p1);
-ok(await p1.locator('[data-header]').isVisible(), 'device stays unlocked after reload — no MPIN asked');
+const relock = p1.getByLabel('MPIN', { exact: true });
+await relock.waitFor({ state: 'visible', timeout: 15000 });
+ok(await relock.isVisible(), 'MPIN is ASKED on every app open (login — exactly what the owner wants)');
+ok((await p1.getByLabel('New MPIN').count()) === 0, 'NEVER the Create MPIN screen again after first setup');
+await relock.fill(MPIN);
+await p1.getByRole('button', { name: 'Open app' }).click();
+await p1.locator('[data-header]').waitFor({ state: 'visible', timeout: 20000 });
+ok(true, 'the right MPIN opens the app');
 const activeTxt = (
   (await p1.locator('[aria-label="Main navigation"] button[aria-current="page"]').textContent()) || ''
 ).trim();

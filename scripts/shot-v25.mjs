@@ -8,7 +8,7 @@ import { chromium } from 'playwright';
  *   D. double-tap-proof (one submit at a time)
  *   E. stuck-proof    (a black-holed server brings the button back with an error)
  */
-const BASE = 'http://localhost:3000';
+const BASE = process.env.BASE_URL || 'http://localhost:3100';
 const MPIN = '1234';
 let pass = 0;
 let fail = 0;
@@ -63,26 +63,19 @@ await page.getByRole('button', { name: 'Open app' }).dblclick();
 await page.locator('[data-header]').waitFor({ state: 'visible', timeout: 20000 });
 ok(true, 'double-tap on Open app opens the app once — no stuck state');
 
-/* ---------- E. black-holed server: the button always comes back ---------- */
+/* ---------- E. OFFLINE open: the MPIN is verified on the phone ---------- */
 await page.getByRole('button', { name: 'Settings' }).click();
 await page.getByRole('button', { name: 'Lock app' }).click();
-await page.waitForTimeout(2500);
-const unlockPin2 = page.getByLabel('MPIN', { exact: true });
-await unlockPin2.waitFor({ state: 'visible', timeout: 15000 });
-await unlockPin2.fill('1234');
-await page.route('**/api/auth/unlock', async (route) => {
-  await new Promise((r) => setTimeout(r, 16000)); // fetch gives up at 15s first
-  await route.abort().catch(() => {});
-});
+await page.waitForTimeout(2500); // lock reloads the page
+const unlockPin3 = page.getByLabel('MPIN', { exact: true });
+await unlockPin3.waitFor({ state: 'visible', timeout: 15000 });
+ok((await page.getByLabel('New MPIN').count()) === 0, 'lock screen is a LOGIN — never Create MPIN again');
+await page.context().setOffline(true);
+await unlockPin3.fill('1234');
 await page.getByRole('button', { name: 'Open app' }).click();
-await page.locator('[data-lock-error]').waitFor({ state: 'visible', timeout: 20000 });
-ok(true, 'server black-hole: an error appears instead of an eternal "Opening…"');
-const openBtn = page.getByRole('button', { name: 'Open app' });
-ok(await openBtn.isEnabled(), 'button comes back after the timeout — never stuck');
-await page.unroute('**/api/auth/unlock');
-await openBtn.click();
 await page.locator('[data-header]').waitFor({ state: 'visible', timeout: 20000 });
-ok(true, 'retry after recovery opens the app');
+ok(true, 'OFFLINE unlock: MPIN verified on the phone — app opens with zero internet');
+await page.context().setOffline(false);
 
 /* ---------- fresh open still lands on the Bill tab ---------- */
 const activeTxt = (

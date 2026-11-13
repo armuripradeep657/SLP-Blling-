@@ -12,7 +12,7 @@ import { db } from '@/lib/db';
 /* blob — it can never read the business data (end-to-end encryption). */
 /* ------------------------------------------------------------------ */
 
-export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // stay logged in 30 days
+export const SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000; // stay logged in a full year
 export const MAX_CIPHERTEXT_BYTES = 6 * 1024 * 1024; // ~6 MB encrypted blob
 
 /** Brute-force guard on /api/auth/setup and /api/auth/unlock, per IP */

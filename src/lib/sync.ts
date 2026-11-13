@@ -18,10 +18,14 @@ import { useStore } from './store';
 import type { BusinessSettings, SyncPayload } from './types';
 import { decryptJson, encryptJson, importDek } from './crypto';
 import {
+  apiMpinSetup,
+  apiMpinUnlock,
   apiPullVault,
   apiPushVault,
   getDeviceDek,
+  getRecoverMaterial,
   isUnlocked,
+  setAuth,
 } from './cloud';
 
 const PUSH_DEBOUNCE_MS = 1200;
@@ -36,6 +40,65 @@ let lastVersion = 0;
 let lastSyncAt = 0;
 let lastError: string | null = null;
 let lastPushedSig: string | null = null;
+let lastReauthAt = 0;
+
+/** Tell the UI the session needs the owner's MPIN again (server lost it / expired) */
+function maybeNotifyReauth(): void {
+  if (typeof window === 'undefined') return;
+  const now = Date.now();
+  if (now - lastReauthAt < 60_000) return; // at most once a minute
+  lastReauthAt = now;
+  try {
+    window.dispatchEvent(new Event('slp-reauth'));
+  } catch {
+    /* ignore */
+  }
+}
+
+let healing = false;
+let lastHealAt = 0;
+
+type HealResult = 'healed' | 'inflight' | 'failed';
+
+/**
+ * Silent self-heal of the encrypted sync. The device keeps its own copy of
+ * the credentials (slp-recover-v1), so when the server lost the account
+ * (deploy / restart / wiped vault) or the session expired, the SAME account
+ * is re-registered with the SAME key — no MPIN prompt, no banner, no data
+ * movement. The owner never notices; the MPIN is never created again.
+ */
+async function silentReauth(): Promise<HealResult> {
+  if (healing) return 'inflight'; // a heal is already running — give it a moment
+  const mat = getRecoverMaterial();
+  if (!mat?.salt || !mat?.verifier || !mat?.wrapped) return 'failed';
+  if (Date.now() - lastHealAt < 20_000) return 'inflight'; // just tried recently
+  healing = true;
+  lastHealAt = Date.now();
+  try {
+    // 1) session expired? the stored verifier logs straight back in
+    const res = await apiMpinUnlock(mat.verifier);
+    if (res.ok && res.token) {
+      setAuth(res.token);
+      return 'healed';
+    }
+    // 2) server lost the whole account? re-register it with the SAME key
+    if (res.error === 'noMpin') {
+      const setup = await apiMpinSetup(mat.wrapped, mat.salt, mat.verifier);
+      if (setup.ok && setup.token) {
+        setAuth(setup.token);
+        return 'healed';
+      }
+      return 'failed';
+    }
+    // wrongMpin → the vault belongs to a different account; the banner offers
+    // a manual re-connect (owner's call — never clobber silently)
+    return 'failed';
+  } catch {
+    return 'failed';
+  } finally {
+    healing = false;
+  }
+}
 
 /* ------------------------- payload ------------------------- */
 
@@ -168,6 +231,15 @@ async function pushNow(): Promise<void> {
       lastError = null;
     } else {
       lastError = res.error ?? 'pushFailed';
+      if (res.error === 'unauthorized') {
+        const h = await silentReauth();
+        if (h === 'healed' || h === 'inflight') {
+          lastError = null;
+          pushQueued = true; // retry with the fresh session right after this unwinds
+        } else {
+          maybeNotifyReauth();
+        }
+      }
     }
   } catch (err) {
     lastError = err instanceof Error ? err.message : 'pushFailed';
@@ -187,7 +259,13 @@ async function pullOnce(): Promise<void> {
   try {
     const res = await apiPullVault();
     if (res.kind === 'auth') {
+      const h = await silentReauth();
+      if (h === 'healed' || h === 'inflight') {
+        setTimeout(() => void pullOnce(), 1500); // retry with the fresh session
+        return;
+      }
       lastError = 'unauthorized';
+      maybeNotifyReauth(); // the device keeps working locally — the MPIN re-connects sync
       return;
     }
     if (res.kind === 'offline') {
