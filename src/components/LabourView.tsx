@@ -63,6 +63,7 @@ export default function LabourView() {
   const t = useT();
   const appLang = useAppLang();
   const labourWorks = useStore((s) => s.labourWorks);
+  const labourWorkers = useStore((s) => s.labourWorkers);
   const addLabourWork = useStore((s) => s.addLabourWork);
   const deleteLabourWork = useStore((s) => s.deleteLabourWork);
   const updateLabourWork = useStore((s) => s.updateLabourWork);
@@ -74,6 +75,8 @@ export default function LabourView() {
   const thisMonth = localMonthKey(new Date());
 
   const [month, setMonth] = useState(thisMonth);
+  /** Entries = the action list · Notebook = the day-wise khaata book view */
+  const [view, setView] = useState<'entries' | 'notebook'>('entries');
 
   /* ---------------- add form ---------------- */
   const [lwDate, setLwDate] = useState(today);
@@ -226,6 +229,18 @@ export default function LabourView() {
     [monthWorks]
   );
 
+  /** Notebook: the month's work grouped DAY by DAY — like the paper note book */
+  const notebookDays = useMemo(() => {
+    const byDay = new Map<string, LabourWork[]>();
+    for (const w of monthWorks) {
+      const key = localDateKey(new Date(w.dateISO));
+      const list = byDay.get(key);
+      if (list) list.push(w);
+      else byDay.set(key, [w]);
+    }
+    return [...byDay.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [monthWorks]);
+
   return (
     <div className="space-y-3">
       {/* month picker + paid / balance / entries this month */}
@@ -236,9 +251,33 @@ export default function LabourView() {
             type="month"
             value={month}
             onChange={(e) => setMonth(e.target.value || thisMonth)}
-            className="h-11 max-w-44"
+            className="h-11 max-w-40"
             aria-label="Labour month"
           />
+          <div className="ml-auto flex shrink-0 rounded-lg border p-0.5" role="group" aria-label="Labour view">
+            <button
+              type="button"
+              onClick={() => setView('entries')}
+              aria-pressed={view === 'entries'}
+              data-view-entries
+              className={`rounded-md px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+                view === 'entries' ? 'bg-blue-600 text-white' : 'text-muted-foreground hover:text-blue-700'
+              }`}
+            >
+              {t('labour.entriesView')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('notebook')}
+              aria-pressed={view === 'notebook'}
+              data-view-notebook
+              className={`rounded-md px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+                view === 'notebook' ? 'bg-blue-600 text-white' : 'text-muted-foreground hover:text-blue-700'
+              }`}
+            >
+              {t('labour.notebook')}
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-2">
           <div className="anim-pop rounded-xl border bg-card p-2.5">
@@ -293,9 +332,19 @@ export default function LabourView() {
               placeholder={t('labour.namePlaceholder')}
               className="h-10"
               aria-label="Worker name"
+              list="labour-workers"
+              autoComplete="off"
             />
           </div>
         </div>
+        <datalist id="labour-workers">
+          {labourWorkers.map((w) => (
+            <option key={w.id} value={w.name} />
+          ))}
+        </datalist>
+        {labourWorkers.length > 0 && (
+          <p className="text-[10px] leading-snug text-muted-foreground">{t('labour.noWorkersHint')}</p>
+        )}
         <div className="space-y-1">
           <Label className="text-[11px] text-muted-foreground">{t('labour.work')}</Label>
           <Input
@@ -386,7 +435,8 @@ export default function LabourView() {
         </Button>
       </div>
 
-      {/* register rows */}
+      {/* register rows — Entries view */}
+      {view === 'entries' && (
       <ul className="space-y-1.5">
         {monthWorks.map((e, i) => {
           const m = labourMoney(e);
@@ -455,6 +505,85 @@ export default function LabourView() {
           <li className="py-10 text-center text-sm text-muted-foreground">{t('labour.empty')}</li>
         )}
       </ul>
+      )}
+
+      {/* Notebook view — the day-wise khaata book: who did what, how much, money */}
+      {view === 'notebook' && (
+        <div data-labour-notebook className="space-y-2.5">
+          {notebookDays.map(([day, entries]) => {
+            const dayWage = Math.round(entries.reduce((a, w) => a + labourMoney(w).wage, 0) * 100) / 100;
+            const dayPaid = Math.round(entries.reduce((a, w) => a + labourMoney(w).paid, 0) * 100) / 100;
+            const dayBal = Math.round(entries.reduce((a, w) => a + labourMoney(w).balance, 0) * 100) / 100;
+            const dateLabel = new Date(`${day}T12:00:00`).toLocaleDateString('en-IN', {
+              weekday: 'short',
+              day: '2-digit',
+              month: 'short',
+            });
+            return (
+              <div key={day} data-notebook-day={day} className="anim-fade-up overflow-hidden rounded-xl border bg-card">
+                <div className="flex items-center justify-between gap-2 bg-amber-50 px-3 py-1.5">
+                  <p className="flex items-center gap-1.5 text-xs font-bold text-amber-800">
+                    <CalendarDays className="size-3.5 shrink-0" />
+                    {dateLabel}
+                  </p>
+                  <p className="text-right text-[11px] font-semibold tabular-nums text-amber-700">
+                    {t('labour.wagesTotal')} ₹{fmtShort(dayWage)}
+                    {dayPaid > 0 ? ` · ${t('labour.paidMonth')} ₹${fmtShort(dayPaid)}` : ''}
+                    {dayBal > 0 ? ` · ${t('labour.rowBalance')} ₹${fmtShort(dayBal)}` : ''}
+                  </p>
+                </div>
+                <ul className="divide-y">
+                  {entries.map((e) => {
+                    const m = labourMoney(e);
+                    const rate = e.qty && m.wage > 0 ? Math.round((m.wage / e.qty) * 100) / 100 : null;
+                    return (
+                      <li key={e.id} data-notebook-entry={e.name} className="flex items-start justify-between gap-2 px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold">{e.name}</p>
+                          <p className="text-[11px] leading-snug text-muted-foreground">
+                            {e.work}
+                            {e.qty
+                              ? ` — ${e.qty} ${t('labour.qtyUnit')}${rate ? ` × ₹${fmtShort(rate)}` : ''}`
+                              : ''}
+                          </p>
+                          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                            <ModeChip mode={m.paid ? e.mode : undefined} appLang={appLang} />
+                            {m.balance > 0 && (
+                              <span className="font-bold text-amber-600">
+                                {t('labour.rowBalance')} ₹{fmt(m.balance)}
+                              </span>
+                            )}
+                            {m.extra > 0 && (
+                              <span data-labour-extra className="font-bold text-emerald-600">
+                                {t('labour.extra')} ₹{fmt(m.extra)}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          <span className="text-sm font-bold tabular-nums text-blue-900">₹{fmt(m.wage)}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-muted-foreground hover:text-blue-700"
+                            onClick={() => openEdit(e)}
+                            aria-label={`Edit work ${e.name}`}
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
+          {notebookDays.length === 0 && (
+            <div className="py-10 text-center text-sm text-muted-foreground">{t('labour.empty')}</div>
+          )}
+        </div>
+      )}
       {monthWorks.length > 0 && (
         <div className="space-y-0.5 rounded-lg border bg-neutral-50 px-3 py-2 text-xs font-bold">
           <div className="flex items-center justify-between">

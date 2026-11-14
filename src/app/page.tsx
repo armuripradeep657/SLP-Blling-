@@ -9,6 +9,7 @@ import LabourView from '@/components/LabourView';
 import HistoryView from '@/components/HistoryView';
 import SettingsView from '@/components/SettingsView';
 import BillPanel from '@/components/BillPanel';
+import PaymentScreen from '@/components/PaymentScreen';
 import InvoiceModal, { type DocView } from '@/components/InvoiceModal';
 import PwaInstall, { ServiceWorkerRegister } from '@/components/PwaInstall';
 import ConnectivityToast from '@/components/ConnectivityToast';
@@ -18,6 +19,9 @@ import { useStore } from '@/lib/store';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
 import { computeTotals, fmt } from '@/lib/billing';
 import { startSyncEngine } from '@/lib/sync';
+import { apiNotifySend } from '@/lib/cloud';
+import { smsMessage, whatsappMessage } from '@/lib/messages';
+import { normalizePhone } from '@/lib/billing';
 import {
   clearUnlockSession,
   hasFreshUnlockSession,
@@ -188,6 +192,67 @@ export default function Home() {
     if (inv) openInvoice(inv);
   };
 
+  /* ----- UPI auto-payment: QR screen → money arrives → bill completes itself ----- */
+  const [pendingPayment, setPendingPayment] = useState<{ billRef: string; amount: number } | null>(null);
+
+  const startUpiPayment = (amount: number) => {
+    setPendingPayment({
+      billRef: `SLP-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+      amount,
+    });
+  };
+
+  /** After the money is detected: complete the bill, open the slip and send
+   *  the WhatsApp/SMS notification to the customer — no button pressed. */
+  const finishUpiPayment = (paid: number) => {
+    const pending = pendingPayment;
+    setPendingPayment(null);
+    if (!pending) return;
+    const inv = useStore.getState().completeInvoice({ paymentRef: pending.billRef, paidAmount: paid });
+    if (inv) {
+      openInvoice(inv);
+      void notifyCustomer(inv);
+    }
+  };
+
+  const cancelUpiPayment = () => setPendingPayment(null);
+
+  /** customer paid cash instead — complete the bill on the spot as Cash */
+  const upiCashInstead = () => {
+    setPendingPayment(null);
+    useStore.getState().setBillConfig({ paymentMode: 'Cash' });
+    const inv = useStore.getState().completeInvoice();
+    if (inv) {
+      openInvoice(inv);
+      void notifyCustomer(inv);
+    }
+  };
+
+  /** Auto-share the slip with the customer: server-side WhatsApp/SMS first
+   *  (Meta Cloud API / SMS gateway — zero taps), then the wa.me deep link
+   *  attempt on this phone; the slip's share buttons are the last resort. */
+  const notifyCustomer = async (inv: Invoice) => {
+    const phone = inv.customer.phone?.trim();
+    if (!phone || !/\d{10}/.test(phone.replace(/\D/g, ''))) return;
+    const settings = useStore.getState().settings;
+    try {
+      const res = await apiNotifySend({
+        billRef: inv.paymentRef,
+        phone: normalizePhone(phone),
+        whatsappText: whatsappMessage(inv, settings),
+        smsText: smsMessage(inv, settings),
+      });
+      if (res.ok && (res.whatsapp === 'skipped' || res.whatsapp.startsWith('failed'))) {
+        // no provider configured — open WhatsApp directly on this phone
+        const digits = phone.replace(/\D/g, '');
+        const to = digits.length === 10 ? `91${digits}` : digits;
+        window.open(`https://wa.me/${to}?text=${encodeURIComponent(whatsappMessage(inv, settings))}`, '_blank');
+      }
+    } catch {
+      /* the slip's share buttons are always there as the last resort */
+    }
+  };
+
   /* ----- gate: the MPIN lock stands in front of the whole app ----- */
   if (gate === 'locked') {
     return (
@@ -231,12 +296,12 @@ export default function Home() {
               <div className="lg:grid lg:grid-cols-[1fr_400px] lg:gap-6 lg:items-start">
                 <div>
                   <h2 className="mb-3 text-base font-bold text-neutral-800">{t('products.tapSize')}</h2>
-                  <BillTab onCompleted={onBillCompleted} />
+                  <BillTab onCompleted={onBillCompleted} onUpi={startUpiPayment} />
                 </div>
                 {/* Desktop live bill panel */}
                 <aside className="sticky top-20 hidden max-h-[calc(100dvh-6rem)] overflow-y-auto rounded-2xl border bg-card p-4 shadow-sm lg:block">
                   <h3 className="mb-3 text-base font-bold text-neutral-800">{t('page.currentBill')}</h3>
-                  <BillPanel onComplete={onBillCompleted} />
+                  <BillPanel onComplete={onBillCompleted} onUpi={startUpiPayment} />
                 </aside>
               </div>
             )}
@@ -280,6 +345,16 @@ export default function Home() {
       </main>
 
       <BottomNav />
+
+      {pendingPayment && (
+        <PaymentScreen
+          amount={pendingPayment.amount}
+          billRef={pendingPayment.billRef}
+          onPaid={finishUpiPayment}
+          onCashInstead={upiCashInstead}
+          onCancel={cancelUpiPayment}
+        />
+      )}
 
       <InvoiceModal invoice={modalInvoice} open={modalOpen} view={modalView} onOpenChange={setModalOpen} />
 

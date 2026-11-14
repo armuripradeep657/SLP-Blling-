@@ -111,6 +111,7 @@ export function buildPayload(state: ReturnType<typeof useStore.getState>): SyncP
     expenses: state.expenses,
     incomes: state.incomes,
     labourWorks: state.labourWorks,
+    labourWorkers: state.labourWorkers,
     appearance: state.appearance,
     deletedIds: state.deletedIds,
     dataUpdatedAt: state.dataUpdatedAt,
@@ -159,6 +160,7 @@ export function mergeSync(a: SyncPayload, b: SyncPayload): SyncPayload {
     expenses: union(first.expenses, second.expenses, tomb.expenses),
     incomes: union(first.incomes, second.incomes, tomb.incomes),
     labourWorks: union(first.labourWorks, second.labourWorks, tomb.labours),
+    labourWorkers: union(first.labourWorkers, second.labourWorkers, []),
     appearance: newer ? b.appearance : a.appearance,
     deletedIds: tomb,
     dataUpdatedAt: Math.max(a.dataUpdatedAt, b.dataUpdatedAt),
@@ -177,6 +179,7 @@ function sanitize(raw: unknown): SyncPayload | null {
     expenses: Array.isArray(p.expenses) ? p.expenses : [],
     incomes: Array.isArray(p.incomes) ? p.incomes : [],
     labourWorks: Array.isArray(p.labourWorks) ? p.labourWorks : [],
+    labourWorkers: Array.isArray(p.labourWorkers) ? p.labourWorkers : [],
     appearance: p.appearance as SyncPayload['appearance'],
     deletedIds: p.deletedIds ?? emptyDeleted(),
     dataUpdatedAt: typeof p.dataUpdatedAt === 'number' ? p.dataUpdatedAt : 0,
@@ -194,6 +197,7 @@ function applyMerged(remote: SyncPayload): void {
     expenses: merged.expenses,
     incomes: merged.incomes,
     labourWorks: merged.labourWorks,
+    labourWorkers: merged.labourWorkers,
     appearance: merged.appearance,
     deletedIds: merged.deletedIds,
     dataUpdatedAt: merged.dataUpdatedAt,
@@ -315,6 +319,7 @@ export function startSyncEngine(): void {
       state.expenses !== prev.expenses ||
       state.incomes !== prev.incomes ||
       state.labourWorks !== prev.labourWorks ||
+      state.labourWorkers !== prev.labourWorkers ||
       state.appearance !== prev.appearance ||
       state.deletedIds !== prev.deletedIds ||
       state.dataUpdatedAt !== prev.dataUpdatedAt;

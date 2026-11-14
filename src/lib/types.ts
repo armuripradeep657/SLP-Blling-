@@ -113,6 +113,8 @@ export interface Invoice {
   paymentMode: PaymentMode;
   language: BillLanguage; // saved per invoice — History re-share keeps it
   status: 'Paid' | 'Due' | 'Partial';
+  /** UPI payment-wait reference (the QR note) — links the bill to its payment event */
+  paymentRef?: string;
   /** Driver / delivery details — set when the bill was marked Delivered */
   delivery?: DeliveryInfo;
   /** Money received against this invoice (bill date + dues receipts) */
@@ -155,6 +157,14 @@ export interface LabourPayment {
   mode?: PaymentMode;
   /** Optional note — e.g. "balance paid", "extra given", "advance" */
   note?: string;
+}
+
+/** A saved labourer — picked from the notebook instead of retyping the name */
+export interface LabourWorker {
+  id: string;
+  name: string;
+  nameTe?: string;
+  phone?: string;
 }
 
 /** Labour work register — who worked, on which date, doing what, product quantity, money */
@@ -219,6 +229,7 @@ export interface SyncPayload {
   expenses: Expense[];
   incomes: IncomeEntry[];
   labourWorks: LabourWork[];
+  labourWorkers: LabourWorker[];
   appearance: Appearance;
   deletedIds: DeletedIds;
   /** LWW clock for settings/appearance/products — bumped on config changes */

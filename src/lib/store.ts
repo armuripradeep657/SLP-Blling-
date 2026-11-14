@@ -17,6 +17,7 @@ import type {
   Invoice,
   LabourPayment,
   LabourWork,
+  LabourWorker,
   MainTab,
   PaymentMode,
   Product,
@@ -84,6 +85,8 @@ interface BillingStore {
   incomes: IncomeEntry[];
   /** Labour work register — who worked, what quantity, money paid now + balance */
   labourWorks: LabourWork[];
+  /** Saved labourers — the notebook picks them instead of retyping names */
+  labourWorkers: LabourWorker[];
   /** App look — background theme, header colour, owner's watermark photo */
   appearance: Appearance;
   /** Tombstones — ids deleted anywhere, so cloud sync never brings them back */
@@ -109,7 +112,7 @@ interface BillingStore {
   setBillConfig: (c: Partial<BillConfig>) => void;
   resetBillConfig: () => void;
 
-  completeInvoice: () => Invoice | null;
+  completeInvoice: (opts?: { paymentRef?: string; paidAmount?: number }) => Invoice | null;
   clearLastInvoice: () => void;
   deleteInvoice: (id: string) => void;
   updateInvoiceStatus: (id: string, paidAmount: number) => void;
@@ -121,8 +124,11 @@ interface BillingStore {
   /** Add a manual income entry (name + Cash/UPI mode) — counts in the ledger day/month */
   addIncome: (e: Omit<IncomeEntry, 'id'>) => void;
   deleteIncome: (id: string) => void;
-  /** Add a labour work entry (worker, date, work done, product) */
+  /** Add a labour work entry (worker, date, work done, product) — unknown
+   *  worker names are saved to the labourers list automatically */
   addLabourWork: (e: Omit<LabourWork, 'id'>) => void;
+  addLabourWorker: (name: string, nameTe?: string, phone?: string) => void;
+  deleteLabourWorker: (id: string) => void;
   deleteLabourWork: (id: string) => void;
   /** Edit the details of an entered labour work (date, name, work, qty, wage, mode) */
   updateLabourWork: (
@@ -163,6 +169,7 @@ export const useStore = create<BillingStore>()(
       expenses: [],
       incomes: [],
       labourWorks: [],
+      labourWorkers: [],
       appearance: { bgTheme: 'blue', headerTheme: 'blue', watermark: '' },
       deletedIds: EMPTY_DELETED,
       dataUpdatedAt: 0,
@@ -280,10 +287,16 @@ export const useStore = create<BillingStore>()(
           billConfig: { ...DEFAULT_CONFIG, language: st.billConfig.language },
         })),
 
-      completeInvoice: () => {
+      completeInvoice: (opts) => {
         const { cart, customer, billConfig, settings, products } = get();
         if (cart.length === 0) return null;
         const totals = computeTotals(cart, billConfig);
+        // UPI auto-detection: the customer paid (maybe partially) while the
+        // QR was on screen — the detected amount becomes the paid amount
+        if (opts?.paidAmount !== undefined && totals.paid !== opts.paidAmount) {
+          totals.paid = Math.min(opts.paidAmount, totals.total);
+          totals.balance = Math.max(totals.total - totals.paid, 0);
+        }
         const no = `${settings.invoicePrefix}${settings.nextInvoiceNo}`;
         const dateISO = new Date().toISOString();
         // Delivery / driver details only when the bill is marked Delivered
@@ -318,6 +331,7 @@ export const useStore = create<BillingStore>()(
           paymentMode: billConfig.paymentMode,
           language: billConfig.language,
           status: getStatus(totals.total, totals.paid),
+          paymentRef: opts?.paymentRef,
           delivery,
           payments,
         };
@@ -421,10 +435,27 @@ export const useStore = create<BillingStore>()(
           deletedIds: tomb(st.deletedIds, 'incomes', id),
         })),
 
-      addLabourWork: (e) =>
+      addLabourWork: (e) => {
+        const name = e.name.trim();
         set((st) => ({
           labourWorks: [normalizeLabourWork({ ...e, id: `lw-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }), ...st.labourWorks],
-        })),
+          // the notebook remembers every labourer typed for the first time
+          labourWorkers:
+            name && !st.labourWorkers.some((w) => w.name.toLowerCase() === name.toLowerCase())
+              ? [{ id: `worker-${Date.now()}`, name }, ...st.labourWorkers]
+              : st.labourWorkers,
+        }));
+      },
+
+      addLabourWorker: (name, nameTe, phone) =>
+        set((st) =>
+          name.trim() && !st.labourWorkers.some((w) => w.name.toLowerCase() === name.trim().toLowerCase())
+            ? { labourWorkers: [{ id: `worker-${Date.now()}`, name: name.trim(), nameTe, phone }, ...st.labourWorkers] }
+            : {}
+        ),
+
+      deleteLabourWorker: (id) =>
+        set((st) => ({ labourWorkers: st.labourWorkers.filter((w) => w.id !== id) })),
 
       deleteLabourWork: (id) =>
         set((st) => ({
@@ -499,6 +530,7 @@ export const useStore = create<BillingStore>()(
         expenses: st.expenses,
         incomes: st.incomes,
         labourWorks: st.labourWorks,
+        labourWorkers: st.labourWorkers,
         appearance: st.appearance,
         deletedIds: st.deletedIds,
         dataUpdatedAt: st.dataUpdatedAt,

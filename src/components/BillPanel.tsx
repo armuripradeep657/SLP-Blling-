@@ -22,7 +22,15 @@ import type { BillLanguage, DeliveryInfo, PaymentMode } from '@/lib/types';
 
 const MODES: PaymentMode[] = ['Cash', 'UPI', 'Card', 'Due'];
 
-export default function BillPanel({ onComplete }: { onComplete: () => void }) {
+export default function BillPanel({
+  onComplete,
+  onUpi,
+}: {
+  onComplete: () => void;
+  /** UPI bills go to the scan-and-pay screen first — the bill completes
+   *  itself when the money arrives (auto-detected payment) */
+  onUpi?: (amount: number) => void;
+}) {
   const t = useT();
   const cart = useStore((s) => s.cart);
   const customer = useStore((s) => s.customer);
@@ -67,6 +75,12 @@ export default function BillPanel({ onComplete }: { onComplete: () => void }) {
   }
 
   const onCompleteClick = () => {
+    // UPI → open the scan-and-pay QR; the bill completes itself when the
+    // payment is detected (no extra button pressed)
+    if (cfg.paymentMode === 'UPI' && onUpi && cart.length > 0) {
+      onUpi(totals.total);
+      return;
+    }
     const inv = completeInvoice();
     if (inv) onComplete();
   };

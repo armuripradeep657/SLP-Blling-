@@ -38,3 +38,22 @@ model Session {
   createdAt DateTime    @default(now())
   account   SyncAccount @relation(fields: [slot], references: [slot], onDelete: Cascade)
 }
+
+/// UPI payment confirmations. The business vault is end-to-end encrypted, so
+/// the server cannot read the bills — it only records "billRef paid ₹X at T"
+/// events that the owner's phone matches against its pending UPI bills.
+model PaymentEvent {
+  id        String   @id @default(cuid())
+  /// matches the UPI QR payment note (e.g. SLP-1731…), set by the bill screen
+  billRef   String   @unique
+  amount    Float
+  /// UPI / Card / Cash — how the money actually arrived
+  method    String   @default("UPI")
+  /// who reported it: webhook (payment gateway) / owner (manual confirm)
+  provider  String   @default("webhook")
+  /// WhatsApp dispatch result for the customer notification
+  waStatus  String   @default("pending")
+  /// SMS dispatch result for the customer notification
+  smsStatus String   @default("pending")
+  createdAt DateTime @default(now())
+}

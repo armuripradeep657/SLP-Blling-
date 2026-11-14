@@ -9,7 +9,15 @@ import { computeTotals, fmt } from '@/lib/billing';
 import { useT } from '@/hooks/use-app-lang';
 import { ShoppingCart } from 'lucide-react';
 
-export default function BillTab({ onCompleted }: { onCompleted: () => void }) {
+export default function BillTab({
+  onCompleted,
+  onUpi,
+}: {
+  onCompleted: () => void;
+  /** UPI bills go to the scan-and-pay screen first — the bill completes
+   *  itself when the money arrives (auto-detected payment) */
+  onUpi?: (amount: number) => void;
+}) {
   const t = useT();
   const cart = useStore((s) => s.cart);
   const cfg = useStore((s) => s.billConfig);
@@ -62,6 +70,10 @@ export default function BillTab({ onCompleted }: { onCompleted: () => void }) {
               onComplete={() => {
                 setSheetOpen(false);
                 onCompleted();
+              }}
+              onUpi={(amount) => {
+                setSheetOpen(false);
+                onUpi?.(amount);
               }}
             />
           </div>

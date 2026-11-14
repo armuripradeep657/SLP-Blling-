@@ -10,6 +10,9 @@ PORT="${PORT:-3100}"
 TESTDB="/tmp/slp-e2e-$PORT.db"
 LOG=/tmp/slp-e2e-server.log
 
+# the E2E suite signs webhook calls with this shared secret (payment auto-detect)
+export PAYMENT_WEBHOOK_SECRET="slp-e2e-webhook-secret"
+
 # isolated database — tables created fresh, owner's data out of reach
 export DATABASE_URL="file:$TESTDB"
 rm -f "$TESTDB"

@@ -99,7 +99,7 @@ async function postJson(url: string, body?: unknown): Promise<{ status: number; 
   }
 }
 
-async function authedFetch(url: string, method: 'GET' | 'PUT', body?: unknown): Promise<{ status: number; data: Record<string, unknown> }> {
+async function authedFetch(url: string, method: 'GET' | 'PUT' | 'POST', body?: unknown): Promise<{ status: number; data: Record<string, unknown> }> {
   const auth = getAuth();
   if (!auth) return { status: 401, data: { error: 'unauthorized' } };
   try {
@@ -195,6 +195,59 @@ export async function apiMpinReset(
   const { status, data } = await postJson('/api/auth/reset', { dekWrapped, dekSalt, kekProof });
   if (status === 200) return { ok: true, token: data.token as string };
   return { ok: false, error: (data.error as string) ?? 'network' };
+}
+
+/** Poll the payment events for pending UPI bill refs — a match means the
+ *  money arrived and the bill completes itself (no button pressed). */
+export async function apiPaymentsStatus(refs: string[]): Promise<
+  Array<{ billRef: string; amount: number; method: string; waStatus: string; smsStatus: string }>
+> {
+  try {
+    const res = await authedFetch(`/api/payments/status?refs=${encodeURIComponent(refs.join(','))}`, 'GET');
+    if (res.status !== 200) return [];
+    const evs = (res.data.events ?? []) as Array<Record<string, unknown>>;
+    return evs.map((e) => ({
+      billRef: String(e.billRef ?? ''),
+      amount: Number(e.amount ?? 0),
+      method: String(e.method ?? 'UPI'),
+      waStatus: String(e.waStatus ?? 'pending'),
+      smsStatus: String(e.smsStatus ?? 'pending'),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export interface NotifyResult {
+  ok: boolean;
+  whatsapp: string;
+  sms: string;
+  detail?: string;
+}
+
+/** Auto-send the bill slip to the customer (WhatsApp + SMS) after a payment
+ *  is detected — zero taps. Falls back to the on-slip share links when no
+ *  provider is configured (result: 'skipped'). */
+export async function apiNotifySend(payload: {
+  billRef?: string;
+  phone: string;
+  whatsappText?: string;
+  smsText?: string;
+}): Promise<NotifyResult> {
+  try {
+    const { status, data } = await authedFetch('/api/notify/send', 'POST', payload);
+    if (status === 200) {
+      return {
+        ok: true,
+        whatsapp: String(data.whatsapp ?? 'skipped'),
+        sms: String(data.sms ?? 'skipped'),
+        detail: String(data.detail ?? ''),
+      };
+    }
+    return { ok: false, whatsapp: 'failed', sms: 'failed' };
+  } catch {
+    return { ok: false, whatsapp: 'failed', sms: 'failed' };
+  }
 }
 
 export type VaultPull =
