@@ -218,6 +218,19 @@ export async function apiPaymentsStatus(refs: string[]): Promise<
   }
 }
 
+/** Report a payment from THIS device — the owner tapped "Money received" on
+ *  the QR screen (the money landed in the personal UPI ID directly, so no
+ *  gateway webhook fired). The event is recorded server-side and the bill
+ *  completes itself here immediately. */
+export async function apiPaymentsWebhook(payload: { billRef: string; amount: number }): Promise<boolean> {
+  try {
+    const res = await authedFetch('/api/payments/webhook', 'POST', payload);
+    return res.status === 200;
+  } catch {
+    return false;
+  }
+}
+
 export interface NotifyResult {
   ok: boolean;
   whatsapp: string;

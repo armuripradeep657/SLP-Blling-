@@ -6,7 +6,8 @@ import { Banknote, Loader2, QrCode, X } from 'lucide-react';
 import { useQrDataUrl } from '@/hooks/use-qr';
 import { useStore } from '@/lib/store';
 import { useT } from '@/hooks/use-app-lang';
-import { apiPaymentsStatus } from '@/lib/cloud';
+import { apiPaymentsStatus, apiPaymentsWebhook } from '@/lib/cloud';
+import { markUnlockActive } from '@/lib/idle-lock';
 import { fmt } from '@/lib/billing';
 
 /** How often the bill screen asks the server whether the money arrived */
@@ -22,6 +23,9 @@ const POLL_MS = 3000;
  *   3. this screen polls every 3 s, sees the money, and calls onPaid() —
  *      the bill completes ITSELF: slip opens, stock moves, WhatsApp/SMS go
  *      to the customer. Nothing is pressed.
+ *   4. money paid straight into the personal UPI ID (no gateway in the
+ *      middle → no webhook ever fires)? One tap on "Money received" records
+ *      the payment and completes the bill exactly the same way.
  *
  * Fallbacks stay one tap away: cash instead, or cancel back to the bill.
  */
@@ -62,23 +66,56 @@ export default function PaymentScreen({
     let alive = true;
     const tick = async () => {
       if (paidRef.current) return;
-      const events = await apiPaymentsStatus([billRef]);
-      const hit = events.find((e) => e.billRef === billRef);
-      if (hit && alive && !paidRef.current) {
-        paidRef.current = true;
-        setWaiting(false);
-        onPaidRef.current(hit.amount);
+      // waiting for the money IS using the app — the idle lock must never
+      // lock the owner out mid-collection (locking unmounts this screen and
+      // the payment would never complete the bill)
+      markUnlockActive();
+      try {
+        const events = await apiPaymentsStatus([billRef]);
+        const hit = events.find((e) => e.billRef === billRef);
+        if (hit && alive && !paidRef.current) {
+          paidRef.current = true;
+          setWaiting(false);
+          onPaidRef.current(hit.amount);
+        }
+      } catch {
+        /* transient network error — the next tick retries */
       }
     };
     const iv = setInterval(tick, POLL_MS);
     const clock = setInterval(() => setElapsed((s) => s + 1), 1000);
+    // mobile browsers throttle background timers — catch up the instant the
+    // owner looks back at the screen
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     void tick();
     return () => {
       alive = false;
       clearInterval(iv);
       clearInterval(clock);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [waiting, billRef]);
+
+  /** The owner saw the money land in the personal UPI ID — no gateway in the
+   *  middle, so no webhook ever fires. One tap records the payment and
+   *  completes the bill the same way auto-detection does: slip, stock,
+   *  income, WhatsApp/SMS. */
+  const confirmReceived = async () => {
+    if (paidRef.current) return;
+    paidRef.current = true;
+    setWaiting(false);
+    // record the event FIRST — the customer notification fired by onPaid
+    // attaches its WhatsApp/SMS status to it; capped so an offline device
+    // still completes the bill within ~1.5 s
+    await Promise.race([
+      apiPaymentsWebhook({ billRef, amount }),
+      new Promise((r) => setTimeout(r, 1500)),
+    ]);
+    onPaidRef.current(amount);
+  };
 
   return (
     <div
@@ -129,6 +166,18 @@ export default function PaymentScreen({
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-center text-[11px] font-semibold text-amber-800">
           {t('pay.noUpi')}
         </p>
+      )}
+
+      {waiting && (
+        <Button
+          data-payment-received
+          className="h-12 w-full max-w-xs bg-green-600 text-base font-bold text-white shadow hover:bg-green-700"
+          onClick={confirmReceived}
+          aria-label="Money received"
+        >
+          <Banknote className="size-5" />
+          {t('pay.received')}
+        </Button>
       )}
 
       <div className="flex gap-2">
