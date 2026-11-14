@@ -1,15 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { KeyRound, Lock, RefreshCw, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, KeyRound, Lock, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useT } from '@/hooks/use-app-lang';
 import {
   apiAuthState,
   apiMpinRepair,
+  apiMpinReset,
   apiMpinSetup,
   apiMpinUnlock,
   apiPullVault,
@@ -31,7 +32,59 @@ import {
 } from '@/lib/crypto';
 import { mergeVaultBlob, pushVaultNow } from '@/lib/sync';
 
-type Step = 'checking' | 'setup' | 'unlock' | 'reclaim';
+type Step = 'checking' | 'setup' | 'unlock' | 'reclaim' | 'forgot';
+
+/**
+ * MPIN entry with the digits HIDDEN (the owner asked for that) — the field is
+ * still a plain text input (no password-manager hijacking, number pad opens),
+ * the discs come from CSS text-security. The eye shows what was typed.
+ */
+function PinInput({
+  id,
+  value,
+  onChange,
+  show,
+  onToggle,
+  autoFocus,
+  ariaLabel,
+  toggleAriaLabel,
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+  show: boolean;
+  onToggle: () => void;
+  autoFocus?: boolean;
+  ariaLabel: string;
+  toggleAriaLabel: string;
+}) {
+  return (
+    <div className="relative">
+      <Input
+        id={id}
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        autoFocus={autoFocus}
+        maxLength={8}
+        value={value}
+        onChange={(e) => onChange(e.target.value.replace(/\D/g, ''))}
+        className="h-11 pl-11 pr-11 text-center text-lg font-bold tracking-[0.4em]"
+        style={show ? undefined : ({ WebkitTextSecurity: 'disc' } as CSSProperties)}
+        aria-label={ariaLabel}
+      />
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={toggleAriaLabel}
+        aria-pressed={show}
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground hover:text-blue-700"
+      >
+        {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+      </button>
+    </div>
+  );
+}
 
 /**
  * Draft of the MPIN being typed, kept in sessionStorage so a page reload
@@ -54,8 +107,10 @@ const errKey = (code: string | undefined): 'lock.errWrongPin' | 'lock.errTooMany
  * Full-screen gate in front of the app (variant="gate") or a small card used
  * inside dialogs (variant="sheet").
  *
- * The MPIN is created ONCE. After that the app asks it EVERY time it opens —
- * the owner asked for exactly this. It is never asked to CREATE it again:
+ * The MPIN is created ONCE and only ever ASKED after that — never created
+ * again. It is asked when the app OPENS: a refresh of a page keeps the app
+ * open (tab-scoped unlock session + 5-minute idle lock live in page.tsx),
+ * closing the app asks the MPIN again.
  *
  * mode="auto"    — gate on app open. The device keeps its own copy of the
  *                  credentials (salt + verifier + wrapped key), so the MPIN is
@@ -65,6 +120,10 @@ const errKey = (code: string | undefined): 'lock.errWrongPin' | 'lock.errTooMany
  * mode="reclaim" — the device ALREADY holds its data key; the server lost the
  *                  account (restart / reset), so one MPIN entry re-connects the
  *                  encrypted sync WITHOUT creating anything new.
+ *
+ * "Forgot MPIN?" — the owner forgot the MPIN. The device re-wraps its own
+ *                  data key under a NEW MPIN and replaces the server's
+ *                  credential chain (/api/auth/reset). All data survives.
  */
 export default function LockScreen({
   onUnlocked,
@@ -89,6 +148,10 @@ export default function LockScreen({
   const [mpin2, setMpin2] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** digits are hidden while typing (owner's request); the eye reveals them */
+  const [showPin, setShowPin] = useState(false);
+  /** forgot-MPIN flow: does this device hold the data key? (decides the warning) */
+  const [forgotHasDek, setForgotHasDek] = useState(true);
 
   /** Instant double-submit guard — state alone is too slow for fast double-taps */
   const busyRef = useRef(false);
@@ -288,6 +351,62 @@ export default function LockScreen({
         clearDraft();
         setBusyBoth(false);
         void pushVaultNow(); // re-upload this device's data to the fresh vault
+        onUnlocked();
+      } catch {
+        setBusyBoth(false);
+        setError(t('lock.errNetwork'));
+      }
+    });
+  };
+
+  /**
+   * "Forgot MPIN" — the owner forgot the MPIN. The device re-wraps the data
+   * key it holds under a NEW MPIN and replaces the server credential chain;
+   * all data (here and in the cloud) survives. When this device has no key
+   * (fresh browser), a fresh key is minted after a clear warning — the old
+   * encrypted backup cannot be opened without the old MPIN.
+   */
+  const startForgot = () => {
+    setError(null);
+    setMpin('');
+    setMpin2('');
+    setForgotHasDek(Boolean(getDeviceDek()));
+    setStep('forgot');
+  };
+
+  const forgotReset = async () => {
+    if (busyRef.current) return;
+    setError(null);
+    if (!/^\d{4,8}$/.test(mpin)) {
+      setError(t('lock.errPin'));
+      return;
+    }
+    if (mpin !== mpin2) {
+      setError(t('lock.errPinMatch'));
+      return;
+    }
+    await withWatchdog(async () => {
+      setBusyBoth(true);
+      try {
+        // the device key keeps the SAME data decryptable on every device
+        const dekB64 = getDeviceDek();
+        const existing = dekB64 ? await importDek(dekB64).catch(() => null) : null;
+        const dek = existing ?? (await generateDek());
+        const newSalt = randomB64(16);
+        const { kek, proof } = await deriveKek(mpin, newSalt);
+        const { wrapped, iv } = await wrapDek(dek, kek);
+        const res = await apiMpinReset(`${iv}.${wrapped}`, newSalt, proof);
+        if (!res.ok || !res.token) {
+          setBusyBoth(false);
+          setError(t(errKey(res.error)));
+          return;
+        }
+        setAuth(res.token);
+        setDeviceDek(await exportDek(dek));
+        setRecoverMaterial({ salt: newSalt, verifier: proof, wrapped: `${iv}.${wrapped}` });
+        clearDraft();
+        setBusyBoth(false);
+        void pushVaultNow(); // keep the vault in step (fresh-key path replaces it)
         onUnlocked();
       } catch {
         setBusyBoth(false);
@@ -513,33 +632,29 @@ export default function LockScreen({
             <Label htmlFor="lock-mpin" className="text-xs text-muted-foreground">
               {t('lock.pinLabel')}
             </Label>
-            <Input
+            <PinInput
               id="lock-mpin"
-              type="text"
-              inputMode="numeric"
-              autoComplete="off"
-              autoFocus
-              maxLength={8}
               value={mpin}
-              onChange={(e) => setMpin(e.target.value.replace(/\D/g, ''))}
-              className="h-11 text-center text-lg font-bold tracking-[0.4em]"
-              aria-label="New MPIN"
+              onChange={setMpin}
+              show={showPin}
+              onToggle={() => setShowPin((v) => !v)}
+              autoFocus
+              ariaLabel="New MPIN"
+              toggleAriaLabel={showPin ? t('lock.hidePin') : t('lock.showPin')}
             />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="lock-mpin2" className="text-xs text-muted-foreground">
               {t('lock.pinConfirm')}
             </Label>
-            <Input
+            <PinInput
               id="lock-mpin2"
-              type="text"
-              inputMode="numeric"
-              autoComplete="off"
-              maxLength={8}
               value={mpin2}
-              onChange={(e) => setMpin2(e.target.value.replace(/\D/g, ''))}
-              className="h-11 text-center text-lg font-bold tracking-[0.4em]"
-              aria-label="Confirm MPIN"
+              onChange={setMpin2}
+              show={showPin}
+              onToggle={() => setShowPin((v) => !v)}
+              ariaLabel="Confirm MPIN"
+              toggleAriaLabel={showPin ? t('lock.hidePin') : t('lock.showPin')}
             />
           </div>
           <Button
@@ -569,17 +684,15 @@ export default function LockScreen({
             <Label htmlFor="lock-unlockmpin" className="text-xs text-muted-foreground">
               {t('lock.pinLabel')}
             </Label>
-            <Input
+            <PinInput
               id="lock-unlockmpin"
-              type="text"
-              inputMode="numeric"
-              autoComplete="off"
-              autoFocus
-              maxLength={8}
               value={mpin}
-              onChange={(e) => setMpin(e.target.value.replace(/\D/g, ''))}
-              className="h-11 text-center text-lg font-bold tracking-[0.4em]"
-              aria-label="MPIN"
+              onChange={setMpin}
+              show={showPin}
+              onToggle={() => setShowPin((v) => !v)}
+              autoFocus
+              ariaLabel="MPIN"
+              toggleAriaLabel={showPin ? t('lock.hidePin') : t('lock.showPin')}
             />
           </div>
           <Button
@@ -594,6 +707,88 @@ export default function LockScreen({
               : step === 'reclaim'
                 ? t('reauth.btn')
                 : t('lock.unlockBtn')}
+          </Button>
+          {step === 'unlock' && (
+            <button
+              type="button"
+              onClick={startForgot}
+              disabled={busy}
+              aria-label="Forgot MPIN"
+              className="mx-auto block text-xs font-semibold text-blue-700 underline-offset-2 hover:underline disabled:opacity-40"
+            >
+              {t('lock.forgot')}
+            </button>
+          )}
+        </>
+      )}
+
+      {step === 'forgot' && (
+        <>
+          <div className="text-center">
+            <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-900">
+              <KeyRound className="size-4" />
+              {t('lock.forgotTitle')}
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              {forgotHasDek ? t('lock.forgotDesc') : t('lock.forgotNoKey')}
+            </p>
+          </div>
+          {!forgotHasDek && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-relaxed text-amber-800">
+              {t('lock.forgotNoKeyWarn')}
+            </p>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="lock-forgotmpin" className="text-xs text-muted-foreground">
+              {t('lock.pinLabel')}
+            </Label>
+            <PinInput
+              id="lock-forgotmpin"
+              value={mpin}
+              onChange={setMpin}
+              show={showPin}
+              onToggle={() => setShowPin((v) => !v)}
+              autoFocus
+              ariaLabel="New MPIN"
+              toggleAriaLabel={showPin ? t('lock.hidePin') : t('lock.showPin')}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="lock-forgotmpin2" className="text-xs text-muted-foreground">
+              {t('lock.pinConfirm')}
+            </Label>
+            <PinInput
+              id="lock-forgotmpin2"
+              value={mpin2}
+              onChange={setMpin2}
+              show={showPin}
+              onToggle={() => setShowPin((v) => !v)}
+              ariaLabel="Confirm MPIN"
+              toggleAriaLabel={showPin ? t('lock.hidePin') : t('lock.showPin')}
+            />
+          </div>
+          <Button
+            onClick={forgotReset}
+            disabled={busy}
+            className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+            aria-label="Set new MPIN"
+          >
+            <KeyRound className="size-4" />
+            {busy ? t('lock.saving') : t('lock.forgotBtn')}
+          </Button>
+          <Button
+            onClick={() => {
+              setMpin('');
+              setMpin2('');
+              void probeRef.current?.();
+            }}
+            disabled={busy}
+            variant="ghost"
+            className="h-9 w-full text-xs"
+            aria-label="Back to MPIN entry"
+          >
+            <ArrowLeft className="size-3.5" />
+            {t('lock.back')}
           </Button>
         </>
       )}

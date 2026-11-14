@@ -111,14 +111,20 @@ function ProductCard({ product, onAddSize }: { product: Product; onAddSize: (siz
         )}
       </div>
       <div className="p-2.5 flex flex-col gap-2 flex-1">
-        <div>
+        {/* min-height = 2-line name + Telugu name + price: every card in a
+            row puts its size chips at the SAME height (the "space difference"
+            the owner saw — cards with fewer sizes floated their chips) */}
+        <div className="min-h-[67px]">
           <p className="text-[13px] font-semibold leading-tight line-clamp-2">{product.name}</p>
           {product.nameTe ? <p className="text-[11px] text-blue-800 leading-tight line-clamp-1">{product.nameTe}</p> : null}
           <p className="text-xs text-muted-foreground mt-0.5">
             {t('cat.from')} <span className="font-bold text-blue-700">₹{product.price}</span>
           </p>
         </div>
-        <div className="flex flex-wrap gap-1 mt-auto">
+        {/* chips flow right under the price — every card in a row lines up
+            (mt-auto used to sink them to the card bottom, leaving a random
+            blank gap on cards with fewer sizes) */}
+        <div className="flex flex-wrap gap-1">
           {product.sizes.map((s) => {
             const price = priceForSize(product.price, product.sizePrices, s);
             return (

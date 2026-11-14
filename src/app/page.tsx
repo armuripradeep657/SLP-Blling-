@@ -18,6 +18,12 @@ import { useStore } from '@/lib/store';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
 import { computeTotals, fmt } from '@/lib/billing';
 import { startSyncEngine } from '@/lib/sync';
+import {
+  clearUnlockSession,
+  hasFreshUnlockSession,
+  idleTooLong,
+  markUnlockActive,
+} from '@/lib/idle-lock';
 import type { BgThemeId, Invoice } from '@/lib/types';
 
 const subscribeNoop = () => () => undefined;
@@ -81,27 +87,81 @@ export default function Home() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalView, setModalView] = useState<DocView>('slip');
   const [showSplash, setShowSplash] = useState(true); // opening zoom — plays once per app open
-  /** app gate: the MPIN stands in front of the app on EVERY open (owner's request) */
+  /**
+   * App gate. The MPIN is created ONCE; it is asked when the app OPENS — not
+   * on every refresh (owner's request: refreshing a page must not throw the
+   * owner back to the lock). A tab-scoped unlock session keeps the app open
+   * across reloads and locks it again after 5 minutes WITHOUT any touch
+   * (idle lock). Closing the app ends the session → the next open asks the
+   * MPIN again.
+   */
   const [gate, setGate] = useState<'locked' | 'ready'>('locked');
 
   // Rehydrate persisted store AFTER mount (skipHydration) — avoids SSR mismatch.
-  // Fresh open ALWAYS lands on the Bill tab (so product selection is one tap away),
-  // even though the rest of the state (bills, settings, cart) is restored.
-  // The gate starts 'locked': the owner asked for the MPIN to be asked EVERY
-  // time the app opens. It is created once — afterwards it is only ever ASKED
-  // (login), never created again: the device verifies it on the phone
-  // (offline-proof) and the sync account silently heals itself if the server
-  // ever loses it.
+  // A refresh (fresh unlock session in this tab) simply re-opens the app on the
+  // tab the user was on; a real app open (no session) lands on the Bill tab so
+  // product selection is one tap away, and shows the MPIN gate.
   useEffect(() => {
+    const fresh = hasFreshUnlockSession();
+    // flip the gate in a microtask (runs before the next paint): a refresh
+    // opens the app right away, a locked open drops the splash zoom and
+    // shows only the lock screen
+    Promise.resolve().then(() => {
+      if (fresh) setGate('ready');
+      else setShowSplash(false);
+    });
     Promise.resolve(useStore.persist.rehydrate()).then(() => {
-      useStore.setState({ activeTab: 'bill' });
+      if (fresh) startSyncEngine();
+      else useStore.setState({ activeTab: 'bill' });
     });
   }, []);
 
+  /* ----- idle lock: 5 minutes without a touch → the MPIN gate returns ----- */
+  useEffect(() => {
+    if (gate !== 'ready') return;
+    markUnlockActive();
+    const onActivity = () => markUnlockActive();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && idleTooLong()) {
+        clearUnlockSession();
+        setGate('locked');
+      }
+    };
+    const events: Array<keyof WindowEventMap> = ['pointerdown', 'touchstart', 'keydown', 'scroll'];
+    events.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
+    document.addEventListener('visibilitychange', onVisible);
+    const iv = setInterval(() => {
+      if (idleTooLong()) {
+        clearUnlockSession();
+        setGate('locked');
+      }
+    }, 15000);
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, onActivity));
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(iv);
+    };
+  }, [gate]);
+
   const handleUnlocked = () => {
+    markUnlockActive();
     setGate('ready');
     startSyncEngine();
   };
+
+  // "Lock app" (Settings) flips the gate the instant it is pressed — the
+  // activity listeners unmount, so nothing can re-mark the unlock session
+  // in the window before the page reloads (a hot reload used to re-mark it
+  // and the app came back unlocked).
+  useEffect(() => {
+    const onLock = () => {
+      clearUnlockSession();
+      setShowSplash(false);
+      setGate('locked');
+    };
+    window.addEventListener('slp-lock', onLock);
+    return () => window.removeEventListener('slp-lock', onLock);
+  }, []);
 
   // true on client after hydration, false on the server (avoids SSR mismatch)
   const mounted = useSyncExternalStore(

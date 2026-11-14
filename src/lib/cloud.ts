@@ -185,6 +185,18 @@ export async function apiMpinRepair(
   return { ok: false, error: (data.error as string) ?? 'network' };
 }
 
+/** "Forgot MPIN": the device re-wraps its own data key under a NEW MPIN and
+ *  replaces the account's credential chain. The encrypted vault is untouched. */
+export async function apiMpinReset(
+  dekWrapped: string,
+  dekSalt: string,
+  kekProof: string
+): Promise<MpinResult> {
+  const { status, data } = await postJson('/api/auth/reset', { dekWrapped, dekSalt, kekProof });
+  if (status === 200) return { ok: true, token: data.token as string };
+  return { ok: false, error: (data.error as string) ?? 'network' };
+}
+
 export type VaultPull =
   | { kind: 'empty'; dekWrapped?: string; dekSalt?: string }
   | {

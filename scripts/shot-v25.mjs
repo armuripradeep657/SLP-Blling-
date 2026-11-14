@@ -52,13 +52,25 @@ try {
   await popup.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
 } catch {}
 
-/* ---------- D. double-tap "Open app" is safe ---------- */
+/* ---------- D. double-tap "Open app" is safe + digits are hidden ---------- */
 await page.getByRole('button', { name: 'Settings' }).click();
 await page.getByRole('button', { name: 'Lock app' }).click();
 await page.waitForTimeout(2500); // lock reloads the page
 const unlockPin = page.getByLabel('MPIN', { exact: true });
-await unlockPin.waitFor({ state: 'visible', timeout: 15000 });
+try {
+  await unlockPin.waitFor({ state: 'visible', timeout: 15000 });
+} catch {
+  await page.screenshot({ path: '/home/z/my-project/download/v25-debug-lock.png' });
+  console.log('  DEBUG body:', ((await page.locator('body').textContent()) || '').replace(/\s+/g, ' ').slice(0, 500));
+  throw new Error('gate did not return after Lock app — see v25-debug-lock.png');
+}
+const secDefault = await unlockPin.evaluate((el) => getComputedStyle(el).webkitTextSecurity);
+ok(secDefault === 'disc', 'MPIN digits are HIDDEN by default (text-security: disc)');
 await unlockPin.pressSequentially('1234', { delay: 80 });
+await page.getByRole('button', { name: 'Show MPIN' }).click();
+const secRevealed = await unlockPin.evaluate((el) => getComputedStyle(el).webkitTextSecurity);
+ok(secRevealed !== 'disc' && (await unlockPin.inputValue()) === '1234', 'the eye toggle SHOWS the typed digits');
+await page.getByRole('button', { name: 'Hide MPIN' }).click();
 await page.getByRole('button', { name: 'Open app' }).dblclick();
 await page.locator('[data-header]').waitFor({ state: 'visible', timeout: 20000 });
 ok(true, 'double-tap on Open app opens the app once — no stuck state');
@@ -82,6 +94,36 @@ const activeTxt = (
   (await page.locator('[aria-label="Main navigation"] button[aria-current="page"]').textContent()) || ''
 ).trim();
 ok(activeTxt === 'Bill', `fresh open lands on the Bill tab (active: ${activeTxt})`);
+
+/* ---------- F. v28: a REFRESH does not lock — same tab, straight in ---------- */
+await page.getByRole('button', { name: 'Labour', exact: true }).click();
+await page.waitForTimeout(600);
+await page.reload({ waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(2400);
+await page.locator('[data-header]').waitFor({ state: 'visible', timeout: 15000 });
+ok((await page.getByLabel('MPIN', { exact: true }).count()) === 0, 'REFRESH does not ask the MPIN — the app re-opens unlocked');
+const refreshTab = (
+  (await page.locator('[aria-label="Main navigation"] button[aria-current="page"]').textContent()) || ''
+).trim();
+ok(refreshTab === 'Labour', `refresh stays on the tab the user was on (${refreshTab})`);
+
+/* ---------- G. v28: idle lock — 5 min without use (3 s in test) locks ---------- */
+await page.evaluate(() => localStorage.setItem('slp-idle-ms', '5000'));
+await page.waitForTimeout(5500);
+await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+const idlePin = page.getByLabel('MPIN', { exact: true });
+await idlePin.waitFor({ state: 'visible', timeout: 10000 });
+ok((await page.getByLabel('New MPIN').count()) === 0, 'idle lock shows a LOGIN — never Create MPIN again');
+await idlePin.fill(MPIN);
+await page.getByRole('button', { name: 'Open app' }).click();
+await page.locator('[data-header]').waitFor({ state: 'visible', timeout: 20000 });
+ok(true, 'the MPIN re-opens the app after the idle lock');
+// a refresh right after the unlock stays unlocked (fresh session again)
+await page.reload({ waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(2200);
+await page.locator('[data-header]').waitFor({ state: 'visible', timeout: 15000 });
+ok((await page.getByLabel('MPIN', { exact: true }).count()) === 0, 'after the idle unlock a refresh stays unlocked too');
+await page.evaluate(() => localStorage.removeItem('slp-idle-ms'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 await browser.close();

@@ -10,8 +10,9 @@ const APP_V = (fs.readFileSync('/home/z/my-project/src/lib/version.ts', 'utf8').
  *     NO OTP anywhere (no header/nav visible)
  *  2. MPIN setup: mismatch rejected → 1234 saved → app unlocks; update popup advertises v24
  *  3. LABOUR: product QUANTITY + Paid now ₹ + Balance ₹; rows + month cards add up; delete works
- *  4. MPIN asked on every app open (login, never create) AND a fresh open ALWAYS
- *     lands on the BILL tab even if old storage says another tab
+ *  4. MPIN asked on a real app open (login, never create) — a page REFRESH does
+ *     not lock and stays on the same tab; a cold open ALWAYS lands on the BILL
+ *     tab even if old storage says another tab
  *  5. Backup carries labourWorks with qty/paid/balance
  *  6. TWO-DEVICE SYNC: a second browser enters the SAME MPIN → sees device 1's data;
  *     device 2 adds an entry → appears on device 1 automatically
@@ -167,12 +168,23 @@ await p1.evaluate(() => {
   s.state.activeTab = 'history';
   localStorage.setItem('slp-cement-billing-v1', JSON.stringify(s));
 });
+// v28: a REFRESH re-opens exactly the page the user was on — unlocked, same tab
 await p1.reload({ waitUntil: 'networkidle' });
 await p1.waitForTimeout(2500);
 await closePopup(p1);
+await p1.locator('[data-header]').waitFor({ state: 'visible', timeout: 15000 });
+ok((await p1.getByLabel('MPIN', { exact: true }).count()) === 0, 'a REFRESH does not ask the MPIN — the app opens straight in');
+const refreshTxt = (
+  (await p1.locator('[aria-label="Main navigation"] button[aria-current="page"]').textContent()) || ''
+).trim();
+ok(refreshTxt === 'History', `refresh stays on the page the user was on (active: ${refreshTxt})`);
+// a REAL app open (unlock session ended) asks the MPIN — a login, never Create
+await p1.evaluate(() => sessionStorage.clear());
+await p1.reload({ waitUntil: 'networkidle' });
+await p1.waitForTimeout(2500);
 const relock = p1.getByLabel('MPIN', { exact: true });
 await relock.waitFor({ state: 'visible', timeout: 15000 });
-ok(await relock.isVisible(), 'MPIN is ASKED on every app open (login — exactly what the owner wants)');
+ok(await relock.isVisible(), 'MPIN is ASKED on a real app open (login — exactly what the owner wants)');
 ok((await p1.getByLabel('New MPIN').count()) === 0, 'NEVER the Create MPIN screen again after first setup');
 await relock.fill(MPIN);
 await p1.getByRole('button', { name: 'Open app' }).click();

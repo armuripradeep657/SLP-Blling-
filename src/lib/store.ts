@@ -493,7 +493,9 @@ export const useStore = create<BillingStore>()(
         invoices: st.invoices,
         billConfig: st.billConfig,
         customer: st.customer,
-        // activeTab intentionally NOT persisted — a fresh app open always lands on Bill
+        // persisted so a REFRESH re-opens the tab the user was on; a cold app
+        // open still resets to Bill (page.tsx does that when the MPIN gate shows)
+        activeTab: st.activeTab,
         expenses: st.expenses,
         incomes: st.incomes,
         labourWorks: st.labourWorks,

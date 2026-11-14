@@ -608,6 +608,9 @@ function SyncSecuritySection() {
   };
 
   const doLock = () => {
+    // tell the page gate FIRST (unmounts the activity listeners — a hot
+    // reload or stray scroll can no longer re-mark the unlock session)
+    window.dispatchEvent(new Event('slp-lock'));
     lockApp(); // wipes session + key on this device → the MPIN gate returns
     toast({ title: t('sync.lockedToast') });
     setTimeout(() => location.reload(), 400);
