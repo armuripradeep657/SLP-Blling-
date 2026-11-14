@@ -54,3 +54,4 @@ server.log
 /skills/
 .next-test/
 upload/
+.next-dev/

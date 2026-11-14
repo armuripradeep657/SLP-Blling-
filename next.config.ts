@@ -9,10 +9,11 @@ const nextConfig: NextConfig = {
   reactStrictMode: false,
   // Hide the Next.js dev-tools "N" badge that overlays the app UI
   devIndicators: false,
-  // E2E tests run an ISOLATED server (own port + own SQLite) alongside the
-  // live app — this gives that server its own build dir so the .next/dev
-  // lock never conflicts with the owner's running app.
-  ...(process.env.NEXT_TEST_DIST ? { distDir: process.env.NEXT_TEST_DIST } : {}),
+  // Isolated build dirs so builds never collide with the running servers:
+  // - dev server (package.json `dev`) runs on .next-dev via NEXT_DEV_DIST
+  // - E2E test servers run on .next-test via NEXT_TEST_DIST
+  // - deploy (`build` script) owns the default .next — standard standalone layout
+  distDir: process.env.NEXT_DEV_DIST || process.env.NEXT_TEST_DIST || ".next",
 };
 
 export default nextConfig;
