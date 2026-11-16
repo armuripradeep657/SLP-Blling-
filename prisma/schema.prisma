@@ -34,6 +34,10 @@ model Session {
   id        String      @id @default(cuid())
   tokenHash String      @unique
   slot      String
+  /// whose session this is — 'owner' (MPIN) or 'staff' (username + password)
+  role      String      @default("owner")
+  /// set when role = 'staff'
+  staffId   String?
   expiresAt DateTime
   createdAt DateTime    @default(now())
   account   SyncAccount @relation(fields: [slot], references: [slot], onDelete: Cascade)
@@ -56,4 +60,80 @@ model PaymentEvent {
   /// SMS dispatch result for the customer notification
   smsStatus String   @default("pending")
   createdAt DateTime @default(now())
+}
+
+/// Staff accounts created by the OWNER. Staff sign in with username +
+/// password (scrypt-hashed at rest — the password itself is never stored).
+/// The data key is re-wrapped under a key derived from the staff password
+/// on the OWNER'S device, so staff devices can open the same encrypted
+/// vault while the server still never sees any key material in the clear.
+model StaffUser {
+  id           String   @id @default(cuid())
+  slot         String   @default("owner")
+  /// login name — unique, lowercase
+  username     String   @unique
+  /// display name (shown on bills the staff creates)
+  name         String
+  /// scrypt hash of the password — secure resets replace this
+  passwordHash String
+  active       Boolean  @default(true)
+  /// DEK wrapped (AES-GCM) under a key derived from the staff password
+  dekWrapped   String?
+  dekIv        String?
+  /// PBKDF2 salt for the staff-password key
+  dekSalt      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// The barcode bill registry — the source of truth for Code 128 bill
+/// verification. Every finalized bill registers exactly ONE verification
+/// code here (one code per bill, one bill per code — duplicates and reuse
+/// are rejected at the database level). Verification ALWAYS reads this
+/// table: nothing is trusted from the barcode itself.
+model VerifiedBill {
+  id            String   @id @default(cuid())
+  /// the unique unpredictable verification ID the Code 128 barcode encodes
+  code          String   @unique
+  /// one code per bill, one bill per code — prevents reuse across bills
+  billNo        String   @unique
+  slot          String   @default("owner")
+  /// company snapshot at bill time (the server never sees settings otherwise)
+  companyName   String
+  billDateISO   DateTime
+  /// display name only — the phone/address are NEVER stored here
+  customerName  String
+  gstPercent    Float    @default(0)
+  gstAmount     Float    @default(0)
+  discount      Float    @default(0)
+  labourCharge  Float    @default(0)
+  autoCharge    Float    @default(0)
+  subtotal      Float
+  total         Float
+  paid          Float    @default(0)
+  balance       Float    @default(0)
+  paymentMode   String   @default("Cash")
+  paymentStatus String   @default("Due")
+  /// who billed it — Owner or the staff username
+  createdBy     String   @default("Owner")
+  /// cancelled bills fail verification with the CANCELLED message
+  cancelled     Boolean  @default(false)
+  /// bill line items as JSON [{name, size, qty, price, discount}]
+  itemsJson     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// Every barcode verification attempt — genuine, cancelled or unknown —
+/// is logged here so the owner can see a bill's verification history.
+model VerificationLog {
+  id     String   @id @default(cuid())
+  /// the scanned or typed code — may not exist (not_found)
+  code   String
+  /// valid | cancelled | not_found
+  result String
+  ip     String?
+  at     DateTime @default(now())
+
+  @@index([code])
 }

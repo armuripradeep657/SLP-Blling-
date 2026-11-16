@@ -16,6 +16,8 @@ export interface BusinessSettings {
   returnPolicy: string;
   /** App UI language — the whole app (nav, buttons, panels) switches between English and Telugu */
   appLang: AppLanguage;
+  /** GST rate (percent) the owner manages — applied to bill totals; 0 = no GST */
+  gstPercent?: number;
 }
 
 export interface Product {
@@ -94,6 +96,8 @@ export interface Totals {
   labourCharge: number;
   autoCharge: number;
   roundOff: number; // always 0 — round off removed
+  /** GST amount (owner-managed rate) — 0 when no GST is configured */
+  gst?: number;
   total: number;
   paid: number;
   balance: number;
@@ -115,6 +119,12 @@ export interface Invoice {
   status: 'Paid' | 'Due' | 'Partial';
   /** UPI payment-wait reference (the QR note) — links the bill to its payment event */
   paymentRef?: string;
+  /** Code 128 bill verification ID — the value the invoice barcode encodes */
+  verifyCode?: string;
+  /** who billed — "Owner" or the staff name */
+  createdBy?: string;
+  /** owner cancelled this bill — every barcode scan answers CANCELLED */
+  cancelled?: boolean;
   /** Driver / delivery details — set when the bill was marked Delivered */
   delivery?: DeliveryInfo;
   /** Money received against this invoice (bill date + dues receipts) */
@@ -236,4 +246,4 @@ export interface SyncPayload {
   dataUpdatedAt: number;
 }
 
-export type MainTab = 'bill' | 'products' | 'ledger' | 'labour' | 'history' | 'settings';
+export type MainTab = 'bill' | 'products' | 'ledger' | 'labour' | 'history' | 'verify' | 'settings';

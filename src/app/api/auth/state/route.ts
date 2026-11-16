@@ -21,9 +21,12 @@ export async function GET() {
     select: { pinVerifier: true, dekSalt: true, dekWrapped: true },
   });
   const legacy = Boolean(account?.pinVerifier) && account?.pinVerifier === ZERO_VERIFIER;
+  const staffCount = await db.staffUser.count({ where: { active: true } });
   return Response.json({
     hasMpin: Boolean(account?.pinVerifier),
     dekSalt: account?.dekSalt ?? null,
+    // the gate shows the staff login only when the owner has created staff
+    staffCount,
     ...(legacy ? { legacy: true, dekWrapped: account?.dekWrapped ?? null } : {}),
   });
 }

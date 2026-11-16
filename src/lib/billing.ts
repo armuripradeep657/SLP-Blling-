@@ -17,7 +17,7 @@ export function lineNet(it: CartItem): number {
   return Math.round((gross - d) * 100) / 100;
 }
 
-export function computeTotals(items: CartItem[], cfg: BillConfig): Totals {
+export function computeTotals(items: CartItem[], cfg: BillConfig, gstPercent = 0): Totals {
   const subtotal = items.reduce((s, it) => s + it.price * it.qty, 0);
   const itemDiscounts = items.reduce((s, it) => s + (it.price * it.qty - lineNet(it)), 0);
   const base = subtotal - itemDiscounts;
@@ -27,11 +27,15 @@ export function computeTotals(items: CartItem[], cfg: BillConfig): Totals {
       : Math.min(base, cfg.discountValue || 0);
   const labourCharge = cfg.labourCharge || 0;
   const autoCharge = cfg.autoCharge || 0;
+  // GST on the taxable value (after discounts, incl. labour/auto charges) —
+  // 0 when the owner has not configured a rate (every legacy bill stays exact)
+  const taxable = Math.max(base - discount + labourCharge + autoCharge, 0);
+  const gst = Math.round(taxable * (gstPercent || 0)) / 100;
   // Exact total — round off removed
-  const total = Math.round((base - discount + labourCharge + autoCharge) * 100) / 100;
+  const total = Math.round((taxable + gst) * 100) / 100;
   const paid = Math.min(cfg.paidAmount || 0, total);
   const balance = Math.max(total - paid, 0);
-  return { subtotal, itemDiscounts, discount, labourCharge, autoCharge, roundOff: 0, total, paid, balance };
+  return { subtotal, itemDiscounts, discount, labourCharge, autoCharge, roundOff: 0, gst, total, paid, balance };
 }
 
 export function getStatus(total: number, paid: number): 'Paid' | 'Due' | 'Partial' {

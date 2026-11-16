@@ -4,6 +4,9 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from './defaultData';
 import { computeTotals, getStatus, priceForSize, applyPayment } from './billing';
+import { newVerifyCode } from './verify-id';
+import { getIdentity, setIdentity } from './role';
+import { registerVerifiedBill, apiVerifyCancel } from './cloud';
 import type {
   Appearance,
   BillConfig,
@@ -114,7 +117,13 @@ interface BillingStore {
 
   completeInvoice: (opts?: { paymentRef?: string; paidAmount?: number }) => Invoice | null;
   clearLastInvoice: () => void;
+  /** one-time migration: give pre-barcode bills a verification ID + register it */
+  migrateVerifyCodes: () => void;
+  /** adopt the registry's winning code after a registration race (409) */
+  setInvoiceVerifyCode: (id: string, code: string) => void;
   deleteInvoice: (id: string) => void;
+  /** OWNER: cancel a bill — verification answers CANCELLED for its barcode */
+  cancelInvoice: (id: string) => void;
   updateInvoiceStatus: (id: string, paidAmount: number) => void;
   updateInvoiceLanguage: (id: string, language: BillLanguage) => void;
   /** Receive a dues payment — recorded as income on the day received */
@@ -290,7 +299,7 @@ export const useStore = create<BillingStore>()(
       completeInvoice: (opts) => {
         const { cart, customer, billConfig, settings, products } = get();
         if (cart.length === 0) return null;
-        const totals = computeTotals(cart, billConfig);
+        const totals = computeTotals(cart, billConfig, settings.gstPercent || 0);
         // UPI auto-detection: the customer paid (maybe partially) while the
         // QR was on screen — the detected amount becomes the paid amount
         if (opts?.paidAmount !== undefined && totals.paid !== opts.paidAmount) {
@@ -332,6 +341,9 @@ export const useStore = create<BillingStore>()(
           language: billConfig.language,
           status: getStatus(totals.total, totals.paid),
           paymentRef: opts?.paymentRef,
+          /** Code 128 verification ID — unique, unpredictable, never reused */
+          verifyCode: newVerifyCode(),
+          createdBy: getIdentity().role === 'staff' ? getIdentity().name || 'Staff' : 'Owner',
           delivery,
           payments,
         };
@@ -354,10 +366,53 @@ export const useStore = create<BillingStore>()(
           settings: { ...st.settings, nextInvoiceNo: st.settings.nextInvoiceNo + 1 },
           dataUpdatedAt: touch(),
         }));
+        // register the bill in the server's barcode verification registry —
+        // this is what makes every scan of the printed Code 128 resolvable
+        void registerVerifiedBill(invoice, settings).then((reg) => {
+          if (reg.ok && reg.code && reg.code !== invoice.verifyCode) {
+            get().setInvoiceVerifyCode(invoice.id, reg.code);
+          }
+        });
         return invoice;
       },
 
+      /** adopt the registry's winning code after a registration race (409) */
+      setInvoiceVerifyCode: (id, code) =>
+        set((st) => ({
+          invoices: st.invoices.map((i) => (i.id === id ? { ...i, verifyCode: code } : i)),
+          lastInvoice: st.lastInvoice && st.lastInvoice.id === id ? { ...st.lastInvoice, verifyCode: code } : st.lastInvoice,
+          dataUpdatedAt: touch(),
+        })),
+
+      /** OWNER: cancel a bill — every barcode scan then answers CANCELLED */
+      cancelInvoice: (id) =>
+        set((st) => {
+          const inv = st.invoices.find((i) => i.id === id);
+          if (inv && !inv.cancelled) {
+            void apiVerifyCancel(inv.no, true);
+          }
+          return {
+            invoices: st.invoices.map((i) => (i.id === id ? { ...i, cancelled: true } : i)),
+            lastInvoice: st.lastInvoice && st.lastInvoice.id === id ? { ...st.lastInvoice, cancelled: true } : st.lastInvoice,
+            dataUpdatedAt: touch(),
+          };
+        }),
+
       clearLastInvoice: () => set({ lastInvoice: null }),
+
+      // bills finalized BEFORE the barcode system have no verification ID —
+      // mint one for each and register it, so a re-printed old bill scans too
+      migrateVerifyCodes: () => {
+        const { invoices, settings } = get();
+        const missing = invoices.filter((i) => !i.verifyCode);
+        if (missing.length === 0) return;
+        const withCodes = new Map(invoices.map((i) => [i.id, i.verifyCode] as const));
+        const patched = invoices.map((i) => (i.verifyCode ? i : { ...i, verifyCode: newVerifyCode() }));
+        set((st) => ({ invoices: patched, dataUpdatedAt: touch() }));
+        patched.forEach((i) => {
+          if (!withCodes.get(i.id)) void registerVerifiedBill(i, settings);
+        });
+      },
 
       deleteInvoice: (id) =>
         set((st) => ({
@@ -366,7 +421,7 @@ export const useStore = create<BillingStore>()(
         })),
 
       // Marking paid records the newly-received amount as income today
-      updateInvoiceStatus: (id, paidAmount) =>
+      updateInvoiceStatus: (id, paidAmount) => {
         set((st) => {
           const patchOne = (i: Invoice): Invoice => {
             if (i.id !== id) return i;
@@ -382,7 +437,17 @@ export const useStore = create<BillingStore>()(
             lastInvoice: st.lastInvoice ? patchOne(st.lastInvoice) : st.lastInvoice,
             dataUpdatedAt: touch(),
           };
-        }),
+        });
+        // the payment status changed — refresh the barcode registry entry
+        const patched = get().invoices.find((i) => i.id === id);
+        if (patched?.verifyCode) {
+          void registerVerifiedBill(patched, get().settings).then((reg) => {
+            if (reg.ok && reg.code && reg.code !== patched.verifyCode) {
+              get().setInvoiceVerifyCode(patched.id, reg.code);
+            }
+          });
+        }
+      },
 
       // Flip the bill language (also from the invoice modal while sharing) —
       // updates the saved invoice so History re-shares in the same language
@@ -395,7 +460,7 @@ export const useStore = create<BillingStore>()(
         })),
 
       // Dues list: receive a balance payment — counts as income TODAY
-      receiveDuePayment: (id, amount, mode) =>
+      receiveDuePayment: (id, amount, mode) => {
         set((st) => {
           const now = new Date().toISOString();
           const patchOne = (i: Invoice): Invoice =>
@@ -405,7 +470,17 @@ export const useStore = create<BillingStore>()(
             lastInvoice: st.lastInvoice ? patchOne(st.lastInvoice) : st.lastInvoice,
             dataUpdatedAt: touch(),
           };
-        }),
+        });
+        // payment status changed — refresh the barcode registry entry
+        const patched = get().invoices.find((i) => i.id === id);
+        if (patched?.verifyCode) {
+          void registerVerifiedBill(patched, get().settings).then((reg) => {
+            if (reg.ok && reg.code && reg.code !== patched.verifyCode) {
+              get().setInvoiceVerifyCode(patched.id, reg.code);
+            }
+          });
+        }
+      },
 
       addExpense: (e) =>
         set((st) => ({

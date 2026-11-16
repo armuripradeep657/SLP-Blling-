@@ -2,11 +2,12 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { WifiOff, ReceiptText, Package, History, Settings, BookText, Languages, Hammer } from 'lucide-react';
+import { WifiOff, ReceiptText, Package, History, Settings, BookText, Languages, Hammer, ScanLine } from 'lucide-react';
 import { useSyncExternalStore, useState } from 'react';
 import { useStore } from '@/lib/store';
+import { useIdentity } from '@/lib/role';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
-import type { HeaderThemeId } from '@/lib/types';
+import type { HeaderThemeId, MainTab } from '@/lib/types';
 
 /** Header colour themes — applied to the top bar from Settings → Appearance */
 const HEADER_STYLES: Record<HeaderThemeId, string> = {
@@ -109,15 +110,23 @@ export function BottomNav() {
   const setActiveTab = useStore((s) => s.setActiveTab);
   const cart = useStore((s) => s.cart);
   const count = cart.reduce((s, c) => s + c.qty, 0);
+  const identity = useIdentity();
 
+  /** staff sees billing, verification and their own history — nothing else */
   const tabs = [
-    { id: 'bill', label: t('nav.bill'), icon: ReceiptIcon },
-    { id: 'products', label: t('nav.products'), icon: PackageIcon },
-    { id: 'ledger', label: t('nav.ledger'), icon: LedgerIcon },
-    { id: 'labour', label: t('nav.labour'), icon: LabourIcon },
-    { id: 'history', label: t('nav.history'), icon: HistoryIcon },
-    { id: 'settings', label: t('nav.settings'), icon: SettingsIcon },
-  ] as const;
+    { id: 'bill', label: t('nav.bill'), icon: ReceiptIcon, ownerOnly: false },
+    { id: 'products', label: t('nav.products'), icon: PackageIcon, ownerOnly: true },
+    { id: 'ledger', label: t('nav.ledger'), icon: LedgerIcon, ownerOnly: true },
+    { id: 'labour', label: t('nav.labour'), icon: LabourIcon, ownerOnly: true },
+    { id: 'history', label: t('nav.history'), icon: HistoryIcon, ownerOnly: false },
+    { id: 'verify', label: t('nav.verify'), icon: ScanIcon, ownerOnly: false },
+    { id: 'settings', label: t('nav.settings'), icon: SettingsIcon, ownerOnly: true },
+  ].filter((x) => !x.ownerOnly || identity.role === 'owner') as Array<{
+    id: MainTab;
+    label: string;
+    icon: (p: { className?: string; active?: boolean }) => React.ReactNode;
+    ownerOnly: boolean;
+  }>;
 
   return (
     <nav
@@ -125,7 +134,7 @@ export function BottomNav() {
       className="fixed bottom-0 left-0 right-0 z-50 border-t bg-white/95 backdrop-blur lg:hidden"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      <div className="mx-auto grid max-w-md grid-cols-6">
+      <div className="mx-auto grid max-w-md" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
         {tabs.map((x) => {
           const Icon = x.icon;
           const active = activeTab === x.id;
@@ -158,14 +167,16 @@ export function DesktopTabs() {
   const t = useT();
   const activeTab = useStore((s) => s.activeTab);
   const setActiveTab = useStore((s) => s.setActiveTab);
+  const identity = useIdentity();
   const tabs = [
-    { id: 'bill', label: t('nav.newBill') },
-    { id: 'products', label: t('nav.products') },
-    { id: 'ledger', label: t('nav.ledger') },
-    { id: 'labour', label: t('nav.labour') },
-    { id: 'history', label: t('nav.invoiceHistory') },
-    { id: 'settings', label: t('nav.settings') },
-  ] as const;
+    { id: 'bill', label: t('nav.newBill'), ownerOnly: false },
+    { id: 'products', label: t('nav.products'), ownerOnly: true },
+    { id: 'ledger', label: t('nav.ledger'), ownerOnly: true },
+    { id: 'labour', label: t('nav.labour'), ownerOnly: true },
+    { id: 'history', label: t('nav.invoiceHistory'), ownerOnly: false },
+    { id: 'verify', label: t('nav.verify'), ownerOnly: false },
+    { id: 'settings', label: t('nav.settings'), ownerOnly: true },
+  ].filter((x) => !x.ownerOnly || identity.role === 'owner') as Array<{ id: MainTab; label: string; ownerOnly: boolean }>;
 
   return (
     <div className="mx-auto mb-4 hidden max-w-5xl gap-1.5 lg:flex" role="tablist" aria-label="Sections">
@@ -201,6 +212,9 @@ function LabourIcon({ className, active }: { className?: string; active?: boolea
 }
 function HistoryIcon({ className, active }: { className?: string; active?: boolean }) {
   return <History className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
+}
+function ScanIcon({ className, active }: { className?: string; active?: boolean }) {
+  return <ScanLine className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
 }
 function SettingsIcon({ className, active }: { className?: string; active?: boolean }) {
   return <Settings className={`${className} ${active ? 'fill-blue-100' : ''}`} />;

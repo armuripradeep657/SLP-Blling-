@@ -8,6 +8,7 @@ import LedgerView from '@/components/LedgerView';
 import LabourView from '@/components/LabourView';
 import HistoryView from '@/components/HistoryView';
 import SettingsView from '@/components/SettingsView';
+import VerifyView from '@/components/VerifyView';
 import BillPanel from '@/components/BillPanel';
 import PaymentScreen from '@/components/PaymentScreen';
 import InvoiceModal, { type DocView } from '@/components/InvoiceModal';
@@ -16,6 +17,7 @@ import ConnectivityToast from '@/components/ConnectivityToast';
 import SyncReauth from '@/components/SyncReauth';
 import LockScreen from '@/components/LockScreen';
 import { useStore } from '@/lib/store';
+import { useIdentity, OWNER_ONLY_TABS } from '@/lib/role';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
 import { computeTotals, fmt } from '@/lib/billing';
 import { startSyncEngine } from '@/lib/sync';
@@ -86,6 +88,16 @@ export default function Home() {
   const bgTheme = useStore((s) => s.appearance.bgTheme);
   const watermark = useStore((s) => s.appearance.watermark);
   const settings = useStore((s) => s.settings);
+  const identity = useIdentity();
+
+  // STAFF GATING — a staff session never lands on an owner-only tab, even
+  // via a stale deep-link or a persisted activeTab (backend enforces the
+  // matching APIs too)
+  useEffect(() => {
+    if (identity.role === 'staff' && (OWNER_ONLY_TABS as readonly string[]).includes(activeTab)) {
+      setActiveTab('bill');
+    }
+  }, [identity.role, activeTab, setActiveTab]);
 
   const [modalInvoice, setModalInvoice] = useState<Invoice | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -173,6 +185,13 @@ export default function Home() {
     () => true,
     () => false
   );
+
+  /* pre-barcode bills (billed before v32) get verification IDs + registry
+     entries once the vault is open — a re-printed old bill scans too */
+  useEffect(() => {
+    if (gate !== 'ready' || !mounted) return;
+    useStore.getState().migrateVerifyCodes();
+  }, [gate, mounted]);
 
   const totals = computeTotals(cart, cfg);
 
@@ -331,6 +350,16 @@ export default function Home() {
               <div className="mx-auto max-w-2xl">
                 <h2 className="mb-3 text-base font-bold text-neutral-800">{t('nav.invoiceHistory')}</h2>
                 <HistoryView onOpenInvoice={openInvoice} />
+              </div>
+            )}
+
+            {activeTab === 'verify' && (
+              <div className="mx-auto max-w-2xl">
+                <h2 className="mb-3 flex items-center gap-2 text-base font-bold text-neutral-800">
+                  {t('nav.verify')}
+                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-800">Code 128</span>
+                </h2>
+                <VerifyView />
               </div>
             )}
 

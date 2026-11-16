@@ -1,9 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
-import { fmt, fmtShort, upiUri } from '@/lib/billing';
+import { fmt, fmtShort } from '@/lib/billing';
 import { labels, fill, slipFontFamily, companyLines, itemLabel, cur } from '@/lib/i18n';
-import { useQrDataUrl } from '@/hooks/use-qr';
+import Barcode from './Barcode';
 import type { BusinessSettings, Invoice } from '@/lib/types';
 
 interface Props {
@@ -22,8 +21,8 @@ const INK = '#111111';
 /**
  * Signature invoice design — a premium one-of-a-kind bill document:
  * navy→blue gradient header with a gold underline, a rotated status stamp,
- * rounded zebra items table, gradient TOTAL banner and a scan-to-pay card.
- * The owner's UPI ID is NEVER printed — only the QR carries it.
+ * rounded zebra items table, gradient TOTAL banner and a CODE 128
+ * verification barcode that ties the bill to its database record.
  * Rendered with INLINE styles so html-to-image rasterizes it perfectly.
  */
 export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
@@ -35,23 +34,6 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
   const rupee = cur(lang);
 
   const isFullyPaid = invoice.totals.balance <= 0;
-
-  /** UPI QR for the remaining balance only (hidden once fully paid) */
-  const upiString = useMemo(() => {
-    if (isFullyPaid || !settings.upiId) return '';
-    return upiUri(settings.upiId, invoice.totals.balance, invoice.no);
-  }, [isFullyPaid, settings.upiId, invoice]);
-
-  const waString = useMemo(() => {
-    if (isFullyPaid || settings.upiId) return '';
-    const shop = (settings.whatsappNumber || settings.phone || '').replace(/\D/g, '');
-    const ten = shop.length > 10 ? shop.slice(-10) : shop;
-    return ten.length === 10 ? `https://wa.me/91${ten}?text=${encodeURIComponent(`Hi, regarding bill ${invoice.no}`)}` : '';
-  }, [isFullyPaid, settings.upiId, settings.whatsappNumber, settings.phone, invoice.no]);
-
-  const qrString = upiString || waString;
-  const isUpiQr = !!upiString;
-  const qr = useQrDataUrl(qrString);
 
   const d = new Date(invoice.dateISO);
   const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -104,14 +86,6 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
   /** Rotated rubber stamp over the header seam */
   const stampText = isFullyPaid ? L.amountPaid : invoice.status === 'Partial' ? L.statusPartial : L.statusDue;
   const stampColor = isFullyPaid ? '#15803d' : invoice.status === 'Partial' ? BLUE : '#dc2626';
-
-  /** Scan-to-pay hint (no UPI ID on the document, ever) */
-  const upiHint =
-    lang === 'en'
-      ? 'Open any UPI app & scan to pay'
-      : lang === 'te'
-        ? 'ఏదైనా UPI యాప్‌తో స్కాన్ చేసి చెల్లించండి'
-        : 'Open any UPI app · ఏదైనా UPI యాప్‌తో స్కాన్ చేయండి';
 
   return (
     <div
@@ -340,6 +314,9 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
             : null}
           {(invoice.labourCharge || 0) > 0 ? totalRow(L.labour, fmt(invoice.labourCharge)) : null}
           {(invoice.autoCharge || 0) > 0 ? totalRow(L.auto, fmt(invoice.autoCharge)) : null}
+          {(invoice.totals.gst || 0) > 0
+            ? totalRow(`${L.gstLabel} ${settings.gstPercent || 0}%`, fmt(invoice.totals.gst || 0))
+            : null}
 
           <div
             style={{
@@ -384,51 +361,28 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
           </div>
         </div>
 
-        {/* PAID banner / scan-to-pay card — UPI ID never printed */}
-        {isFullyPaid ? (
+        {/* CODE 128 verification barcode — every bill, paid or not */}
+        {invoice.verifyCode ? (
           <div
             style={{
               marginTop: 14,
-              background: '#f0fdf4',
-              border: '1.5px solid #86efac',
+              border: `1.5px solid ${BLUE_BRIGHT}`,
+              background: '#f0f7ff',
               borderRadius: 12,
               padding: '10px 12px',
               textAlign: 'center',
             }}
           >
-            <div style={{ fontSize: 11.5, marginTop: 2, color: '#166534', fontWeight: 600 }}>
-              {fill(L.receivedThanks, {
-                rs: fmt(invoice.totals.paid),
-                mode: L.modes[invoice.paymentMode] || invoice.paymentMode,
-              })}
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: NAVY, textTransform: 'uppercase' }}>
+              {L.verifyLabel}
             </div>
-          </div>
-        ) : qr && qrString ? (
-          <div
-            style={{
-              marginTop: 14,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              border: `1.5px dashed ${BLUE_BRIGHT}`,
-              background: '#f0f7ff',
-              borderRadius: 12,
-              padding: '10px 12px',
-            }}
-          >
-            <img
-              src={qr}
-              alt={isUpiQr ? 'UPI QR code' : 'WhatsApp QR code'}
-              width={104}
-              height={104}
-              style={{ display: 'block', imageRendering: 'pixelated', flexShrink: 0, background: '#ffffff', padding: 4, borderRadius: 8 }}
-            />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: NAVY, lineHeight: 1.35 }}>
-                {isUpiQr ? fill(L.scanPay, { rs: fmt(invoice.totals.balance) }) : L.scanChat}
-              </div>
-              {isUpiQr ? <div style={{ fontSize: 10, color: '#475569', marginTop: 3 }}>{upiHint}</div> : null}
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 4 }}>
+              <Barcode value={invoice.verifyCode} height={50} width={1.5} />
             </div>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, marginTop: 3, color: '#0f172a' }}>
+              {invoice.verifyCode}
+            </div>
+            <div style={{ fontSize: 9.5, color: '#475569', marginTop: 2 }}>{L.verifyHint}</div>
           </div>
         ) : null}
 

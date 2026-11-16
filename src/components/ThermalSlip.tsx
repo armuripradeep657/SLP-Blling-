@@ -1,9 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
-import { fmt, fmtShort, upiUri } from '@/lib/billing';
+import { fmt, fmtShort } from '@/lib/billing';
 import { labels, fill, slipFontFamily, companyLines, itemLabel } from '@/lib/i18n';
-import { useQrDataUrl } from '@/hooks/use-qr';
+import Barcode from './Barcode';
 import type { BusinessSettings, Invoice } from '@/lib/types';
 
 interface Props {
@@ -16,6 +15,7 @@ interface Props {
 /**
  * Thermal receipt rendered with INLINE styles + hex colors only,
  * so html-to-image rasterizes it perfectly (no Tailwind/oklch issues).
+ * Carries the CODE 128 verification barcode on every bill (paid or not).
  */
 export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
   const w = settings.slipWidthMm === 58 ? 220 : 304;
@@ -26,27 +26,8 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
   const L = labels(lang);
   const isTe = lang !== 'en'; // tighter spacing when Telugu glyphs are on the slip
 
-  /** Bill fully settled — show PAID stamp instead of any QR */
+  /** Bill fully settled — PAID stamp shows; the barcode prints on EVERY bill */
   const isFullyPaid = invoice.totals.balance <= 0;
-
-  /** UPI QR for the remaining BALANCE only (hidden once fully paid) — UPI ID only, no payee name */
-  const upiString = useMemo(() => {
-    if (isFullyPaid || !settings.upiId) return '';
-    return upiUri(settings.upiId, invoice.totals.balance, invoice.no);
-  }, [isFullyPaid, settings.upiId, invoice]);
-
-  /** Fallback QR: shop WhatsApp chat link (when no UPI ID is configured) */
-  const waString = useMemo(() => {
-    if (isFullyPaid || settings.upiId) return '';
-    const shop = (settings.whatsappNumber || settings.phone || '').replace(/\D/g, '');
-    const ten = shop.length > 10 ? shop.slice(-10) : shop;
-    return ten.length === 10 ? `https://wa.me/91${ten}?text=${encodeURIComponent(`Hi, regarding bill ${invoice.no}`)}` : '';
-  }, [isFullyPaid, settings.upiId, settings.whatsappNumber, settings.phone, invoice.no]);
-
-  const qrString = upiString || waString;
-  const isUpiQr = !!upiString;
-
-  const qr = useQrDataUrl(qrString);
 
   const dash: React.CSSProperties = {
     borderTop: '1.5px dashed #1a1a1a',
@@ -214,6 +195,14 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
           <span>Rs. {fmt(invoice.autoCharge)}</span>
         </div>
       ) : null}
+      {(invoice.totals.gst || 0) > 0 ? (
+        <div style={row}>
+          <span>
+            {L.gstLabel} {settings.gstPercent || 0}%
+          </span>
+          <span>Rs. {fmt(invoice.totals.gst || 0)}</span>
+        </div>
+      ) : null}
 
       <div
         style={{
@@ -247,7 +236,7 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
         </div>
       ) : null}
 
-      {/* PAID stamp when fully settled — no QR after payment is complete */}
+      {/* PAID stamp when fully settled — the barcode prints on every bill */}
       {isFullyPaid ? (
         <div style={{ textAlign: 'center', marginTop: 8 }}>
           <div
@@ -271,20 +260,23 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
             })}
           </div>
         </div>
-      ) : qr && qrString ? (
-        /* Balance due — UPI QR for the balance (or WhatsApp chat QR when no UPI) */
-        <div style={{ textAlign: 'center', marginTop: 7 }}>
-          <img
-            src={qr}
-            alt={isUpiQr ? 'UPI QR code' : 'WhatsApp QR code'}
-            width={w * 0.42}
-            height={w * 0.42}
-            style={{ display: 'block', margin: '0 auto', imageRendering: 'pixelated' }}
-          />
-          <div style={{ fontSize: baseFont - 1.2, marginTop: 2 }}>
-            {/* UPI ID hidden — the QR itself carries the payment handle */}
-            {isUpiQr ? fill(L.scanPay, { rs: fmt(invoice.totals.balance) }) : L.scanChat}
+      ) : settings.upiId ? (
+        /* Balance due — pay the remaining amount to the shop's UPI ID (text, no QR) */
+        <div style={{ textAlign: 'center', marginTop: 7, fontSize: baseFont - 0.5 }}>
+          {fill(L.balancePay, { rs: fmt(invoice.totals.balance) })} <b>{settings.upiId}</b>
+        </div>
+      ) : null}
+
+      {/* CODE 128 verification barcode — on EVERY bill, paid or not */}
+      {invoice.verifyCode ? (
+        <div style={{ textAlign: 'center', marginTop: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Barcode value={invoice.verifyCode} height={settings.slipWidthMm === 58 ? 30 : 38} width={settings.slipWidthMm === 58 ? 0.8 : 1.15} />
           </div>
+          <div style={{ fontSize: baseFont - 1.5, marginTop: 2, letterSpacing: 0.5, color: '#111' }}>
+            {invoice.verifyCode}
+          </div>
+          <div style={{ fontSize: baseFont - 2.5, color: '#555' }}>{L.verifyHint}</div>
         </div>
       ) : null}
 

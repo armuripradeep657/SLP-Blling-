@@ -15,9 +15,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Search, Trash2, ReceiptText, FileText, IndianRupee, Truck } from 'lucide-react';
+import { Search, Trash2, ReceiptText, FileText, IndianRupee, Truck, Ban } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { fmt } from '@/lib/billing';
+import { useIdentity } from '@/lib/role';
 import { useT } from '@/hooks/use-app-lang';
 import type { Invoice } from '@/lib/types';
 import type { DocView } from './InvoiceModal';
@@ -31,12 +32,23 @@ export default function HistoryView({
   const invoices = useStore((s) => s.invoices);
   const updateInvoiceStatus = useStore((s) => s.updateInvoiceStatus);
   const deleteInvoice = useStore((s) => s.deleteInvoice);
+  const cancelInvoice = useStore((s) => s.cancelInvoice);
+  const identity = useIdentity();
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Paid' | 'Due' | 'Partial'>('All');
 
+  /** STAFF see only the bills they created themselves — the owner sees all */
+  const visible = useMemo(
+    () =>
+      identity.role === 'staff'
+        ? invoices.filter((inv) => inv.createdBy && inv.createdBy !== 'Owner' && inv.createdBy === identity.name)
+        : invoices,
+    [invoices, identity]
+  );
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return invoices.filter((inv) => {
+    return visible.filter((inv) => {
       const matchQ =
         !q ||
         inv.no.toLowerCase().includes(q) ||
@@ -45,10 +57,10 @@ export default function HistoryView({
       const matchS = statusFilter === 'All' || inv.status === statusFilter;
       return matchQ && matchS;
     });
-  }, [invoices, query, statusFilter]);
+  }, [visible, query, statusFilter]);
 
-  const totalSales = invoices.reduce((s, i) => s + i.totals.total, 0);
-  const totalDue = invoices.reduce((s, i) => s + i.totals.balance, 0);
+  const totalSales = visible.reduce((s, i) => s + (i.cancelled ? 0 : i.totals.total), 0);
+  const totalDue = visible.reduce((s, i) => s + (i.cancelled ? 0 : i.totals.balance), 0);
 
   const statusLabel = (s: 'Paid' | 'Due' | 'Partial') =>
     s === 'Paid' ? t('status.paid') : s === 'Partial' ? t('status.partial') : t('status.due');
@@ -138,12 +150,28 @@ export default function HistoryView({
                 >
                   {statusLabel(inv.status)}
                 </Badge>
+                {inv.cancelled && (
+                  <Badge data-cancelled-badge className="bg-red-700 text-white">
+                    <Ban className="size-3" /> {t('history.cancelled')}
+                  </Badge>
+                )}
                 <span className="text-[11px] text-muted-foreground">
                   {inv.paymentMode} · Bal ₹{fmt(inv.totals.balance)}
                 </span>
               </div>
               <div className="flex flex-wrap gap-1 justify-end">
-                {inv.status !== 'Paid' && (
+                {identity.role === 'owner' && !inv.cancelled && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs text-red-700 hover:text-red-800"
+                    onClick={() => cancelInvoice(inv.id)}
+                    aria-label={`Cancel bill ${inv.no}`}
+                  >
+                    <Ban className="size-3" /> {t('history.cancelBill')}
+                  </Button>
+                )}
+                {!inv.cancelled && inv.status !== 'Paid' && identity.role === 'owner' && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -164,12 +192,13 @@ export default function HistoryView({
                     <Truck className="size-3" /> {t('history.driver')}
                   </Button>
                 )}
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="outline" size="icon" className="size-8 text-destructive hover:text-destructive" aria-label={`Delete ${inv.no}`}>
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </AlertDialogTrigger>
+                {identity.role === 'owner' && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="outline" size="icon" className="size-8 text-destructive hover:text-destructive" aria-label={`Delete ${inv.no}`}>
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </AlertDialogTrigger>
                   <AlertDialogContent className="max-w-xs">
                     <AlertDialogHeader>
                       <AlertDialogTitle>{t('history.deleteTitle')}</AlertDialogTitle>
@@ -185,13 +214,14 @@ export default function HistoryView({
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
+                )}
               </div>
             </div>
           </li>
         ))}
         {filtered.length === 0 && (
           <li className="py-12 text-center text-sm text-muted-foreground">
-            {invoices.length === 0 ? t('history.noBills') : t('history.noMatch')}
+            {visible.length === 0 ? t('history.noBills') : t('history.noMatch')}
           </li>
         )}
       </ul>

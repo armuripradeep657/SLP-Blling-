@@ -2,30 +2,30 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Banknote, Loader2, QrCode, X } from 'lucide-react';
-import { useQrDataUrl } from '@/hooks/use-qr';
+import { Banknote, Copy, Loader2, Share2, X } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useT } from '@/hooks/use-app-lang';
 import { apiPaymentsStatus, apiPaymentsWebhook } from '@/lib/cloud';
 import { markUnlockActive } from '@/lib/idle-lock';
-import { fmt } from '@/lib/billing';
+import { fmt, upiUri } from '@/lib/billing';
 
 /** How often the bill screen asks the server whether the money arrived */
 const POLL_MS = 3000;
 
 /**
  * The UPI collection screen — the owner taps "Complete bill" on a UPI bill
- * and this full-screen QR takes over:
+ * and this full-screen payment view takes over:
  *
- *   1. the customer scans the QR (any UPI app — the amount + bill ref are
- *      embedded in the payment) and pays
+ *   1. the customer pays the shown amount to the shop's UPI ID (typed in
+ *      their UPI app, or the shared pay-link opened on their phone —
+ *      NO QR anywhere in this app)
  *   2. the payment gateway webhook records the event on the server
  *   3. this screen polls every 3 s, sees the money, and calls onPaid() —
  *      the bill completes ITSELF: slip opens, stock moves, WhatsApp/SMS go
  *      to the customer. Nothing is pressed.
- *   4. money paid straight into the personal UPI ID (no gateway in the
- *      middle → no webhook ever fires)? One tap on "Money received" records
- *      the payment and completes the bill exactly the same way.
+ *   4. money paid without any gateway (straight to the personal UPI ID)?
+ *      One tap on "Money received" records the payment and completes the
+ *      bill exactly the same way.
  *
  * Fallbacks stay one tap away: cash instead, or cancel back to the bill.
  */
@@ -46,13 +46,9 @@ export default function PaymentScreen({
   const upiId = useStore((s) => s.settings.upiId);
   const companyName = useStore((s) => s.settings.companyName);
 
-  const uri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(companyName)}&am=${amount.toFixed(
-    2
-  )}&cu=INR&tn=${encodeURIComponent(billRef)}`;
-  const qr = useQrDataUrl(uri);
-
   const [waiting, setWaiting] = useState(true);
   const [elapsed, setElapsed] = useState(0);
+  const [copied, setCopied] = useState(false);
   /** guards against a double completion (poll + render race) */
   const paidRef = useRef(false);
   /** latest onPaid without re-arming the poll interval */
@@ -60,6 +56,10 @@ export default function PaymentScreen({
   useEffect(() => {
     onPaidRef.current = onPaid;
   }, [onPaid]);
+
+  /** the pay-link the customer opens on THEIR phone — opens any UPI app
+   *  with the amount and the bill ref pre-filled (a link, not a QR) */
+  const payLink = upiId ? upiUri(upiId, amount, billRef) : '';
 
   useEffect(() => {
     if (!waiting) return;
@@ -117,29 +117,58 @@ export default function PaymentScreen({
     onPaidRef.current(amount);
   };
 
+  const copyUpi = async () => {
+    try {
+      await navigator.clipboard.writeText(upiId || '');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard blocked — the ID is on screen to retype */
+    }
+  };
+
+  const sharePayLink = () => {
+    const text = `${t('pay.shareText')} ₹${fmt(amount)} — ${companyName}: ${payLink}`;
+    if (navigator.share) {
+      navigator.share({ text }).catch(() => undefined);
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    }
+  };
+
   return (
     <div
       data-payment-screen
       className="fixed inset-0 z-[90] flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-blue-50 via-white to-blue-50 px-5 py-6"
     >
       <div className="flex items-center gap-2 text-sm font-bold text-blue-800">
-        <QrCode className="size-5" />
-        {t('pay.scanTitle')}
+        <Banknote className="size-5" />
+        {t('pay.upiTitle')}
       </div>
 
-      <div className="text-4xl font-extrabold tabular-nums text-blue-900">₹{fmt(amount)}</div>
-
-      <div className="rounded-2xl border-4 border-blue-600 bg-white p-3 shadow-lg">
-        {qr ? (
-          <img src={qr} alt={`UPI QR for ₹${fmt(amount)} — ref ${billRef}`} className="size-60" />
-        ) : (
-          <div className="flex size-60 items-center justify-center">
-            <Loader2 className="size-8 animate-spin text-blue-400" />
-          </div>
-        )}
+      <div data-payment-amount className="text-4xl font-extrabold tabular-nums text-blue-900">
+        ₹{fmt(amount)}
       </div>
 
-      <p className="text-xs text-muted-foreground">{t('pay.qrHint')}</p>
+      <div className="w-full max-w-xs rounded-2xl border-2 border-blue-600 bg-white p-4 text-center shadow-lg">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('pay.payTo')}</p>
+        <p data-payment-upi className="mt-1 break-all text-lg font-extrabold text-blue-900 select-all">
+          {upiId || t('pay.noUpiShort')}
+        </p>
+        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t('pay.typeHint')}</p>
+        <div className="mt-3 flex justify-center gap-2">
+          <Button variant="outline" size="sm" className="h-9" onClick={copyUpi} aria-label="Copy UPI ID">
+            <Copy className="size-3.5" />
+            {copied ? t('pay.copied') : t('pay.copyUpi')}
+          </Button>
+          {payLink && (
+            <Button variant="outline" size="sm" className="h-9" onClick={sharePayLink} aria-label="Share payment link">
+              <Share2 className="size-3.5" />
+              {t('pay.shareLink')}
+            </Button>
+          )}
+        </div>
+      </div>
 
       {waiting ? (
         <div data-payment-waiting className="flex flex-col items-center gap-2">
@@ -162,12 +191,6 @@ export default function PaymentScreen({
         </div>
       )}
 
-      {!upiId && (
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-center text-[11px] font-semibold text-amber-800">
-          {t('pay.noUpi')}
-        </p>
-      )}
-
       {waiting && (
         <Button
           data-payment-received
@@ -178,6 +201,12 @@ export default function PaymentScreen({
           <Banknote className="size-5" />
           {t('pay.received')}
         </Button>
+      )}
+
+      {!upiId && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-center text-[11px] font-semibold text-amber-800">
+          {t('pay.noUpi')}
+        </p>
       )}
 
       <div className="flex gap-2">

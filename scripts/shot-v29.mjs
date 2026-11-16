@@ -91,12 +91,12 @@ const startUpiBill = async (name, phone) => {
 
 await startUpiBill('Umesh Kumar', '9876543210');
 const screen = page.locator('[data-payment-screen]');
-const qrImg = screen.locator('img');
-await qrImg.waitFor({ state: 'visible', timeout: 10000 });
-const alt = (await qrImg.getAttribute('alt')) || '';
-const amount = Number((alt.match(/₹([\d.]+)/) || [])[1]);
+const amountEl = screen.locator('[data-payment-amount]');
+await amountEl.waitFor({ state: 'visible', timeout: 10000 });
+const amount = Number((((await amountEl.textContent()) || '').match(/₹([\d.]+)/) || [])[1]);
 const billRef = ((await page.locator('[data-bill-ref]').textContent()) || '').trim();
-ok(Number.isFinite(amount) && amount > 0, `payment screen shows the QR with the amount (₹${amount})`);
+ok(Number.isFinite(amount) && amount > 0, `payment screen shows the amount (₹${amount})`);
+ok((await screen.locator('img').count()) === 0, 'no QR anywhere on the payment screen (Code 128 app)');
 ok(/^SLP-/.test(billRef), `the bill carries its payment ref (${billRef})`);
 ok((await screen.locator('[data-payment-waiting]').count()) === 1, 'waiting state — nothing pressed yet');
 await page.screenshot({ path: '/home/z/my-project/download/v29-payment-qr.png' });
@@ -120,8 +120,7 @@ await page.waitForTimeout(500);
 /* ---- partial payment: half the money → Partial bill ---- */
 await startUpiBill('Padma Devi', '9123456780');
 const ref2 = ((await page.locator('[data-bill-ref]').textContent()) || '').trim();
-const alt2 = (await page.locator('[data-payment-screen] img').getAttribute('alt')) || '';
-const amount2 = Number((alt2.match(/₹([\d.]+)/) || [])[1]);
+const amount2 = Number((((await page.locator('[data-payment-amount]').textContent()) || '').match(/₹([\d.]+)/) || [])[1]);
 ok((await reportPayment(ref2, Math.round(amount2 / 2))) === 200, 'gateway reports HALF the total');
 await page.locator('[data-payment-screen]').waitFor({ state: 'detached', timeout: 15000 });
 await dlg().first().waitFor({ state: 'visible', timeout: 10000 });

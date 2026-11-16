@@ -18,7 +18,7 @@ import {
   Share2,
   Copy,
   Loader2,
-  QrCode,
+  ScanLine,
   Image as ImageIcon,
   Send,
   ReceiptText,
@@ -224,7 +224,7 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
           <DialogDescription className="text-xs">
             {mode === 'invoice' ? (
               <>
-                Full <b>invoice</b> image — WhatsApp sends this picture only. Paid bills carry a <b>PAID</b> stamp; balance bills carry the <b>UPI QR</b>.
+                Full <b>invoice</b> image — WhatsApp sends this picture only. Paid bills carry a <b>PAID</b> stamp; every bill carries the <b>Code 128 verification barcode</b>.
               </>
             ) : mode === 'driver' ? (
               <>
@@ -232,7 +232,7 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
               </>
             ) : (
               <>
-                Thermal-slip <b>image</b> — WhatsApp sends this picture only. Paid bills carry a <b>PAID</b> stamp; balance bills carry the <b>UPI QR</b>.
+                Thermal-slip <b>image</b> — WhatsApp sends this picture only. Paid bills carry a <b>PAID</b> stamp; every bill carries the <b>Code 128 verification barcode</b>.
               </>
             )}
           </DialogDescription>
@@ -300,9 +300,9 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
           </div>
           {invoice.totals.balance > 0 && !settings.upiId && (
             <div className="mt-1 flex items-start gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-2 text-[11px] leading-snug text-blue-900">
-              <QrCode className="mt-0.5 size-3.5 shrink-0" />
+              <ScanLine className="mt-0.5 size-3.5 shrink-0" />
               <span>
-                Balance is due — add your <b>UPI ID</b> in <b>Settings</b> and the bill image gets a scan-to-pay QR for the balance.
+                Balance is due — add your <b>UPI ID</b> in <b>Settings</b> and the bill shows it for the balance payment.
               </span>
             </div>
           )}

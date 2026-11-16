@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Eye, EyeOff, KeyRound, Lock, RefreshCw, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, KeyRound, Lock, RefreshCw, ScanLine, ShieldCheck, UserRound } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useT } from '@/hooks/use-app-lang';
 import {
@@ -14,6 +14,7 @@ import {
   apiMpinSetup,
   apiMpinUnlock,
   apiPullVault,
+  apiStaffLogin,
   getDeviceDek,
   getRecoverMaterial,
   setAuth,
@@ -30,9 +31,10 @@ import {
   unwrapDek,
   wrapDek,
 } from '@/lib/crypto';
+import { getIdentity, setIdentity } from '@/lib/role';
 import { mergeVaultBlob, pushVaultNow } from '@/lib/sync';
 
-type Step = 'checking' | 'setup' | 'unlock' | 'reclaim' | 'forgot';
+type Step = 'checking' | 'setup' | 'unlock' | 'reclaim' | 'forgot' | 'staff';
 
 /**
  * MPIN entry with the digits HIDDEN (the owner asked for that) — the field is
@@ -152,6 +154,10 @@ export default function LockScreen({
   const [showPin, setShowPin] = useState(false);
   /** forgot-MPIN flow: does this device hold the data key? (decides the warning) */
   const [forgotHasDek, setForgotHasDek] = useState(true);
+  /** staff sign-in (owner-created staff accounts) */
+  const [staffCount, setStaffCount] = useState(0);
+  const [staffUser, setStaffUser] = useState('');
+  const [staffPass, setStaffPass] = useState('');
 
   /** Instant double-submit guard — state alone is too slow for fast double-taps */
   const busyRef = useRef(false);
@@ -181,12 +187,19 @@ export default function LockScreen({
       setError(t('lock.errNetwork'));
       return;
     }
+    setStaffCount(res.staffCount ?? 0);
     setSalt(res.dekSalt ?? null);
     setLegacy(
       res.legacy && res.dekSalt && res.dekWrapped
         ? { salt: res.dekSalt, wrapped: res.dekWrapped }
         : null
     );
+    // a STAFF device signs in with its staff credentials, never the MPIN
+    if (getIdentity().role === 'staff') {
+      setStep('staff');
+      setBusyBoth(false);
+      return;
+    }
     if (mode === 'reclaim') {
       // device already holds the data key — the MPIN only re-connects sync
       setStep(res.hasMpin ? 'unlock' : 'reclaim');
@@ -301,7 +314,7 @@ export default function LockScreen({
         clearDraft();
         setBusyBoth(false);
         void pushVaultNow(); // upload whatever this device already has
-        onUnlocked();
+        finishOwner();
       } catch {
         setBusyBoth(false);
         setError(t('lock.errNetwork'));
@@ -351,7 +364,7 @@ export default function LockScreen({
         clearDraft();
         setBusyBoth(false);
         void pushVaultNow(); // re-upload this device's data to the fresh vault
-        onUnlocked();
+        finishOwner();
       } catch {
         setBusyBoth(false);
         setError(t('lock.errNetwork'));
@@ -407,7 +420,7 @@ export default function LockScreen({
         clearDraft();
         setBusyBoth(false);
         void pushVaultNow(); // keep the vault in step (fresh-key path replaces it)
-        onUnlocked();
+        finishOwner();
       } catch {
         setBusyBoth(false);
         setError(t('lock.errNetwork'));
@@ -449,7 +462,7 @@ export default function LockScreen({
           setDeviceDek(await exportDek(dek));
           clearDraft();
           setBusyBoth(false);
-          onUnlocked();
+          finishOwner();
         } catch {
           setBusyBoth(false);
           setError(t('lock.errNetwork'));
@@ -502,7 +515,7 @@ export default function LockScreen({
                 clearDraft();
                 setBusyBoth(false);
                 void pushVaultNow();
-                onUnlocked();
+                finishOwner();
                 return;
               }
             }
@@ -513,7 +526,7 @@ export default function LockScreen({
             clearDraft();
             setBusyBoth(false);
             void pushVaultNow();
-            onUnlocked();
+            finishOwner();
             return;
           }
           const dot = pull.dekWrapped.indexOf('.');
@@ -540,7 +553,7 @@ export default function LockScreen({
             return;
           }
           clearDraft();
-          onUnlocked();
+          finishOwner();
         };
 
         /* ---- legacy account: the old app stored an all-zero verifier, so a
@@ -591,12 +604,82 @@ export default function LockScreen({
     });
   };
 
+  /** STAFF sign-in — username + password. The server issues a role-bound
+   *  session and returns the vault key wrapped under THIS staff password
+   *  (wrapped by the owner's device — the key itself never travels). */
+  const staffSignIn = async () => {
+    if (busyRef.current) return;
+    setError(null);
+    const username = staffUser.trim();
+    if (!username || !staffPass) {
+      setError(t('lock.staffErr'));
+      return;
+    }
+    await withWatchdog(async () => {
+      setBusyBoth(true);
+      try {
+        const res = await apiStaffLogin(username, staffPass);
+        if (!res.ok || !res.token) {
+          setBusyBoth(false);
+          setError(res.error === 'rateLimited' ? t('lock.errTooMany') : t('lock.staffErr'));
+          return;
+        }
+        setAuth(res.token);
+        setIdentity('staff', res.name || username);
+        // open the encrypted vault with the key wrapped for this staff password
+        if (res.dekSalt && res.dekIv && res.dekWrapped) {
+          const { kek } = await deriveKek(staffPass, res.dekSalt);
+          const dek = await unwrapDek(res.dekWrapped, res.dekIv, kek).catch(() => null);
+          if (!dek) {
+            setBusyBoth(false);
+            setIdentity('owner');
+            lockApp();
+            setError(t('lock.staffErr'));
+            return;
+          }
+          setDeviceDek(await exportDek(dek));
+          const pull = await apiPullVault();
+          if (pull.kind === 'data') {
+            await mergeVaultBlob(pull.ciphertext, pull.dataIv, dek);
+          } else if (pull.kind === 'offline') {
+            // offline staff login — the local vault copy (if any) still opens
+          } else {
+            await pushVaultNow(); // empty vault — staff starts it from local data
+          }
+        }
+        setBusyBoth(false);
+        setStaffPass('');
+        onUnlocked();
+      } catch {
+        setBusyBoth(false);
+        setError(t('lock.errNetwork'));
+      }
+    });
+  };
+
+  /** owner paths re-stamp the identity so a previous staff login cannot linger */
+  const finishOwner = () => {
+    setIdentity('owner');
+    onUnlocked();
+  };
+
   /** Explicit retry is the only thing that wipes the form */
   const retryProbe = () => {
     setMpin('');
     setMpin2('');
     clearDraft();
-    void probe();
+    void probeRef.current?.();
+  };
+
+  const toStaffStep = () => {
+    setError(null);
+    setStaffPass('');
+    setStep('staff');
+  };
+
+  const backToOwnerStep = () => {
+    setError(null);
+    void probeRef.current?.();
   };
 
   const card = (
@@ -719,6 +802,18 @@ export default function LockScreen({
               {t('lock.forgot')}
             </button>
           )}
+          {step === 'unlock' && staffCount > 0 && (
+            <button
+              type="button"
+              onClick={toStaffStep}
+              disabled={busy}
+              aria-label="Staff login"
+              className="mx-auto flex items-center gap-1.5 text-xs font-semibold text-blue-700 underline-offset-2 hover:underline disabled:opacity-40"
+            >
+              <ScanLine className="size-3.5" />
+              {t('lock.staffLink')}
+            </button>
+          )}
         </>
       )}
 
@@ -789,6 +884,67 @@ export default function LockScreen({
           >
             <ArrowLeft className="size-3.5" />
             {t('lock.back')}
+          </Button>
+        </>
+      )}
+
+      {step === 'staff' && (
+        <>
+          <div className="text-center">
+            <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-900">
+              <UserRound className="size-4" />
+              {t('lock.staffTitle')}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="lock-staff-user" className="text-xs text-muted-foreground">
+              {t('lock.staffUsername')}
+            </Label>
+            <Input
+              id="lock-staff-user"
+              type="text"
+              autoComplete="username"
+              value={staffUser}
+              onChange={(e) => setStaffUser(e.target.value)}
+              aria-label="Staff username"
+              className="h-11"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="lock-staff-pass" className="text-xs text-muted-foreground">
+              {t('lock.staffPassword')}
+            </Label>
+            <Input
+              id="lock-staff-pass"
+              type="password"
+              autoComplete="current-password"
+              value={staffPass}
+              onChange={(e) => setStaffPass(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void staffSignIn();
+              }}
+              aria-label="Staff password"
+              className="h-11"
+            />
+          </div>
+          <Button
+            onClick={staffSignIn}
+            disabled={busy}
+            className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+            aria-label="Staff sign in"
+          >
+            <Lock className="size-4" />
+            {busy ? t('lock.verifying') : t('lock.staffBtn')}
+          </Button>
+          <Button
+            onClick={backToOwnerStep}
+            disabled={busy}
+            variant="ghost"
+            className="h-9 w-full text-xs"
+            aria-label="Back to owner MPIN"
+          >
+            <ArrowLeft className="size-3.5" />
+            {t('lock.backToOwner')}
           </Button>
         </>
       )}

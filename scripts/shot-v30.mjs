@@ -77,8 +77,8 @@ const startUpiBill = async (name, phone) => {
 };
 const screen = page.locator('[data-payment-screen]');
 const readAmount = async () => {
-  const alt = (await screen.locator('img').getAttribute('alt')) || '';
-  return Number((alt.match(/₹([\d.]+)/) || [])[1]);
+  const txt = (await screen.locator('[data-payment-amount]').textContent()) || '';
+  return Number((txt.match(/₹([\d.]+)/) || [])[1]);
 };
 const readRef = async () => ((await page.locator('[data-bill-ref]').textContent()) || '').trim();
 
@@ -86,7 +86,9 @@ const readRef = async () => ((await page.locator('[data-bill-ref]').textContent(
 await startUpiBill('Umesh Kumar', '9876543210');
 const amount = await readAmount();
 const billRef = await readRef();
-ok(Number.isFinite(amount) && amount > 0, `QR screen shows the amount (₹${amount})`);
+ok(Number.isFinite(amount) && amount > 0, `payment screen shows the amount (₹${amount})`);
+ok((await screen.locator('img').count()) === 0, 'no QR anywhere on the payment screen (Code 128 app)');
+ok((await screen.locator('[data-payment-upi]').count()) === 1, 'the UPI ID is shown to pay into');
 ok(/^SLP-/.test(billRef), `the bill carries its payment ref (${billRef})`);
 
 // the bug's precondition: the customer paid outside the app, no gateway →

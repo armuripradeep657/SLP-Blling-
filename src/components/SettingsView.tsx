@@ -22,9 +22,19 @@ import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from '@/lib/defaultData';
 import { normalizePhone } from '@/lib/billing';
 import InstallAppSection from '@/components/InstallAppSection';
 import { useT, useAppLang } from '@/hooks/use-app-lang';
-import { getAuth, lockApp } from '@/lib/cloud';
+import {
+  apiStaffCreate,
+  apiStaffDelete,
+  apiStaffList,
+  apiStaffUpdate,
+  getAuth,
+  getDeviceDek,
+  lockApp,
+  type StaffRow,
+} from '@/lib/cloud';
+import { deriveKek, exportDek, importDek, randomB64, wrapDek } from '@/lib/crypto';
 import { getSyncStatus, syncNow } from '@/lib/sync';
-import { CloudUpload, Download, ImageUp, Lock, RefreshCw, RotateCcw, ShieldCheck, Upload } from 'lucide-react';
+import { CloudUpload, Download, ImageUp, Lock, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, Upload, UserRound } from 'lucide-react';
 import type {
   Appearance,
   BgThemeId,
@@ -69,6 +79,8 @@ interface BillingDraft {
   slipWidthMm: 58 | 80;
   thankYouNote: string;
   returnPolicy: string;
+  /** owner-managed GST rate — applied to every new bill's taxable value */
+  gstPercent: string;
 }
 
 const billingOf = (s: BusinessSettings): BillingDraft => ({
@@ -77,6 +89,7 @@ const billingOf = (s: BusinessSettings): BillingDraft => ({
   slipWidthMm: s.slipWidthMm,
   thankYouNote: s.thankYouNote,
   returnPolicy: s.returnPolicy,
+  gstPercent: String(s.gstPercent ?? 0),
 });
 
 /** Shape of the backup file the app writes & reads back */
@@ -155,6 +168,10 @@ export default function SettingsView() {
       <Separator />
 
       <BillingSlipSection />
+
+      <Separator />
+
+      <StaffSection />
 
       <Separator />
 
@@ -379,6 +396,7 @@ function BillingSlipSection() {
       slipWidthMm: draft.slipWidthMm,
       thankYouNote: draft.thankYouNote,
       returnPolicy: draft.returnPolicy,
+      gstPercent: Math.min(Math.max(Number(draft.gstPercent.replace(/[^\d.]/g, '')) || 0, 0), 28),
     });
     toast({ title: t('settings.billingUpdatedToast') });
   };
@@ -402,6 +420,14 @@ function BillingSlipSection() {
           type="number"
         />
       </div>
+      <Field
+        ariaLabel="GST percent"
+        label={t('settings.gstPercent')}
+        value={draft.gstPercent}
+        onChange={(v) => upd({ gstPercent: v.replace(/[^\d.]/g, '') })}
+        placeholder="0"
+        type="number"
+      />
       <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">{t('settings.slipWidth')}</Label>
         <div className="flex gap-2">
@@ -575,6 +601,214 @@ function AppearanceSection() {
 /* Sync & security — encrypted cloud sync between the owner's phones   */
 /* (MPIN login, MPIN-protected data) and the manual lock.              */
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/* Staff accounts — owner creates logins, resets passwords securely.    */
+/* The vault key is re-wrapped under the staff password HERE (owner's   */
+/* device) — the server stores only wrapped bytes + a scrypt hash.      */
+/* ------------------------------------------------------------------ */
+
+function StaffSection() {
+  const t = useT();
+  const { toast } = useToast();
+  const [rows, setRows] = useState<StaffRow[]>([]);
+  const [username, setUsername] = useState('');
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [resetting, setResetting] = useState<string | null>(null);
+  const [resetPwd, setResetPwd] = useState('');
+
+  const refresh = async () => setRows(await apiStaffList());
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  /** wrap the vault key under the staff password on THIS device */
+  const dekForPassword = async (pwd: string) => {
+    const dekB64 = getDeviceDek();
+    if (!dekB64) return undefined;
+    const dek = await importDek(dekB64).catch(() => null);
+    if (!dek) return undefined;
+    const salt = randomB64(16);
+    const { kek } = await deriveKek(pwd, salt);
+    const { wrapped, iv } = await wrapDek(dek, kek);
+    return { dekSalt: salt, dekIv: iv, dekWrapped: wrapped };
+  };
+
+  const addStaff = async () => {
+    if (busy) return;
+    const u = username.trim().toLowerCase();
+    const p = password;
+    if (!/^[a-z0-9._-]{3,24}$/.test(u) || p.length < 4) {
+      toast({ title: t('staff.title'), description: t('lock.staffErr'), variant: 'destructive' });
+      return;
+    }
+    setBusy(true);
+    try {
+      const dek = await dekForPassword(p);
+      const res = await apiStaffCreate(u, p, name.trim() || u, dek);
+      if (!res.ok) {
+        toast({ title: t('staff.title'), description: res.error, variant: 'destructive' });
+        return;
+      }
+      setUsername('');
+      setName('');
+      setPassword('');
+      await refresh();
+      toast({ title: t('staff.created') });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resetPassword = async (row: StaffRow) => {
+    if (busy || resetPwd.length < 4) {
+      toast({ title: t('staff.resetPwd'), description: t('lock.staffErr'), variant: 'destructive' });
+      return;
+    }
+    setBusy(true);
+    try {
+      const dek = await dekForPassword(resetPwd);
+      const res = await apiStaffUpdate(row.id, { password: resetPwd, ...dek });
+      if (!res.ok) {
+        toast({ title: t('staff.resetPwd'), description: res.error, variant: 'destructive' });
+        return;
+      }
+      setResetting(null);
+      setResetPwd('');
+      toast({ title: t('staff.updated') });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleActive = async (row: StaffRow) => {
+    setBusy(true);
+    try {
+      await apiStaffUpdate(row.id, { active: !row.active });
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeStaff = async (row: StaffRow) => {
+    if (!window.confirm(t('staff.confirmDelete'))) return;
+    setBusy(true);
+    try {
+      await apiStaffDelete(row.id);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section aria-label="Staff accounts" className="space-y-3">
+      <h3 className="flex items-center gap-1.5 text-sm font-bold text-blue-800">
+        <UserRound className="size-4" />
+        {t('staff.title')}
+      </h3>
+      <p className="text-xs leading-relaxed text-muted-foreground">{t('staff.desc')}</p>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Input
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder={t('staff.username')}
+          aria-label="New staff username"
+          className="h-10"
+        />
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('staff.name')}
+          aria-label="New staff name"
+          className="h-10"
+        />
+      </div>
+      <div className="flex gap-2">
+        <Input
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder={t('staff.password')}
+          aria-label="New staff password"
+          type="password"
+          className="h-10"
+        />
+        <Button onClick={addStaff} disabled={busy} className="h-10 shrink-0 bg-blue-600 text-white hover:bg-blue-700" aria-label="Add staff">
+          <Plus className="size-4" />
+          {t('staff.addBtn')}
+        </Button>
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="text-xs text-muted-foreground">{t('staff.empty')}</p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((row) => (
+            <div key={row.id} data-staff-row={row.username} className="rounded-xl border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-neutral-800">
+                    {row.name} <span className="font-mono text-[10px] text-muted-foreground">@{row.username}</span>
+                  </p>
+                  <p className="text-[10px] font-semibold text-muted-foreground">
+                    {row.active ? t('staff.active') : t('staff.inactive')}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => void toggleActive(row)} disabled={busy}>
+                    {row.active ? t('staff.inactive') : t('staff.active')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setResetting(resetting === row.id ? null : row.id)}
+                    aria-label={`Reset password for ${row.username}`}
+                  >
+                    {t('staff.resetPwd')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-destructive hover:text-destructive"
+                    onClick={() => void removeStaff(row)}
+                    aria-label={`Delete ${row.username}`}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+              {resetting === row.id && (
+                <div className="mt-2 flex gap-2">
+                  <Input
+                    value={resetPwd}
+                    onChange={(e) => setResetPwd(e.target.value)}
+                    placeholder={t('staff.newPwd')}
+                    aria-label={`New password for ${row.username}`}
+                    type="password"
+                    className="h-9"
+                  />
+                  <Button
+                    onClick={() => void resetPassword(row)}
+                    disabled={busy || resetPwd.length < 4}
+                    className="h-9 shrink-0 bg-blue-600 text-white hover:bg-blue-700"
+                    aria-label="Save new password"
+                  >
+                    {t('staff.save')}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
 
 function SyncSecuritySection() {
   const t = useT();
