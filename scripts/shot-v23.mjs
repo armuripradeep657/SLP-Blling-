@@ -132,7 +132,10 @@ await p1.screenshot({ path: '/home/z/my-project/download/v23-unlocked.png' });
 
 /* ---------------- 3. labour rework ---------------- */
 console.log('\n— 3. Labour: product QUANTITY + money paid now + balance —');
-await p1.getByRole('button', { name: 'Labour', exact: true }).click();
+await p1.getByRole('button', { name: 'Ledger', exact: true }).click();
+await p1.waitForTimeout(500);
+await p1.getByRole('tab', { name: 'Labour work' }).click();
+await p1.waitForTimeout(600);
 await p1.waitForTimeout(600);
 ok((await p1.getByLabel('Work product').count()) === 0, 'product NAME input is GONE');
 ok(await p1.getByLabel('Work quantity').isVisible(), 'product QUANTITY input visible');
@@ -183,7 +186,10 @@ await p1.reload({ waitUntil: 'networkidle' });
 await p1.waitForTimeout(2500);
 await closePopup(p1);
 ok(await p1.locator('[data-header]').isVisible(), 'device stays unlocked after reload — no OTP asked');
-await p1.getByRole('button', { name: 'Labour', exact: true }).click();
+await p1.getByRole('button', { name: 'Ledger', exact: true }).click();
+await p1.waitForTimeout(500);
+await p1.getByRole('tab', { name: 'Labour work' }).click();
+await p1.waitForTimeout(600);
 await p1.waitForTimeout(500);
 const rr = p1.locator('[data-labour-row="Ramesh"]');
 ok(await rr.isVisible(), 'labour entry still there after reload');
@@ -215,7 +221,10 @@ ok(await p2.getByLabel('Login mobile number').isVisible(), 'device 2 is locked t
 await login(p2, { withPin: 'unlock' }); // same number, same PIN → unlock
 ok(true, 'device 2: OTP + SAME PIN unlocks the encrypted data');
 await closePopup(p2);
-await p2.getByRole('button', { name: 'Labour', exact: true }).click();
+await p2.getByRole('button', { name: 'Ledger', exact: true }).click();
+await p2.waitForTimeout(500);
+await p2.getByRole('tab', { name: 'Labour work' }).click();
+await p2.waitForTimeout(600);
 await p2.waitForTimeout(600);
 const rowOn2 = p2.locator('[data-labour-row="Ramesh"]');
 await rowOn2.waitFor({ state: 'visible', timeout: 12000 });
@@ -241,7 +250,10 @@ for (let i = 0; i < 20; i++) {
   }
 }
 ok(synced, 'device 1 receives Vijay from device 2 AUTOMATICALLY (no manual refresh)');
-await p1.getByRole('button', { name: 'Labour', exact: true }).click();
+await p1.getByRole('button', { name: 'Ledger', exact: true }).click();
+await p1.waitForTimeout(500);
+await p1.getByRole('tab', { name: 'Labour work' }).click();
+await p1.waitForTimeout(600);
 await p1.waitForTimeout(600);
 const vRow = p1.locator('[data-labour-row="Vijay"]');
 ok(await vRow.isVisible(), 'Vijay row rendered on device 1');

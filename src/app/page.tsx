@@ -5,7 +5,6 @@ import { Header, BottomNav, DesktopTabs } from '@/components/Navigation';
 import BillTab from '@/components/BillTab';
 import ProductsView from '@/components/ProductsView';
 import LedgerView from '@/components/LedgerView';
-import LabourView from '@/components/LabourView';
 import HistoryView from '@/components/HistoryView';
 import SettingsView from '@/components/SettingsView';
 import VerifyView from '@/components/VerifyView';
@@ -98,6 +97,7 @@ export default function Home() {
       setActiveTab('bill');
     }
   }, [identity.role, activeTab, setActiveTab]);
+
 
   const [modalInvoice, setModalInvoice] = useState<Invoice | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -192,6 +192,12 @@ export default function Home() {
     if (gate !== 'ready' || !mounted) return;
     useStore.getState().migrateVerifyCodes();
   }, [gate, mounted]);
+
+  // the Labour work page moved INSIDE the Ledger tab (v33) — a device that
+  // was last on 'labour' opens on Ledger (its sticky chip remembers the view)
+  useEffect(() => {
+    if (mounted && activeTab === 'labour') setActiveTab('ledger');
+  }, [mounted, activeTab, setActiveTab]);
 
   const totals = computeTotals(cart, cfg);
 
@@ -336,13 +342,6 @@ export default function Home() {
               <div className="mx-auto max-w-2xl">
                 <h2 className="mb-3 text-base font-bold text-neutral-800">{t('ledger.title')}</h2>
                 <LedgerView />
-              </div>
-            )}
-
-            {activeTab === 'labour' && (
-              <div className="mx-auto max-w-2xl">
-                <h2 className="mb-3 text-base font-bold text-neutral-800">{t('labour.title')}</h2>
-                <LabourView />
               </div>
             )}
 

@@ -59,7 +59,8 @@ await check('bill-tab-te', '/home/z/my-project/download/v29-te-1-bill.png');
 await page.locator('[aria-label="Main navigation"] button', { hasText: 'ఉత్పత్తులు' }).click();
 await check('products-tab-te', '/home/z/my-project/download/v29-te-2-products.png');
 
-await page.locator('[aria-label="Main navigation"] button', { hasText: 'లేబర్' }).click();
+await page.locator('[aria-label="Main navigation"] button', { hasText: 'లెడ్జర్' }).click();
+await page.getByRole('tab', { name: 'లేబర్ పనులు' }).click();
 await check('labour-entries-te', '/home/z/my-project/download/v29-te-3-labour.png');
 
 /* add one labour entry, open the notebook (new v29 UI in Telugu) */

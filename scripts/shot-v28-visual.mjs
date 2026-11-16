@@ -97,7 +97,9 @@ if (align) {
 await page.screenshot({ path: '/home/z/my-project/download/v28-cards.png' });
 
 /* 6. labour edit dialog (EN) */
-await jsClick(page.getByRole('button', { name: 'Labour', exact: true }));
+await jsClick(page.getByRole('button', { name: 'Ledger', exact: true }));
+await page.waitForTimeout(500);
+await jsClick(page.getByRole('tab', { name: 'Labour work' }));
 await page.waitForTimeout(800);
 await page.getByLabel('Worker name').fill('Suresh');
 await page.getByLabel('Work done').fill('slab carrying');

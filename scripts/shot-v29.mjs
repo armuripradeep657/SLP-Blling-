@@ -155,7 +155,10 @@ await page.locator('[aria-label="Main navigation"] button', { hasText: 'Bill' })
 await page.waitForTimeout(700);
 
 /* ---- LABOUR NOTEBOOK ---- */
-await page.getByRole('button', { name: 'Labour', exact: true }).click();
+await page.getByRole('button', { name: 'Ledger', exact: true }).click();
+await page.waitForTimeout(500);
+await page.getByRole('tab', { name: 'Labour work' }).click();
+await page.waitForTimeout(600);
 await page.waitForTimeout(700);
 
 const yesterday = new Date(Date.now() - 86400000);

@@ -105,13 +105,16 @@ const popupTxt = await closePopup(p1);
 ok(popupTxt.includes(`v${APP_V}`), `update popup advertises the current version (got: ${popupTxt.slice(0, 40)}…)`);
 const navBtns = await p1.locator('[aria-label="Main navigation"] button').allTextContents();
 const ledgerIdx = navBtns.findIndex((s) => s.includes('Ledger'));
-const labourIdx = navBtns.findIndex((s) => s.includes('Labour'));
-ok(labourIdx === ledgerIdx + 1, `labour sits beside ledger in the bottom bar (${navBtns.join(' | ')})`);
+ok(!navBtns.some((s) => s.trim() === 'Labour'), `labour is no longer a separate nav tab (${navBtns.join(' | ')})`);
+ok(ledgerIdx >= 0, 'ledger tab present — the labour work page lives inside it now');
 await p1.screenshot({ path: '/home/z/my-project/download/v24-unlocked.png' });
 
 /* ---------------- 3. labour: qty + paid + balance ---------------- */
 console.log('\n— 3. Labour: product QUANTITY + money paid now + balance —');
-await p1.getByRole('button', { name: 'Labour', exact: true }).click();
+await p1.getByRole('button', { name: 'Ledger', exact: true }).click();
+await p1.waitForTimeout(500);
+await p1.getByRole('tab', { name: 'Labour work' }).click();
+await p1.waitForTimeout(600);
 await p1.waitForTimeout(600);
 ok((await p1.getByLabel('Work product').count()) === 0, 'product NAME input is GONE');
 ok(await p1.getByLabel('Work quantity').isVisible(), 'product QUANTITY input visible');
@@ -199,7 +202,10 @@ ok(mainTxt.includes('tap a size'), 'Bill tab content (product size buttons) is o
 ok(!mainTxt.includes('Invoice history'), 'History content NOT shown on fresh open');
 await p1.screenshot({ path: '/home/z/my-project/download/v24-bill-reset.png' });
 // within a session, switching tabs still works
-await p1.getByRole('button', { name: 'Labour', exact: true }).click();
+await p1.getByRole('button', { name: 'Ledger', exact: true }).click();
+await p1.waitForTimeout(500);
+await p1.getByRole('tab', { name: 'Labour work' }).click();
+await p1.waitForTimeout(600);
 await p1.waitForTimeout(500);
 const rr = p1.locator('[data-labour-row="Ramesh"]');
 ok(await rr.isVisible(), 'tab switching still works — labour entry there after reload');
@@ -231,7 +237,10 @@ ok(await p2.getByLabel('MPIN', { exact: true }).isVisible(), 'device 2 is locked
 await unlockWithMpin(p2);
 ok(true, 'device 2: the SAME MPIN unlocks the encrypted data');
 await closePopup(p2);
-await p2.getByRole('button', { name: 'Labour', exact: true }).click();
+await p2.getByRole('button', { name: 'Ledger', exact: true }).click();
+await p2.waitForTimeout(500);
+await p2.getByRole('tab', { name: 'Labour work' }).click();
+await p2.waitForTimeout(600);
 await p2.waitForTimeout(600);
 const rowOn2 = p2.locator('[data-labour-row="Ramesh"]');
 await rowOn2.waitFor({ state: 'visible', timeout: 12000 });
@@ -257,7 +266,10 @@ for (let i = 0; i < 20; i++) {
   }
 }
 ok(synced, 'device 1 receives Vijay from device 2 AUTOMATICALLY (no manual refresh)');
-await p1.getByRole('button', { name: 'Labour', exact: true }).click();
+await p1.getByRole('button', { name: 'Ledger', exact: true }).click();
+await p1.waitForTimeout(500);
+await p1.getByRole('tab', { name: 'Labour work' }).click();
+await p1.waitForTimeout(600);
 await p1.waitForTimeout(600);
 const vRow = p1.locator('[data-labour-row="Vijay"]');
 ok(await vRow.isVisible(), 'Vijay row rendered on device 1');
@@ -334,7 +346,10 @@ for (const size of FIT_SIZES) {
   await closePopup(pd);
   const oBill = await overflow();
   ok(oBill <= 1, `${size.name}: bill tab fits (Δ ${oBill}px)`);
-  await pd.getByRole('button', { name: 'Labour', exact: true }).click();
+  await pd.getByRole('button', { name: 'Ledger', exact: true }).click();
+await pd.waitForTimeout(500);
+await pd.getByRole('tab', { name: 'Labour work' }).click();
+await pd.waitForTimeout(600);
   await pd.waitForTimeout(400);
   const oLab = await overflow();
   ok(oLab <= 1, `${size.name}: labour tab fits (Δ ${oLab}px)`);

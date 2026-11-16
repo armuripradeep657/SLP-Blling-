@@ -72,7 +72,10 @@ ok((await page.getByLabel('New MPIN').count()) === 0, 'the Create screen never r
 ok((await activeTab()) === 'Bill', 'refresh lands back on the tab the user was on (Bill)');
 
 /* ---- 3. LABOUR — edit entered details + balance payment + extra money ---- */
-await page.getByRole('button', { name: 'Labour', exact: true }).click();
+await page.getByRole('button', { name: 'Ledger', exact: true }).click();
+await page.waitForTimeout(500);
+await page.getByRole('tab', { name: 'Labour work' }).click();
+await page.waitForTimeout(600);
 await page.waitForTimeout(600);
 
 await page.getByLabel('Worker name').fill('Ramesh');
@@ -162,7 +165,7 @@ ok((await page.getByLabel('MPIN', { exact: true }).count()) === 0, 'after a serv
 const row3 = page.locator('[data-labour-row="Ramesh K"]');
 await row3.waitFor({ state: 'visible', timeout: 10000 });
 ok(((await row3.textContent()) || '').includes('600.00'), 'labour data intact after the wipe + refresh (tab preserved: Labour)');
-ok((await activeTab()) === 'Labour', 'refresh after the wipe stays on the Labour tab');
+ok((await activeTab()) === 'Ledger', 'refresh after the wipe stays on the Ledger tab (labour lives inside it)');
 
 /* ---- 6. LEGACY repair — the owner's exact situation ----
  * Accounts created before the verifier fix stored an ALL-ZERO verifier, so a
@@ -190,7 +193,10 @@ await p2.locator('[data-header]').waitFor({ state: 'visible', timeout: 25000 });
 ok(true, 'SAME MPIN repairs the legacy account and opens the app');
 const fixed = await db.syncAccount.findUnique({ where: { slot: 'owner' } });
 ok(Boolean(fixed?.pinVerifier) && !/^0+$/.test(fixed.pinVerifier), 'server verifier repaired to the REAL digest');
-await p2.getByRole('button', { name: 'Labour', exact: true }).click();
+await p2.getByRole('button', { name: 'Ledger', exact: true }).click();
+await p2.waitForTimeout(500);
+await p2.getByRole('tab', { name: 'Labour work' }).click();
+await p2.waitForTimeout(600);
 await p2.waitForTimeout(800);
 ok(((await p2.locator('[data-labour-row="Ramesh K"]').textContent()) || '').includes('600.00'), 'the owner keeps all their data — nothing was recreated');
 await ctx2.close();
@@ -215,7 +221,7 @@ ok(((await page.locator('[data-lock-error]').textContent()) || '').includes('Wro
 await lockPin.fill(MPIN);
 await page.getByRole('button', { name: 'Open app' }).click();
 await page.locator('[data-header]').waitFor({ state: 'visible', timeout: 20000 });
-ok((await activeTab()) === 'Labour', 'right MPIN opens the app on the tab it was left on (Labour)');
+ok((await activeTab()) === 'Ledger', 'right MPIN opens the app on the tab it was left on (Ledger with labour inside)');
 await page.evaluate(() => localStorage.removeItem('slp-idle-ms'));
 
 /* ---- 8. FORGOT MPIN (device key present) — new MPIN, data kept ---- */
@@ -232,7 +238,10 @@ await page.getByLabel('Confirm MPIN').fill('5678');
 await page.getByRole('button', { name: 'Set new MPIN' }).click();
 await page.locator('[data-header]').waitFor({ state: 'visible', timeout: 25000 });
 ok(true, 'a NEW MPIN (5678) is set and the app opens — no data lost');
-await page.getByRole('button', { name: 'Labour', exact: true }).click();
+await page.getByRole('button', { name: 'Ledger', exact: true }).click();
+await page.waitForTimeout(500);
+await page.getByRole('tab', { name: 'Labour work' }).click();
+await page.waitForTimeout(600);
 const row4 = page.locator('[data-labour-row="Ramesh K"]');
 await row4.waitFor({ state: 'visible', timeout: 8000 });
 ok(((await row4.textContent()) || '').includes('600.00'), 'all labour data survives the forgot-MPIN reset');
@@ -276,7 +285,10 @@ await page.getByRole('button', { name: 'Set new MPIN' }).click();
 await page.locator('[data-header]').waitFor({ state: 'visible', timeout: 25000 });
 ok(true, 'the fresh-key reset completes and the app opens');
 const row5 = page.locator('[data-labour-row="Ramesh K"]');
-await page.getByRole('button', { name: 'Labour', exact: true }).click();
+await page.getByRole('button', { name: 'Ledger', exact: true }).click();
+await page.waitForTimeout(500);
+await page.getByRole('tab', { name: 'Labour work' }).click();
+await page.waitForTimeout(600);
 await row5.waitFor({ state: 'visible', timeout: 8000 });
 ok(((await row5.textContent()) || '').includes('600.00'), 'device data is intact after the fresh-key reset');
 await page.evaluate(() => localStorage.removeItem('slp-idle-ms'));

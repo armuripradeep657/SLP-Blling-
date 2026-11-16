@@ -26,7 +26,12 @@ import {
 import { useStore } from '@/lib/store';
 import { fmt, fmtShort, localDateKey, localMonthKey, paymentsOf } from '@/lib/billing';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
+import LabourView from '@/components/LabourView';
 import type { AppLanguage, ExpenseCategory, PaymentMode } from '@/lib/types';
+
+/** sticky section chip — the Labour work page lives INSIDE the ledger now,
+ *  and the last-open section survives a refresh */
+const SECTION_KEY = 'slp-ledger-section';
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = ['Labour wages', 'Diesel', 'Raw material', 'Other'];
 
@@ -49,7 +54,7 @@ function nowHM(): string {
   return fmtTime(new Date());
 }
 
-type LedgerTab = 'day' | 'allDays' | 'income' | 'expenses' | 'dues';
+type LedgerTab = 'day' | 'allDays' | 'income' | 'expenses' | 'dues' | 'labour';
 
 /** One money row in the ledger — income (bill payment) or spent (expense) */
 interface LedgerRow {
@@ -169,7 +174,24 @@ export default function LedgerView() {
   const today = localDateKey(new Date());
   const thisMonth = localMonthKey(new Date());
 
-  const [tab, setTab] = useState<LedgerTab>('day');
+  const [tab, setTab] = useState<LedgerTab>(() => {
+    // sticky section across refreshes (Labour work page lives here now)
+    try {
+      const saved = localStorage.getItem(SECTION_KEY) as LedgerTab | null;
+      if (saved && ['day', 'allDays', 'income', 'expenses', 'dues', 'labour'].includes(saved)) return saved;
+    } catch {
+      /* storage unavailable */
+    }
+    return 'day';
+  });
+  const selectTab = (next: LedgerTab) => {
+    setTab(next);
+    try {
+      localStorage.setItem(SECTION_KEY, next);
+    } catch {
+      /* storage unavailable */
+    }
+  };
   const [day, setDay] = useState(today);
   const [month, setMonth] = useState(thisMonth);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
@@ -372,6 +394,7 @@ export default function LedgerView() {
     { id: 'income', label: t('ledger.income') },
     { id: 'expenses', label: t('ledger.expenses') },
     { id: 'dues', label: `${t('ledger.dues')}${totalDue > 0 ? ` (${dues.length})` : ''}` },
+    { id: 'labour', label: t('ledger.labour') },
   ];
 
   return (
@@ -383,7 +406,7 @@ export default function LedgerView() {
             key={x.id}
             role="tab"
             aria-selected={tab === x.id}
-            onClick={() => setTab(x.id)}
+            onClick={() => selectTab(x.id)}
             className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all active:scale-95 ${
               tab === x.id ? 'bg-blue-600 text-white' : 'border bg-card hover:bg-accent'
             }`}
@@ -587,6 +610,9 @@ export default function LedgerView() {
       )}
 
       {/* ---------- DUES ---------- */}
+      {/* ---------- LABOUR WORK (merged into the ledger) ---------- */}
+      {tab === 'labour' && <LabourView />}
+
       {tab === 'dues' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between rounded-xl border bg-red-50 p-3">

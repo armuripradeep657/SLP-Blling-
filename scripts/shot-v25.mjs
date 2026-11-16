@@ -96,7 +96,10 @@ const activeTxt = (
 ok(activeTxt === 'Bill', `fresh open lands on the Bill tab (active: ${activeTxt})`);
 
 /* ---------- F. v28: a REFRESH does not lock — same tab, straight in ---------- */
-await page.getByRole('button', { name: 'Labour', exact: true }).click();
+await page.getByRole('button', { name: 'Ledger', exact: true }).click();
+await page.waitForTimeout(500);
+await page.getByRole('tab', { name: 'Labour work' }).click();
+await page.waitForTimeout(600);
 await page.waitForTimeout(600);
 await page.reload({ waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(2400);
@@ -105,7 +108,7 @@ ok((await page.getByLabel('MPIN', { exact: true }).count()) === 0, 'REFRESH does
 const refreshTab = (
   (await page.locator('[aria-label="Main navigation"] button[aria-current="page"]').textContent()) || ''
 ).trim();
-ok(refreshTab === 'Labour', `refresh stays on the tab the user was on (${refreshTab})`);
+ok(refreshTab === 'Ledger', `refresh stays on the tab the user was on (${refreshTab})`);
 
 /* ---------- G. v28: idle lock — 5 min without use (3 s in test) locks ---------- */
 await page.evaluate(() => localStorage.setItem('slp-idle-ms', '5000'));

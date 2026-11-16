@@ -2,7 +2,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { WifiOff, ReceiptText, Package, History, Settings, BookText, Languages, Hammer, ScanLine } from 'lucide-react';
+import { WifiOff, ReceiptText, Package, History, Settings, BookText, Languages, ScanLine } from 'lucide-react';
 import { useSyncExternalStore, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useIdentity } from '@/lib/role';
@@ -117,7 +117,6 @@ export function BottomNav() {
     { id: 'bill', label: t('nav.bill'), icon: ReceiptIcon, ownerOnly: false },
     { id: 'products', label: t('nav.products'), icon: PackageIcon, ownerOnly: true },
     { id: 'ledger', label: t('nav.ledger'), icon: LedgerIcon, ownerOnly: true },
-    { id: 'labour', label: t('nav.labour'), icon: LabourIcon, ownerOnly: true },
     { id: 'history', label: t('nav.history'), icon: HistoryIcon, ownerOnly: false },
     { id: 'verify', label: t('nav.verify'), icon: ScanIcon, ownerOnly: false },
     { id: 'settings', label: t('nav.settings'), icon: SettingsIcon, ownerOnly: true },
@@ -172,7 +171,6 @@ export function DesktopTabs() {
     { id: 'bill', label: t('nav.newBill'), ownerOnly: false },
     { id: 'products', label: t('nav.products'), ownerOnly: true },
     { id: 'ledger', label: t('nav.ledger'), ownerOnly: true },
-    { id: 'labour', label: t('nav.labour'), ownerOnly: true },
     { id: 'history', label: t('nav.invoiceHistory'), ownerOnly: false },
     { id: 'verify', label: t('nav.verify'), ownerOnly: false },
     { id: 'settings', label: t('nav.settings'), ownerOnly: true },
@@ -206,9 +204,6 @@ function PackageIcon({ className, active }: { className?: string; active?: boole
 }
 function LedgerIcon({ className, active }: { className?: string; active?: boolean }) {
   return <BookText className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
-}
-function LabourIcon({ className, active }: { className?: string; active?: boolean }) {
-  return <Hammer className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
 }
 function HistoryIcon({ className, active }: { className?: string; active?: boolean }) {
   return <History className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
