@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- brand blue, matches the PWA theme_color -->
+    <color name="theme">#1d4ed8</color>
+    <color name="bg">#f8fafc</color>
+    <color name="text_dark">#0f172a</color>
+    <color name="text_muted">#64748b</color>
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>

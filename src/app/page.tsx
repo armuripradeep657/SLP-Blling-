@@ -12,6 +12,7 @@ import BillPanel from '@/components/BillPanel';
 import PaymentScreen from '@/components/PaymentScreen';
 import InvoiceModal, { type DocView } from '@/components/InvoiceModal';
 import PwaInstall, { ServiceWorkerRegister } from '@/components/PwaInstall';
+import AndroidAppPopup from '@/components/AndroidAppPopup';
 import ConnectivityToast from '@/components/ConnectivityToast';
 import LockScreen from '@/components/LockScreen';
 import StaffProfile from '@/components/StaffProfile';
@@ -345,6 +346,7 @@ export default function Home() {
       <ServiceWorkerRegister />
       <Header />
       <PwaInstall />
+      <AndroidAppPopup />
       <ConnectivityToast />
 
       {/* the online-only save error — the bill did NOT save, say so plainly */}

@@ -58,3 +58,7 @@ upload/
 
 # agent-generated artifacts (bundles, render outputs) — never commit
 download/
+
+# android build toolchain + apk build artifacts
+.toolchain/
+android-app/build/
