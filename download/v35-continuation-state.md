@@ -10,7 +10,12 @@ server (own port + own throwaway database — the live data was never touched).
 - `scripts/shot-v35-invoice.mjs`   → **19/19 PASS**
 - `scripts/shot-v35-camera.mjs`    → **13/13 PASS**
 - `scripts/shot-v35-sync.mjs`      → **16/16 PASS**
-- v24/v25/v27/v29/v30/v32/v34-public regression + lint + tsc: clean
+- v24/v25/v27/v29/v30/v32 regression re-run after all fixes: v24 **72/72**,
+  v25 **17/17**, v27 **43/43**, v29 **26/26**, v30 **17/17**, v32 **17/17**
+  all green (later suites of the chain still running at session cutoff —
+  every one of them passed earlier in this session; full log:
+  `download/v35-regression.log`)
+- lint + tsc (app code): clean
 - suite total: **116 v35 checks green**
 
 ## What each requirement got
