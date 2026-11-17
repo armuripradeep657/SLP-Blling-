@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { bearerToken, requireOwner } from '@/lib/server/auth';
+import { bearerToken, requireOwnerOrStaff } from '@/lib/server/auth';
 import { bumpRev, ensureBizState, mintVerifyCode, readSettings, CODE_RE, recomputeBill, statusOf, upsertRegistry } from '@/lib/server/biz';
 import type { Invoice } from '@/lib/types';
 
@@ -13,7 +13,9 @@ import type { Invoice } from '@/lib/types';
  * server confirms — and an offline device cannot save at all.
  */
 export async function POST(req: Request) {
-  const auth = await requireOwner(bearerToken(req));
+  // staff members bill customers too — the same central database, the same
+  // number sequence; money, deletion and settings stay owner-only
+  const auth = await requireOwnerOrStaff(bearerToken(req));
   if (!auth) return Response.json({ error: 'unauthorized' }, { status: 401 });
 
   let body: Record<string, unknown>;
@@ -48,21 +50,33 @@ export async function POST(req: Request) {
   const dateRaw = new Date(String(draft.dateISO ?? ''));
   const dateISO = Number.isNaN(dateRaw.getTime()) ? new Date() : dateRaw;
 
-  /* ---- bill number: reserved at cart-start or the next atomic number ----
-     The reservation already bumped AppConfig.nextBillNo on THIS device's
-     cart-start; the server here guarantees no collision regardless. */
+  /* ---- bill number: assigned HERE, atomically, at save time (v38) ----
+     Numbers only ever belong to bills that were ACTUALLY saved — abandoned
+     carts can no longer punch gaps into the sequence, and deleting a bill
+     never rewinds the counter. Two devices saving at the same moment each
+     get their own number inside this transaction. */
   const reserved = Number(body.reservedNo ?? 0);
   const prefix = String(shop.invoicePrefix ?? '').trim() || 'SLP-INV-';
   let noNum = Number.isFinite(reserved) && reserved > 0 ? Math.round(reserved) : 0;
+  if (noNum <= 0) {
+    noNum = await db.$transaction(async (tx) => {
+      const c = await tx.appConfig.findUnique({ where: { slot: 'owner' } });
+      const next = (c?.nextBillNo ?? 0) + 1;
+      await tx.appConfig.update({ where: { slot: 'owner' }, data: { nextBillNo: next } });
+      return next;
+    });
+  } else if (cfg && noNum > cfg.nextBillNo) {
+    await db.appConfig.update({ where: { slot: 'owner' }, data: { nextBillNo: noNum } }).catch(() => undefined);
+  }
+  // collision backstop: a legacy reserved number that is already taken moves
+  // FORWARD past the counter — numbers are never reused
   for (let attempt = 0; attempt < 5; attempt++) {
-    if (noNum <= 0) noNum = (cfg?.nextBillNo ?? 0) + 1;
-    const no = `${prefix}${noNum}`;
-    const clash = await db.bizInvoice.findUnique({ where: { no } });
+    const candidate = `${prefix}${noNum}`;
+    const clash = await db.bizInvoice.findUnique({ where: { no: candidate } });
     if (!clash) break;
-    // taken — always move forward past the counter
-    noNum = Math.max((cfg?.nextBillNo ?? 0) + 1, noNum + 1);
+    noNum += 1;
     if (cfg && noNum > cfg.nextBillNo) {
-      await db.appConfig.update({ where: { slot: 'owner' }, data: { nextBillNo: noNum - 1 } }).catch(() => undefined);
+      await db.appConfig.update({ where: { slot: 'owner' }, data: { nextBillNo: noNum } }).catch(() => undefined);
     }
   }
   const no = `${prefix}${noNum}`;

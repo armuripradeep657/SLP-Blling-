@@ -397,16 +397,20 @@ await pageC.waitForTimeout(900);
 const histC = await pageC.locator('li button', { hasText: 'SLP-INV-' }).count();
 ok(histC >= 5, `device C: the SAME complete history (${histC} bills — migrated + all new ones)`);
 
-/* ---- 13. admin-only: no staff UI anywhere ---- */
+/* ---- 13. v39: staff logins exist and are owner-managed ----
+   v37 asserted "no staff UI anywhere" — the owner has since ASKED for staff
+   logins (v39), so this section now asserts the NEW intended state: the
+   owner's Settings carries the Staff section and the lock screen offers the
+   staff login, while the owner's own MPIN + full app stay as they were. */
 await pageC.locator('[aria-label="Main navigation"] button', { hasText: 'Settings' }).first().click();
 await pageC.waitForTimeout(800);
-ok((await pageC.getByText('Staff accounts').count()) === 0, 'no Staff accounts section in Settings');
+ok((await pageC.locator('[data-settings-staff]').count()) === 1, 'Settings has the Staff section (owner-managed)');
 const bodyC = (await pageC.textContent('body')) || '';
-ok(!bodyC.includes('Staff management') && !bodyC.includes('Add staff'), 'no staff management text anywhere');
-await pageC.evaluate(() => { localStorage.removeItem('slp-auth-v1'); });
+ok(bodyC.includes('M.D.Najir'), 'the seeded staff member M.D.Najir is listed for the owner');
+await pageC.evaluate(() => { localStorage.removeItem('slp-auth-v1'); sessionStorage.clear(); });
 await pageC.reload({ waitUntil: 'domcontentloaded' });
-await pageC.waitForTimeout(1800);
-ok((await pageC.getByText('Staff login').count()) === 0, 'no Staff login on the lock screen');
+await pageC.waitForTimeout(2500);
+ok((await pageC.locator('[data-staff-login-link]').count()) === 1, 'the lock screen offers the staff login (v39)');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 await browser.close();

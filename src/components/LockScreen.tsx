@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Eye, EyeOff, KeyRound, Lock, RefreshCw, ScanLine, ShieldCheck, UserRound, UserCog } from 'lucide-react';
+import { ArrowLeft, Camera, Eye, EyeOff, KeyRound, Lock, RefreshCw, ScanLine, ShieldCheck, UserRound, UserCog } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useT } from '@/hooks/use-app-lang';
 import {
@@ -13,6 +13,8 @@ import {
   apiMpinUnlock,
   apiOwnerLogin,
   apiOwnerPassword,
+  apiStaffLogin,
+  apiStaffForgot,
   getDeviceDek,
   getRecoverMaterial,
   setAuth,
@@ -20,6 +22,8 @@ import {
   setRecoverMaterial,
   lockApp,
 } from '@/lib/cloud';
+import { fileToSmallDataUrl } from '@/lib/photo';
+import { hasFreshUnlockSession } from '@/lib/idle-lock';
 import {
   deriveKek,
   exportDek,
@@ -33,7 +37,10 @@ import {
 const OWNER_DEFAULT_USERNAME = 'Pradeep';
 const OWNER_DEFAULT_PASSWORD = '2125';
 
-type Step = 'checking' | 'setup' | 'unlock' | 'reclaim' | 'owner';
+type Step = 'checking' | 'setup' | 'unlock' | 'reclaim' | 'owner' | 'staff' | 'staff-forgot';
+
+/** Forgot-password sub-steps: photo (identity proof) → staff ID → new password */
+type ForgotStep = 'photo' | 'uid' | 'newpass' | 'done';
 
 /**
  * MPIN entry with the digits HIDDEN (the owner asked for that) — the field is
@@ -155,6 +162,15 @@ export default function LockScreen({
   const [ownerPasswordReady, setOwnerPasswordReady] = useState(false);
   const [ownerUser, setOwnerUser] = useState('');
   const [ownerPass, setOwnerPass] = useState('');
+
+  /** STAFF sign-in (v39) — Staff ID + password or MPIN, then forgot flow */
+  const [staffUser, setStaffUser] = useState('');
+  const [staffSecret, setStaffSecret] = useState('');
+  const [forgotStep, setForgotStep] = useState<ForgotStep>('photo');
+  const [forgotPhoto, setForgotPhoto] = useState('');
+  const [forgotUid, setForgotUid] = useState('');
+  const [forgotPass, setForgotPass] = useState('');
+  const forgotFileRef = useRef<HTMLInputElement>(null);
 
   /** Instant double-submit guard — state alone is too slow for fast double-taps */
   const busyRef = useRef(false);
@@ -510,6 +526,102 @@ export default function LockScreen({
     });
   };
 
+  /** STAFF sign-in — the server issues a staff session; the app opens in
+   *  staff mode (Bill + History + Profile only, filtered central data). */
+  const staffSignIn = async () => {
+    if (busyRef.current) return;
+    setError(null);
+    const uid = staffUser.trim();
+    if (!uid || !staffSecret) {
+      setError(t('staff.errWrong'));
+      return;
+    }
+    await withWatchdog(async () => {
+      setBusyBoth(true);
+      try {
+        const res = await apiStaffLogin(uid, staffSecret);
+        if (!res.ok || !res.token || !res.staff) {
+          setBusyBoth(false);
+          setError(
+            res.error === 'rateLimited'
+              ? t('lock.errTooMany')
+              : res.error === 'notFound'
+                ? t('staff.errNotFound')
+                : res.error === 'network'
+                  ? t('staff.errNetwork')
+                  : t('staff.errWrong')
+          );
+          return;
+        }
+        setAuth(res.token, 'staff');
+        useStore.setState({ staff: res.staff });
+        setStaffSecret('');
+        setBusyBoth(false);
+        onUnlocked();
+      } catch {
+        setBusyBoth(false);
+        setError(t('lock.errNetwork'));
+      }
+    });
+  };
+
+  /** forgot flow step 1: the identity photo is captured from the camera roll */
+  const pickForgotPhoto = async (file: File | undefined) => {
+    if (!file) return;
+    setError(null);
+    try {
+      const url = await fileToSmallDataUrl(file);
+      setForgotPhoto(url);
+      setForgotStep('uid');
+    } catch {
+      setError(t('staff.errNetwork'));
+    }
+  };
+
+  /** forgot flow final: userId + photo + new password → audited reset */
+  const submitForgot = async () => {
+    if (busyRef.current) return;
+    setError(null);
+    const uid = forgotUid.trim();
+    if (!uid || forgotPass.length < 3 || !forgotPhoto) {
+      setError(t('staff.errNotFound'));
+      return;
+    }
+    await withWatchdog(async () => {
+      setBusyBoth(true);
+      try {
+        const res = await apiStaffForgot({ userId: uid, photo: forgotPhoto, newPassword: forgotPass });
+        setBusyBoth(false);
+        if (!res.ok) {
+          setError(
+            res.error === 'notFound'
+              ? t('staff.errNotFound')
+              : res.error === 'rateLimited'
+                ? t('lock.errTooMany')
+                : res.error === 'network'
+                  ? t('staff.errNetwork')
+                  : t('staff.errNotFound')
+          );
+          return;
+        }
+        setForgotStep('done');
+        setForgotPass('');
+      } catch {
+        setBusyBoth(false);
+        setError(t('staff.errNetwork'));
+      }
+    });
+  };
+
+  const openStaffForgot = () => {
+    setError(null);
+    setForgotPhoto('');
+    setForgotUid(staffUser.trim());
+    setForgotPass('');
+    setForgotStep('photo');
+    setStep('staff-forgot');
+  };
+
   const finishOwner = () => {
     void ensureOwnerPassword();
     onUnlocked();
@@ -660,7 +772,26 @@ export default function LockScreen({
               {t('ownerLogin.link')}
             </button>
           )}
+
         </>
+      )}
+
+      {(step === 'setup' || step === 'unlock' || step === 'reclaim') && (
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setStaffSecret('');
+            setStep('staff');
+          }}
+          disabled={busy}
+          aria-label="Staff login"
+          data-staff-login-link
+          className="mx-auto flex items-center gap-1.5 text-xs font-semibold text-blue-700 underline-offset-2 hover:underline disabled:opacity-40"
+        >
+          <UserRound className="size-3.5" />
+          {t('staff.link')}
+        </button>
       )}
 
       {step === 'owner' && (
@@ -720,6 +851,187 @@ export default function LockScreen({
             variant="ghost"
             className="h-9 w-full text-xs"
             aria-label="Back to MPIN"
+          >
+            <ArrowLeft className="size-3.5" />
+            {t('lock.back')}
+          </Button>
+        </>
+      )}
+
+      {step === 'staff' && (
+        <>
+          <div className="text-center">
+            <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-900">
+              <UserRound className="size-4" />
+              {t('staffLogin.title')}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="lock-staff-user" className="text-xs text-muted-foreground">
+              {t('staff.userId')}
+            </Label>
+            <Input
+              id="lock-staff-user"
+              type="text"
+              autoCapitalize="characters"
+              autoComplete="username"
+              value={staffUser}
+              onChange={(e) => setStaffUser(e.target.value)}
+              aria-label="Staff ID"
+              className="h-11 uppercase"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="lock-staff-secret" className="text-xs text-muted-foreground">
+              {t('staff.secret')}
+            </Label>
+            <Input
+              id="lock-staff-secret"
+              type="password"
+              autoComplete="current-password"
+              value={staffSecret}
+              onChange={(e) => setStaffSecret(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void staffSignIn();
+              }}
+              aria-label="Staff password or MPIN"
+              className="h-11"
+            />
+          </div>
+          <Button
+            onClick={staffSignIn}
+            disabled={busy}
+            className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+            aria-label="Staff sign in"
+          >
+            <Lock className="size-4" />
+            {busy ? t('lock.verifying') : t('staff.btn')}
+          </Button>
+          <button
+            type="button"
+            onClick={openStaffForgot}
+            disabled={busy}
+            aria-label="Staff forgot password"
+            className="mx-auto block text-xs font-semibold text-blue-700 underline-offset-2 hover:underline disabled:opacity-40"
+          >
+            {t('staff.forgot')}
+          </button>
+          <Button
+            onClick={() => {
+              setError(null);
+              setStep(hasFreshUnlockSession() || getRecoverMaterial() ? 'unlock' : 'setup');
+            }}
+            disabled={busy}
+            variant="ghost"
+            className="h-9 w-full text-xs"
+            aria-label="Back to MPIN"
+          >
+            <ArrowLeft className="size-3.5" />
+            {t('lock.back')}
+          </Button>
+        </>
+      )}
+
+      {step === 'staff-forgot' && (
+        <>
+          <div className="text-center">
+            <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-900">
+              <Camera className="size-4" />
+              {t('staff.forgotTitle')}
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t('staff.forgotDesc')}</p>
+          </div>
+
+          {forgotStep !== 'done' && (
+            <div className="flex flex-col items-center gap-2">
+              {forgotPhoto ? (
+                      <img src={forgotPhoto} alt="Identity photo" className="size-24 rounded-full object-cover ring-2 ring-blue-200" />
+              ) : (
+                <div className="flex size-24 items-center justify-center rounded-full bg-blue-50 text-blue-300">
+                  <Camera className="size-8" />
+                </div>
+              )}
+              <input
+                ref={forgotFileRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => void pickForgotPhoto(e.target.files?.[0])}
+                aria-label="Capture identity photo"
+              />
+              {forgotStep === 'photo' && (
+                <Button onClick={() => forgotFileRef.current?.click()} disabled={busy} variant="outline" className="h-10" aria-label="Take photo or choose image">
+                  <Camera className="size-4" />
+                  {t('staff.photoBtn')}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {forgotStep === 'uid' && (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="forgot-uid" className="text-xs text-muted-foreground">
+                  {t('staff.uidLabel')}
+                </Label>
+                <Input
+                  id="forgot-uid"
+                  type="text"
+                  autoCapitalize="characters"
+                  value={forgotUid}
+                  onChange={(e) => setForgotUid(e.target.value)}
+                  aria-label="Your Staff ID"
+                  className="h-11 uppercase"
+                />
+              </div>
+              <Button onClick={() => forgotUid.trim() && setForgotStep('newpass')} disabled={busy || !forgotUid.trim()} className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700" aria-label="Continue to new password">
+                {t('staff.photoNext')}
+              </Button>
+            </>
+          )}
+
+          {forgotStep === 'newpass' && (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="forgot-pass" className="text-xs text-muted-foreground">
+                  {t('staff.newPass')}
+                </Label>
+                <Input
+                  id="forgot-pass"
+                  type="password"
+                  autoComplete="new-password"
+                  value={forgotPass}
+                  onChange={(e) => setForgotPass(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void submitForgot();
+                  }}
+                  aria-label="New password"
+                  className="h-11"
+                />
+              </div>
+              <Button onClick={submitForgot} disabled={busy || forgotPass.length < 3} className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700" aria-label="Set new password">
+                <KeyRound className="size-4" />
+                {busy ? t('lock.saving') : t('staff.resetBtn')}
+              </Button>
+            </>
+          )}
+
+          {forgotStep === 'done' && (
+            <p data-forgot-ok className="rounded-lg bg-emerald-50 px-3 py-2 text-center text-xs font-semibold text-emerald-700">
+              {t('staff.resetOk')}
+            </p>
+          )}
+
+          <Button
+            onClick={() => {
+              setError(null);
+              setStep('staff');
+            }}
+            disabled={busy}
+            variant="ghost"
+            className="h-9 w-full text-xs"
+            aria-label="Back to staff login"
           >
             <ArrowLeft className="size-3.5" />
             {t('lock.back')}

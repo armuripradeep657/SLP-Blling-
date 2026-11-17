@@ -255,7 +255,7 @@ export interface SyncPayload {
   dataUpdatedAt: number;
 }
 
-export type MainTab = 'dashboard' | 'bill' | 'products' | 'ledger' | 'labour' | 'history' | 'verify' | 'settings';
+export type MainTab = 'dashboard' | 'bill' | 'products' | 'ledger' | 'labour' | 'history' | 'verify' | 'settings' | 'profile';
 
 /**
  * Server-authoritative billing configuration (v35) — the OWNER edits it in

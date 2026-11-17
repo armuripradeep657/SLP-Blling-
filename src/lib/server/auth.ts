@@ -134,3 +134,48 @@ export async function pruneSessions(slot: string): Promise<void> {
     })
     .catch(() => undefined);
 }
+
+/* ------------------------------------------------------------------ */
+/* Staff sessions (v39) — a separate table and helpers so every owner  */
+/* route and the owner's own Session model stay exactly as they were.  */
+/* ------------------------------------------------------------------ */
+
+/** Validate a staff session token → the staff account, or null */
+export async function requireStaff(token: string): Promise<{ id: string; userId: string; name: string } | null> {
+  if (!token || token.length < 32) return null;
+  const session = await db.staffSession.findUnique({ where: { tokenHash: sha256(token) }, include: { staff: true } });
+  if (!session) return null;
+  if (session.expiresAt.getTime() < Date.now() || !session.staff.active) {
+    await db.staffSession.delete({ where: { id: session.id } }).catch(() => undefined);
+    return null;
+  }
+  return { id: session.staff.id, userId: session.staff.userId, name: session.staff.name };
+}
+
+/** Validate a token as OWNER (admin) or STAFF — the role decides what the
+ *  route may do. Owner slots are untouched; staff live in their own table. */
+export async function requireOwnerOrStaff(
+  token: string
+): Promise<{ role: 'owner'; slot: string } | { role: 'staff'; staffId: string; userId: string; name: string } | null> {
+  const owner = await requireOwner(token);
+  if (owner) return { role: 'owner', slot: owner.slot };
+  const staff = await requireStaff(token);
+  if (staff) return { role: 'staff' as const, staffId: staff.id, userId: staff.userId, name: staff.name };
+  return null;
+}
+
+/** Create a fresh staff session (one year — the staff device stays signed in) */
+export async function createStaffSession(staffId: string): Promise<string> {
+  const token = genToken();
+  await db.staffSession.create({
+    data: { tokenHash: sha256(token), staffId, expiresAt: new Date(Date.now() + SESSION_TTL_MS) },
+  });
+  return token;
+}
+
+/** Housekeeping: drop expired staff sessions (called on staff login) */
+export async function pruneStaffSessions(staffId: string): Promise<void> {
+  await db.staffSession
+    .deleteMany({ where: { staffId, expiresAt: { lt: new Date() } } })
+    .catch(() => undefined);
+}

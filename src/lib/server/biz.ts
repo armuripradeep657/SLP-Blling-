@@ -317,7 +317,7 @@ export async function snapshot(): Promise<{
   incomes: unknown[];
   labourWorks: unknown[];
   labourWorkers: unknown[];
-  config: { upiId: string; gstPercent: number };
+  config: { upiId: string; gstPercent: number; nextBillNo: number };
 }> {
   const [settings, appearance, products, invoices, expenses, incomes, labourWorks, labourWorkers, cfg] =
     await Promise.all([
@@ -340,6 +340,6 @@ export async function snapshot(): Promise<{
     incomes: incomes.map((r) => JSON.parse(r.payloadJson)),
     labourWorks: labourWorks.map((r) => JSON.parse(r.payloadJson)),
     labourWorkers: labourWorkers.map((r) => JSON.parse(r.payloadJson)),
-    config: { upiId: cfg?.upiId ?? '', gstPercent: cfg?.gstPercent ?? 0 },
+    config: { upiId: cfg?.upiId ?? '', gstPercent: cfg?.gstPercent ?? 0, nextBillNo: cfg?.nextBillNo ?? 0 },
   };
 }

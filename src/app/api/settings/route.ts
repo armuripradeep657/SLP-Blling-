@@ -36,10 +36,18 @@ export async function PUT(req: Request) {
   });
 
   const gst = Number(settings.gstPercent ?? 0);
+  // the owner's "next invoice no" edit LIFTS the central counter — the slip
+  // sequence continues from wherever the owner sets it, never rewinding
+  const nextInv = Math.round(Number((settings as { nextInvoiceNo?: number }).nextInvoiceNo ?? 0));
+  const prevCfg = await db.appConfig.findUnique({ where: { slot: 'owner' } });
+  const counterVal = Math.max(
+    prevCfg?.nextBillNo ?? 0,
+    Number.isFinite(nextInv) && nextInv > 1 ? nextInv - 1 : 0
+  );
   await db.appConfig.upsert({
     where: { slot: 'owner' },
-    update: { upiId: String(settings.upiId ?? ''), gstPercent: Number.isFinite(gst) ? gst : 0 },
-    create: { slot: 'owner', upiId: String(settings.upiId ?? ''), gstPercent: Number.isFinite(gst) ? gst : 0 },
+    update: { upiId: String(settings.upiId ?? ''), gstPercent: Number.isFinite(gst) ? gst : 0, nextBillNo: counterVal },
+    create: { slot: 'owner', upiId: String(settings.upiId ?? ''), gstPercent: Number.isFinite(gst) ? gst : 0, nextBillNo: counterVal },
   });
 
   const rev = await bumpRev();

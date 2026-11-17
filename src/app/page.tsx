@@ -14,6 +14,10 @@ import InvoiceModal, { type DocView } from '@/components/InvoiceModal';
 import PwaInstall, { ServiceWorkerRegister } from '@/components/PwaInstall';
 import ConnectivityToast from '@/components/ConnectivityToast';
 import LockScreen from '@/components/LockScreen';
+import StaffProfile from '@/components/StaffProfile';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useStore } from '@/lib/store';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
 import { computeTotals, fmt } from '@/lib/billing';
@@ -88,6 +92,11 @@ export default function Home() {
   const [modalInvoice, setModalInvoice] = useState<Invoice | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalView, setModalView] = useState<DocView>('slip');
+  /** signed-in staff member (v39) — drives the restricted tabs and the
+   *  first-login "set your own password" prompt */
+  const staff = useStore((s) => s.staff);
+  const [firstLoginOpen, setFirstLoginOpen] = useState(false);
+  const [firstLoginPass, setFirstLoginPass] = useState('');
   const [showSplash, setShowSplash] = useState(true); // opening zoom — plays once per app open
   /**
    * App gate. The MPIN is created ONCE; it is asked when the app OPENS — not
@@ -204,6 +213,17 @@ export default function Home() {
   useEffect(() => {
     if (mounted && activeTab === 'labour') setActiveTab('ledger');
   }, [mounted, activeTab, setActiveTab]);
+
+  // staff mode: owner-only tabs bounce to Bill; a first login opens the
+  // "set your own password" prompt (change it or keep it — owner's flow)
+  useEffect(() => {
+    if (!mounted || !staff) return;
+    const id = setTimeout(() => {
+      if (['products', 'ledger', 'verify', 'settings', 'dashboard'].includes(activeTab)) setActiveTab('bill');
+      if (staff.mustChangePassword) setFirstLoginOpen(true);
+    }, 0);
+    return () => clearTimeout(id);
+  }, [mounted, staff, activeTab, setActiveTab]);
 
   const totals = computeTotals(cart, cfg);
 
@@ -380,6 +400,13 @@ export default function Home() {
               </div>
             )}
 
+            {activeTab === 'profile' && (
+              <div className="mx-auto max-w-2xl pb-4">
+                <h2 className="mb-3 text-base font-bold text-neutral-800">{t('staff.profileTitle')}</h2>
+                <StaffProfile />
+              </div>
+            )}
+
             {activeTab === 'verify' && (
               <div className="mx-auto max-w-2xl">
                 <h2 className="mb-3 flex items-center gap-2 text-base font-bold text-neutral-800">
@@ -413,6 +440,55 @@ export default function Home() {
       )}
 
       <InvoiceModal invoice={modalInvoice} open={modalOpen} view={modalView} onOpenChange={setModalOpen} />
+
+      {/* first staff login: change the given password, or keep it for now */}
+      <Dialog open={firstLoginOpen} onOpenChange={(o) => { if (!o) setFirstLoginOpen(false); }}>
+        <DialogContent className="max-w-sm rounded-2xl" aria-label="First login password change">
+          <DialogHeader>
+            <DialogTitle className="text-sm">{t('staff.firstLoginTitle')}</DialogTitle>
+            <DialogDescription className="text-xs">{t('staff.firstLoginDesc')}</DialogDescription>
+          </DialogHeader>
+          <Input
+            type="password"
+            autoComplete="new-password"
+            value={firstLoginPass}
+            onChange={(e) => setFirstLoginPass(e.target.value)}
+            placeholder={t('staff.firstLoginNew')}
+            aria-label="New password"
+            className="h-11"
+          />
+          <div className="flex gap-2">
+            <Button
+              onClick={async () => {
+                if (firstLoginPass.length < 3) return;
+                try {
+                  await useStore.getState().staffChangePassword({ newPassword: firstLoginPass });
+                } catch { /* stays open — the staff can retry */ }
+                setFirstLoginOpen(false);
+                setFirstLoginPass('');
+              }}
+              disabled={firstLoginPass.length < 3}
+              className="h-10 flex-1 bg-blue-600 text-white hover:bg-blue-700"
+              aria-label="Change password now"
+            >
+              {t('staff.firstLoginChange')}
+            </Button>
+            <Button
+              onClick={async () => {
+                try {
+                  await useStore.getState().staffChangePassword({ action: 'keep' });
+                } catch { /* retried on next login */ }
+                setFirstLoginOpen(false);
+              }}
+              variant="outline"
+              className="h-10 flex-1"
+              aria-label="Continue with current password"
+            >
+              {t('staff.firstLoginKeep')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* mobile sticky total chip when scrolled in other tabs */}
       {activeTab !== 'bill' && cart.length > 0 && (

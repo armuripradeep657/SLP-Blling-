@@ -16,9 +16,12 @@ import {
   apiLabourDelete,
   apiLedgerPut,
   apiLedgerDelete,
-  apiReserveNo,
   apiStateGet,
   apiStateImport,
+  apiStaffMe,
+  apiStaffChangePassword,
+  authRole,
+  type StaffMe,
 } from './cloud';
 import type {
   Appearance,
@@ -116,7 +119,9 @@ interface BillingStore {
   appearance: Appearance;
 
   /** Central server config mirror (UPI ID + GST — authoritative on the server) */
-  srvConfig: { upiId: string; gstPercent: number };
+  srvConfig: { upiId: string; gstPercent: number; nextBillNo: number };
+  /** signed-in staff member (null = owner mode) — v39 */
+  staff: StaffMe | null;
 
   /* ---- lifecycle ---- */
   /** pull the central state once (login / manual refresh) — imports the
@@ -135,7 +140,7 @@ interface BillingStore {
     incomes?: IncomeEntry[];
     labourWorks?: LabourWork[];
     labourWorkers?: LabourWorker[];
-    config?: { upiId: string; gstPercent: number };
+    config?: { upiId: string; gstPercent: number; nextBillNo?: number };
     rev?: number;
   }) => void;
 
@@ -167,6 +172,9 @@ interface BillingStore {
   /** adopt the registry's winning code after a registration race (unused — kept for compat) */
   setInvoiceVerifyCode: (id: string, code: string) => void;
   deleteInvoice: (id: string) => Promise<void>;
+  /** staff session helpers (v39) */
+  refreshStaff: () => Promise<StaffMe | null>;
+  staffChangePassword: (body: { action?: 'keep'; current?: string; newPassword?: string }) => Promise<void>;
   /** cancel a bill — verification answers CANCELLED for its barcode */
   cancelInvoice: (id: string) => Promise<void>;
   updateInvoiceStatus: (id: string, paidAmount: number) => Promise<void>;
@@ -230,7 +238,8 @@ export const useStore = create<BillingStore>()(
       labourWorks: [],
       labourWorkers: [],
       appearance: { bgTheme: 'blue', headerTheme: 'blue', watermark: '' },
-      srvConfig: { upiId: '', gstPercent: 0 },
+      srvConfig: { upiId: '', gstPercent: 0, nextBillNo: 0 },
+      staff: null,
 
       /* ---------------------------------------------------------- */
       /* LIFECYCLE — bootstrap + poll                                */
@@ -246,13 +255,31 @@ export const useStore = create<BillingStore>()(
           ...(s.incomes ? { incomes: s.incomes } : {}),
           ...(s.labourWorks ? { labourWorks: s.labourWorks } : {}),
           ...(s.labourWorkers ? { labourWorkers: s.labourWorkers } : {}),
-          ...(s.config ? { srvConfig: s.config } : {}),
+          ...(s.config
+            ? { srvConfig: { upiId: s.config.upiId ?? '', gstPercent: s.config.gstPercent ?? 0, nextBillNo: s.config.nextBillNo ?? 0 } }
+            : {}),
           ...(s.rev !== undefined ? { rev: s.rev } : {}),
           online: true,
           synced: true,
         })),
 
       bootstrap: async () => {
+        // staff devices refresh their profile and pull the FILTERED snapshot
+        // (products + bills only); the owner-only migration below never runs
+        if (authRole() === 'staff') {
+          const me = await apiStaffMe();
+          if (!me.ok || !me.staff) throw new StoreError('unauthorized');
+          set({ staff: me.staff });
+          const res = await apiStateGet(get().rev);
+          if (res.kind === 'offline') {
+            set({ online: false });
+            throw new StoreError('offline');
+          }
+          if (res.kind === 'auth') throw new StoreError('unauthorized');
+          if (res.kind === 'data') get().applySnapshot(res.state as never);
+          set({ online: true, synced: true });
+          return;
+        }
         const res = await apiStateGet(get().rev);
         if (res.kind === 'offline') {
           set({ online: false });
@@ -339,8 +366,9 @@ export const useStore = create<BillingStore>()(
       addToCart: (product, size) => {
         const price = priceForSize(product.price, product.sizePrices, size);
         const key = `${product.id}::${size}`;
-        // first item of a NEW bill — reserve this bill's number on the server
-        if (get().cart.length === 0) void reserveBillNo();
+        // the bill number is assigned by the SERVER at SAVE time (atomic,
+        // strictly sequential). Reserving at cart-start punched gaps into the
+        // sequence whenever a cart was abandoned (v38 fix).
         set((st) => {
           const existing = st.cart.find((c) => c.key === key);
           if (existing) {
@@ -556,6 +584,18 @@ export const useStore = create<BillingStore>()(
       /* BILL MUTATIONS — every change hits the central database,    */
       /* the registry entry follows, other devices see it instantly  */
       /* ---------------------------------------------------------- */
+
+      refreshStaff: async () => {
+        const me = await apiStaffMe();
+        if (me.ok && me.staff) set({ staff: me.staff });
+        return me.ok ? me.staff ?? null : null;
+      },
+
+      staffChangePassword: async (body: { action?: 'keep'; current?: string; newPassword?: string }) => {
+        const res = await apiStaffChangePassword(body);
+        if (!res.ok || !res.staff) throw new StoreError(res.error === 'wrong' ? 'unauthorized' : 'saveFailed');
+        set({ staff: res.staff });
+      },
 
       deleteInvoice: async (id) => {
         const ok = await apiBillDelete(id);
@@ -805,20 +845,6 @@ export async function pollOnce(): Promise<void> {
     useStore.setState({ online: false });
   } finally {
     polling = false;
-  }
-}
-
-/** Reserve the next bill number on the server (atomic counter — two devices
- *  billing at the same moment can never print the same number). Online-only:
- *  a failed reservation simply leaves the number to the save call. */
-async function reserveBillNo(): Promise<void> {
-  try {
-    const st = useStore.getState();
-    if (st.billConfig.reservedNo !== undefined) return;
-    const no = await apiReserveNo(st.settings.nextInvoiceNo);
-    if (no !== null) useStore.getState().setBillConfig({ reservedNo: no });
-  } catch {
-    /* the save call resolves the number when the reservation failed */
   }
 }
 

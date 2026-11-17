@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Search, Trash2, ReceiptText, FileText, IndianRupee, Truck, Ban } from 'lucide-react';
 import { useStore } from '@/lib/store';
+import { useToast } from '@/hooks/use-toast';
 import { fmt } from '@/lib/billing';
 import { useT } from '@/hooks/use-app-lang';
 import type { Invoice } from '@/lib/types';
@@ -31,6 +32,9 @@ export default function HistoryView({
   const invoices = useStore((s) => s.invoices);
   const updateInvoiceStatus = useStore((s) => s.updateInvoiceStatus);
   const deleteInvoice = useStore((s) => s.deleteInvoice);
+  /** staff mode (v39): history is READ-ONLY — money and deletion stay with the owner */
+  const isStaff = useStore((s) => Boolean(s.staff));
+  const { toast } = useToast();
   const cancelInvoice = useStore((s) => s.cancelInvoice);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Paid' | 'Due' | 'Partial'>('All');
@@ -153,7 +157,7 @@ export default function HistoryView({
                 </span>
               </div>
               <div className="flex flex-wrap gap-1 justify-end">
-                {!inv.cancelled && (
+                {!inv.cancelled && !isStaff && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -164,7 +168,7 @@ export default function HistoryView({
                     <Ban className="size-3" /> {t('history.cancelBill')}
                   </Button>
                 )}
-                {!inv.cancelled && inv.status !== 'Paid' && (
+                {!inv.cancelled && !isStaff && inv.status !== 'Paid' && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -185,7 +189,7 @@ export default function HistoryView({
                     <Truck className="size-3" /> {t('history.driver')}
                   </Button>
                 )}
-                <AlertDialog>
+                {!isStaff && <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="outline" size="icon" className="size-8 text-destructive hover:text-destructive" aria-label={`Delete ${inv.no}`}>
                         <Trash2 className="size-3.5" />
@@ -200,12 +204,21 @@ export default function HistoryView({
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>{t('history.cancel')}</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => deleteInvoice(inv.id)} className="bg-destructive text-white hover:bg-destructive/90">
+                      <AlertDialogAction
+                        onClick={() =>
+                          deleteInvoice(inv.id).catch((e: unknown) =>
+                            toast({
+                              title: e instanceof Error && e.message === 'offline' ? t('net.required') : t('net.saveFailed'),
+                              variant: 'destructive',
+                            })
+                          )
+                        }
+                        className="bg-destructive text-white hover:bg-destructive/90">
                         {t('history.delete')}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
-                </AlertDialog>
+                </AlertDialog>}
               </div>
             </div>
           </li>

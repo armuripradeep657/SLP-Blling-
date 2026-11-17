@@ -25,6 +25,9 @@ const btn = page.getByRole('button', { name: 'Update details' });
 console.log('button count:', await btn.count(), 'disabled:', await btn.first().isDisabled().catch(() => '?'));
 await btn.first().click();
 await page.waitForTimeout(1500);
+console.log('TOAST COUNT:', await page.locator('[aria-label="Notifications (F8)"] li[data-state="open"]').count());
+console.log('VIEWPORT PRESENT:', await page.locator('[aria-label="Notifications (F8)"]').count());
+console.log('region HTML:', JSON.stringify(await page.locator('[aria-label="Notifications (F8)"]').evaluate((el) => el.outerHTML).catch(() => 'N/A')).slice(0, 600));
 const cfg = await page.evaluate(async () => {
   const auth = JSON.parse(localStorage.getItem('slp-auth-v1') || '{}');
   const res = await fetch('/api/config', { headers: { Authorization: `Bearer ${auth.token}` } });

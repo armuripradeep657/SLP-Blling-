@@ -55,19 +55,25 @@ export function setDeviceDek(b64: string): void {
   localStorage.setItem(DEK_KEY, b64);
 }
 
-export function getAuth(): { token: string } | null {
+export function getAuth(): { token: string; role: 'owner' | 'staff' } | null {
   try {
     const raw = localStorage.getItem(AUTH_KEY);
     if (!raw) return null;
     const a = JSON.parse(raw);
-    return a?.token ? { token: a.token } : null;
+    if (!a?.token) return null;
+    // devices saved before v39 hold { token } only — that was (and is) the owner
+    return { token: a.token, role: a.role === 'staff' ? 'staff' : 'owner' };
   } catch {
     return null;
   }
 }
 
-export function setAuth(token: string): void {
-  localStorage.setItem(AUTH_KEY, JSON.stringify({ token }));
+export function setAuth(token: string, role: 'owner' | 'staff' = 'owner'): void {
+  localStorage.setItem(AUTH_KEY, JSON.stringify({ token, role }));
+}
+
+export function authRole(): 'owner' | 'staff' {
+  return getAuth()?.role ?? 'owner';
 }
 
 /** Device stays unlocked while the session token is present */
@@ -257,7 +263,7 @@ export interface CentralState {
   incomes: IncomeEntry[];
   labourWorks: LabourWork[];
   labourWorkers: LabourWorker[];
-  config: { upiId: string; gstPercent: number };
+  config: { upiId: string; gstPercent: number; nextBillNo: number };
 }
 
 /** Pull the central snapshot; when the server revision equals `rev`,
@@ -533,4 +539,86 @@ export async function apiVerifyLookup(code: string): Promise<VerifyLookupResult>
     // offline / timeout — NEVER claim INVALID BILL without the server's answer
     return { status: 'offline' };
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Staff (v39) — login, profile, password change, forgot-with-photo,   */
+/* and the owner's staff management. Same bearer-token auth, separate  */
+/* session table, staff snapshots come back pre-filtered.              */
+/* ------------------------------------------------------------------ */
+
+export type StaffMe = {
+  id: string;
+  userId: string;
+  name: string;
+  photoData: string;
+  mustChangePassword: boolean;
+};
+
+/** Staff sign-in: `secret` is the password OR the numeric MPIN */
+export async function apiStaffLogin(userId: string, secret: string): Promise<{ ok: boolean; token?: string; staff?: StaffMe; error?: string }> {
+  try {
+    const { status, data } = await postJson('/api/staff/login', { userId, secret });
+    if (status === 200) return { ok: true, token: data.token as string, staff: data.staff as StaffMe };
+    return { ok: false, error: (data.error as string) ?? 'wrong' };
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+}
+
+export async function apiStaffMe(): Promise<{ ok: boolean; staff?: StaffMe; error?: string }> {
+  const res = await authedFetch('/api/staff/me', 'GET');
+  if (res.status === 200) return res.data as { ok: boolean; staff: StaffMe };
+  return { ok: false, error: String(res.data?.error ?? 'unauthorized') };
+}
+
+export async function apiStaffSetPhoto(photo: string): Promise<{ ok: boolean; staff?: StaffMe; error?: string }> {
+  const res = await authedFetch('/api/staff/me', 'PATCH', { photo });
+  if (res.status === 200) return res.data as { ok: boolean; staff: StaffMe };
+  return { ok: false, error: String(res.data?.error ?? 'saveFailed') };
+}
+
+/** action 'keep' keeps the current password (first-login choice) */
+export async function apiStaffChangePassword(body: { action?: 'keep'; current?: string; newPassword?: string }): Promise<{ ok: boolean; staff?: StaffMe; error?: string }> {
+  const res = await authedFetch('/api/staff/change-password', 'POST', body);
+  if (res.status === 200) return res.data as { ok: boolean; staff: StaffMe };
+  return { ok: false, error: String(res.data?.error ?? 'saveFailed') };
+}
+
+/** Forgot password: photo (identity proof) + userId → new password (audited) */
+export async function apiStaffForgot(body: { userId: string; photo: string; newPassword: string }): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { status, data } = await postJson('/api/staff/forgot', body);
+    if (status === 200) return { ok: true };
+    return { ok: false, error: (data.error as string) ?? 'badRequest' };
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+}
+
+/* ----- owner: staff management ----- */
+export type StaffRow = StaffMe & { active: boolean; createdAt: string };
+export type ResetRow = { id: string; userId: string; name: string; photoData: string; createdAt: string };
+
+export async function apiStaffList(): Promise<{ ok: boolean; staff?: StaffRow[] }> {
+  const res = await authedFetch('/api/staff', 'GET');
+  if (res.status === 200) return res.data as { ok: boolean; staff: StaffRow[] };
+  return { ok: false };
+}
+
+export async function apiStaffCreate(body: { name: string; userId: string; password: string; mpin?: string }): Promise<{ ok: boolean; error?: string }> {
+  const res = await authedFetch('/api/staff', 'POST', body);
+  if (res.status === 200) return { ok: true };
+  return { ok: false, error: String(res.data?.error ?? 'saveFailed') };
+}
+
+export async function apiStaffDelete(id: string): Promise<{ ok: boolean }> {
+  const res = await authedFetch(`/api/staff/${encodeURIComponent(id)}`, 'DELETE');
+  return { ok: res.status === 200 };
+}
+
+export async function apiStaffResets(): Promise<{ ok: boolean; resets?: ResetRow[] }> {
+  const res = await authedFetch('/api/staff/resets', 'GET');
+  if (res.status === 200) return res.data as { ok: boolean; resets: ResetRow[] };
+  return { ok: false };
 }

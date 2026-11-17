@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { bearerToken, requireOwner } from '@/lib/server/auth';
+import { bearerToken, requireOwner, requireStaff } from '@/lib/server/auth';
 import { bumpRev, ensureBizState, snapshot } from '@/lib/server/biz';
 
 /**
@@ -11,12 +11,26 @@ import { bumpRev, ensureBizState, snapshot } from '@/lib/server/biz';
  * bills, settings, labour, ledger. No manual refresh on any device, ever.
  */
 export async function GET(req: Request) {
-  const auth = await requireOwner(bearerToken(req));
-  if (!auth) return Response.json({ error: 'unauthorized' }, { status: 401 });
-
+  const token = bearerToken(req);
+  const owner = await requireOwner(token);
   const st = await ensureBizState();
   const url = new URL(req.url);
   const known = Number(url.searchParams.get('rev') ?? '-1');
+
+  /* ----- staff devices (v39): products + bills ONLY — no money, no
+     settings, no labour. The staff session itself answers 401. ----- */
+  if (!owner) {
+    const staff = await requireStaff(token);
+    if (!staff) return Response.json({ error: 'unauthorized' }, { status: 401 });
+    const full = await snapshot();
+    return Response.json({
+      rev: st.rev,
+      products: full.products,
+      invoices: full.invoices,
+      config: full.config,
+      staffMode: true,
+    });
+  }
 
   if (Number.isFinite(known) && known === st.rev) {
     return Response.json({ unchanged: true, rev: st.rev });

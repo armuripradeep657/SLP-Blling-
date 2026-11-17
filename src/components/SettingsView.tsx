@@ -21,6 +21,7 @@ import { useStore } from '@/lib/store';
 import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from '@/lib/defaultData';
 import { normalizePhone } from '@/lib/billing';
 import InstallAppSection from '@/components/InstallAppSection';
+import StaffSection from '@/components/StaffSection';
 import { useT, useAppLang } from '@/hooks/use-app-lang';
 import {
   apiAuthState,
@@ -177,6 +178,10 @@ export default function SettingsView() {
 
       <Separator />
 
+
+      <StaffSection />
+
+      <Separator />
 
       <InstallAppSection />
 

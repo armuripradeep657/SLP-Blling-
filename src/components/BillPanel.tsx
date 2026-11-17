@@ -40,6 +40,7 @@ export default function BillPanel({
   const cfg = useStore((s) => s.billConfig);
   const invoices = useStore((s) => s.invoices);
   const settings = useStore((s) => s.settings);
+  const srvConfig = useStore((s) => s.srvConfig);
   const setCustomer = useStore((s) => s.setCustomer);
   const setBillConfig = useStore((s) => s.setBillConfig);
   const incQty = useStore((s) => s.incQty);
@@ -492,8 +493,10 @@ export default function BillPanel({
         {t('bill.complete')}
       </Button>
       <p className="text-center text-[11px] text-muted-foreground">
-        {t('bill.invoiceNumbered')} {settings.invoicePrefix}
-        {cfg.reservedNo ?? settings.nextInvoiceNo}
+        {t('bill.invoiceNumbered')}{' '}
+        {srvConfig.nextBillNo > 0
+          ? `${settings.invoicePrefix || 'SLP-INV-'}${srvConfig.nextBillNo + 1}`
+          : `${settings.invoicePrefix || 'SLP-INV-'}${settings.nextInvoiceNo}`}
       </p>
     </div>
   );

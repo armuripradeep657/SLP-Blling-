@@ -48,10 +48,16 @@ export async function POST(req: Request) {
     // mirror the server-enforced config fields
     const upi = String((settings as { upiId?: string }).upiId ?? '');
     const gst = Number((settings as { gstPercent?: number }).gstPercent ?? 0);
+    // the business's own next slip number seeds the central counter — the
+    // shop's established sequence continues uninterrupted (never rewinds)
+    const nextInv = Math.round(Number((settings as { nextInvoiceNo?: number }).nextInvoiceNo ?? 0));
+    const lift = Number.isFinite(nextInv) && nextInv > 1 ? nextInv - 1 : 0;
+    const prevCfg = await db.appConfig.findUnique({ where: { slot: 'owner' } });
+    const counterVal = Math.max(prevCfg?.nextBillNo ?? 0, lift);
     await db.appConfig.upsert({
       where: { slot: 'owner' },
-      update: { upiId: upi, gstPercent: Number.isFinite(gst) ? gst : 0 },
-      create: { slot: 'owner', upiId: upi, gstPercent: Number.isFinite(gst) ? gst : 0 },
+      update: { upiId: upi, gstPercent: Number.isFinite(gst) ? gst : 0, nextBillNo: counterVal },
+      create: { slot: 'owner', upiId: upi, gstPercent: Number.isFinite(gst) ? gst : 0, nextBillNo: counterVal },
     });
   }
 

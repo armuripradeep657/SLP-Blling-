@@ -226,3 +226,44 @@ model Session {
   createdAt DateTime    @default(now())
   account   SyncAccount @relation(fields: [slot], references: [slot], onDelete: Cascade)
 }
+
+/// A staff login (v39). Staff bill customers on the SAME central database but
+/// see only Bill + History + their own Profile — money and settings stay with
+/// the owner. Passwords and MPINs are scrypt-hashed at rest.
+model StaffAccount {
+  id                 String   @id @default(cuid())
+  /// short login id the owner assigns, e.g. "MDN"
+  userId             String   @unique
+  name               String
+  passwordHash       String
+  /// optional quick PIN (digits) — hashed the same way, "" = not set
+  mpinHash           String   @default("")
+  /// profile photo as a small base64 data-URL ("" = none yet)
+  photoData          String   @default("")
+  /// first login (or after an owner/forgot reset) asks for a password change
+  mustChangePassword Boolean  @default(true)
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  sessions           StaffSession[]
+}
+
+/// Staff session tokens — separate table so the owner's Session model and
+/// every owner route stay exactly as they were.
+model StaffSession {
+  id        String       @id @default(cuid())
+  tokenHash String       @unique
+  staffId   String
+  staff     StaffAccount @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime     @default(now())
+}
+
+/// Audit trail of "Forgot password" resets: who, when, and the identity photo
+/// the staff member captured — visible to the owner (Settings → Staff).
+model PasswordResetLog {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  photoData String   @default("")
+  createdAt DateTime @default(now())
+}

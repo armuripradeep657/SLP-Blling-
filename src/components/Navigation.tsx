@@ -2,7 +2,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { WifiOff, ReceiptText, Package, History, Settings, BookText, Languages, ScanLine } from 'lucide-react';
+import { WifiOff, ReceiptText, Package, History, Settings, BookText, Languages, ScanLine, UserRound } from 'lucide-react';
 import { useSyncExternalStore, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
@@ -123,15 +123,22 @@ export function BottomNav() {
   const cart = useStore((s) => s.cart);
   const count = cart.reduce((s, c) => s + c.qty, 0);
 
-  /** Admin-only app — every tab, no role gating */
+  /** Role gating (v39): staff see ONLY Bill, History and their own Profile;
+   *  the owner keeps every tab. */
+  const staff = useStore((s) => s.staff);
   const tabs = [
     { id: 'bill', label: t('nav.bill'), icon: ReceiptIcon },
-    { id: 'products', label: t('nav.products'), icon: PackageIcon },
-    { id: 'ledger', label: t('nav.ledger'), icon: LedgerIcon },
+    { id: 'products', label: t('nav.products'), icon: PackageIcon, ownerOnly: true },
+    { id: 'ledger', label: t('nav.ledger'), icon: LedgerIcon, ownerOnly: true },
     { id: 'history', label: t('nav.history'), icon: HistoryIcon },
-    { id: 'verify', label: t('nav.verify'), icon: ScanIcon },
-    { id: 'settings', label: t('nav.settings'), icon: SettingsIcon },
-  ] as Array<{
+    { id: 'verify', label: t('nav.verify'), icon: ScanIcon, ownerOnly: true },
+    { id: 'settings', label: t('nav.settings'), icon: SettingsIcon, ownerOnly: true },
+    { id: 'profile', label: t('nav.profile'), icon: ProfileIcon, staffOnly: true },
+  ].filter((x) => {
+    if ('ownerOnly' in x && x.ownerOnly && staff) return false;
+    if ('staffOnly' in x && x.staffOnly && !staff) return false;
+    return true;
+  }) as Array<{
     id: MainTab;
     label: string;
     icon: (p: { className?: string; active?: boolean }) => React.ReactNode;
@@ -176,14 +183,20 @@ export function DesktopTabs() {
   const t = useT();
   const activeTab = useStore((s) => s.activeTab);
   const setActiveTab = useStore((s) => s.setActiveTab);
+  const staff = useStore((s) => s.staff);
   const tabs = [
-    { id: 'bill', label: t('nav.newBill') },
-    { id: 'products', label: t('nav.products') },
-    { id: 'ledger', label: t('nav.ledger') },
+    { id: 'bill', label: t('nav.newBill'), ownerOnly: true },
+    { id: 'products', label: t('nav.products'), ownerOnly: true },
+    { id: 'ledger', label: t('nav.ledger'), ownerOnly: true },
     { id: 'history', label: t('nav.invoiceHistory') },
-    { id: 'verify', label: t('nav.verify') },
-    { id: 'settings', label: t('nav.settings') },
-  ] as Array<{ id: MainTab; label: string }>;
+    { id: 'verify', label: t('nav.verify'), ownerOnly: true },
+    { id: 'settings', label: t('nav.settings'), ownerOnly: true },
+    { id: 'profile', label: t('nav.profile'), staffOnly: true },
+  ].filter((x) => {
+    if (x.ownerOnly && staff) return false;
+    if ('staffOnly' in x && x.staffOnly && !staff) return false;
+    return true;
+  }) as Array<{ id: MainTab; label: string }>;
 
   return (
     <div className="mx-auto mb-4 hidden max-w-5xl gap-1.5 lg:flex" role="tablist" aria-label="Sections">
@@ -222,4 +235,7 @@ function ScanIcon({ className, active }: { className?: string; active?: boolean 
 }
 function SettingsIcon({ className, active }: { className?: string; active?: boolean }) {
   return <Settings className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
+}
+function ProfileIcon({ className, active }: { className?: string; active?: boolean }) {
+  return <UserRound className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
 }
