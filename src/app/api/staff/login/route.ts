@@ -9,7 +9,7 @@ import { ensureDefaultStaff, staffProfile } from '@/lib/server/staff';
  * can prompt for the first-login change.
  */
 export async function POST(req: Request) {
-  if (!rateLimit(`staff-login:${clientIp(req)}`)) {
+  if (!rateLimit(`staff-login:${clientIp(req)}`, 10)) {
     return Response.json({ error: 'rateLimited' }, { status: 429 });
   }
   let body: Record<string, unknown>;

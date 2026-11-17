@@ -62,3 +62,7 @@ download/
 # android build toolchain + apk build artifacts
 .toolchain/
 android-app/build/
+
+# TLS certs (per-deployment, never commit)
+tls/
+public/ca.crt

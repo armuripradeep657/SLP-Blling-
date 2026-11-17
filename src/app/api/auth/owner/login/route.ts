@@ -24,7 +24,7 @@ import {
  * (the UI nags until the owner changes it).
  */
 export async function POST(req: Request) {
-  if (!rateLimit(`ownerlogin:${clientIp(req)}`)) {
+  if (!rateLimit(`ownerlogin:${clientIp(req)}`, 10)) {
     return Response.json({ error: 'rateLimited' }, { status: 429 });
   }
 

@@ -10,7 +10,7 @@ import { clientIp, createSession, pruneSessions, rateLimit, safeEqual } from '@/
  * grants a 30-day session for the encrypted vault.
  */
 export async function POST(req: Request) {
-  if (!rateLimit(clientIp(req))) {
+  if (!rateLimit(clientIp(req), 10)) {
     return Response.json({ error: 'rateLimited' }, { status: 429 });
   }
 
