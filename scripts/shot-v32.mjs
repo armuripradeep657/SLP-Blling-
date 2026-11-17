@@ -122,7 +122,7 @@ const closePopup = async (target = page) => {
 };
 
 /* ---------------- setup: owner MPIN + GST 5% ---------------- */
-await page.addInitScript(() => localStorage.setItem('slp-update-notice-seen', '32'));
+await page.addInitScript(() => localStorage.setItem('slp-update-notice-seen', '34'));
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(2600);
 await page.getByLabel('New MPIN').fill(MPIN);
@@ -288,7 +288,7 @@ const p3 = await ctx3.newPage();
 p3.on('pageerror', (e) => console.log('  P3-ERR:', String(e).slice(0, 200)));
 p3.on('console', (m) => { if (m.type() === 'error') console.log('  P3-CONSOLE:', m.text().slice(0, 200)); });
 // the install popup is irrelevant to THIS suite — mark it seen before load
-await p3.addInitScript(() => localStorage.setItem('slp-update-notice-seen', '32'));
+await p3.addInitScript(() => localStorage.setItem('slp-update-notice-seen', '34'));
 await p3.goto(BASE, { waitUntil: 'domcontentloaded' });
 await p3.waitForTimeout(2600);
 await p3.getByRole('button', { name: 'Staff login' }).click();

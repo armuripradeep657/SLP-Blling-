@@ -7,8 +7,9 @@ import { Input } from '@/components/ui/input';
 import { apiVerifyLookup, type VerifyLookupResult } from '@/lib/cloud';
 import { normalizeVerifyCode } from '@/lib/verify-id';
 import { fmt } from '@/lib/billing';
-import { fill } from '@/lib/i18n';
+import { fill, appT, type AppLangKey } from '@/lib/i18n';
 import { useT } from '@/hooks/use-app-lang';
+import type { AppLanguage } from '@/lib/types';
 
 /**
  * The barcode scanner and bill verification UI — shared by the in-app
@@ -29,8 +30,16 @@ type DetectCtor = new (opts: { formats?: string[] }) => {
   detect: (source: HTMLVideoElement | ImageBitmap) => Promise<Array<{ rawValue?: string }>>;
 };
 
-export default function VerifyView({ autoFocus = true }: { autoFocus?: boolean }) {
-  const t = useT();
+export default function VerifyView({
+  autoFocus = true,
+  lang,
+}: {
+  autoFocus?: boolean;
+  /** PUBLIC page override — a customer's phone has no vault/store language */
+  lang?: AppLanguage;
+}) {
+  const storeT = useT();
+  const t = (k: AppLangKey) => (lang ? appT(lang, k) : storeT(k));
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<VerifyLookupResult | null>(null);
@@ -129,6 +138,48 @@ export default function VerifyView({ autoFocus = true }: { autoFocus?: boolean }
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
+  // PUBLIC page (autoFocus=false): USB / BT keyboard-wedge scanners "type" the
+  // code + press Enter with NOTHING focused — capture their keystrokes
+  // page-wide so a scan works without tapping the box first, while the
+  // on-screen keyboard stays hidden for customers who type manually.
+  // The buffer + latest lookup live in refs: a keystroke re-render must never
+  // reset the half-typed code (the handler below is bound exactly once).
+  const wedgeBuf = useRef('');
+  const lookupRef = useRef(lookup);
+  lookupRef.current = lookup;
+  useEffect(() => {
+    if (autoFocus) return;
+    const typing = (el: EventTarget | null) =>
+      el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (typing(e.target)) return; // manual typing flows through the input itself
+      if (e.key === 'Enter') {
+        // the wedge OWNS Enter — without this, the press also re-activates a
+        // still-focused button (e.g. Retry) and fires a second racing lookup
+        e.preventDefault();
+        const raw = wedgeBuf.current;
+        wedgeBuf.current = '';
+        if (raw) {
+          setCode('');
+          void lookupRef.current(raw);
+        }
+        return;
+      }
+      if (e.key === 'Backspace') {
+        wedgeBuf.current = wedgeBuf.current.slice(0, -1);
+        setCode(wedgeBuf.current);
+        return;
+      }
+      if (e.key.length === 1) {
+        wedgeBuf.current += e.key;
+        setCode(wedgeBuf.current);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [autoFocus]);
+
   return (
     <div className="space-y-4">
       {/* ---- scan / type box ---- */}
@@ -196,15 +247,60 @@ export default function VerifyView({ autoFocus = true }: { autoFocus?: boolean }
       </div>
 
       {/* ---- result ---- */}
-      {result && searched && <VerifyResult result={result} code={searched} />}
+      {result && searched && (
+        <VerifyResult result={result} code={searched} lang={lang} onRetry={() => void lookup(searched)} />
+      )}
     </div>
   );
 }
 
 /** The verification verdict card — genuine / cancelled / invalid */
-function VerifyResult({ result, code }: { result: VerifyLookupResult; code: string }) {
-  const t = useT();
+function VerifyResult({
+  result,
+  code,
+  lang,
+  onRetry,
+}: {
+  result: VerifyLookupResult;
+  code: string;
+  lang?: AppLanguage;
+  onRetry: () => void;
+}) {
+  const storeT = useT();
+  const t = (k: AppLangKey) => (lang ? appT(lang, k) : storeT(k));
   const bill = result.bill;
+
+  // bill-less verdicts FIRST — a result without a bill is NOT automatically
+  // invalid: rate-limited and offline answers must never render INVALID BILL
+  // (a genuine bill must not be declared fake just because the network or
+  // the rate limiter got in the way)
+  if (result.status === 'offline') {
+    return (
+      <div
+        data-verify-result="offline"
+        className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 text-center shadow-sm"
+      >
+        <p className="text-base font-extrabold text-amber-800">{t('verify.network')}</p>
+        <p className="mt-1 font-mono text-[11px] text-amber-700">{code}</p>
+        <Button
+          type="button"
+          onClick={onRetry}
+          className="mt-3 h-10 bg-amber-600 text-white hover:bg-amber-700"
+          aria-label="Retry verification"
+        >
+          {t('verify.retry')}
+        </Button>
+      </div>
+    );
+  }
+
+  if (result.status === 'rate_limited') {
+    return (
+      <div className="rounded-2xl border bg-card p-5 text-center text-sm font-semibold text-muted-foreground shadow-sm">
+        {t('verify.rateLimited')}
+      </div>
+    );
+  }
 
   if (result.status === 'not_found' || !bill) {
     return (
@@ -224,15 +320,7 @@ function VerifyResult({ result, code }: { result: VerifyLookupResult; code: stri
           {t('verify.cancelledTitle')}
         </p>
         <p className="mt-1 text-center text-xs font-semibold text-red-600">{t('verify.cancelledDesc')}</p>
-        <BillDetails bill={bill} history={result.history} tone="cancelled" />
-      </div>
-    );
-  }
-
-  if (result.status === 'rate_limited') {
-    return (
-      <div className="rounded-2xl border bg-card p-5 text-center text-sm font-semibold text-muted-foreground shadow-sm">
-        {t('verify.rateLimited')}
+        <BillDetails bill={bill} history={result.history} tone="cancelled" lang={lang} />
       </div>
     );
   }
@@ -243,7 +331,7 @@ function VerifyResult({ result, code }: { result: VerifyLookupResult; code: stri
         <BadgeCheck className="size-5" />
         <p className="text-base font-extrabold">{t('verify.validTitle')}</p>
       </div>
-      <BillDetails bill={bill} history={result.history} tone="valid" />
+      <BillDetails bill={bill} history={result.history} tone="valid" lang={lang} />
     </div>
   );
 }
@@ -262,12 +350,15 @@ function BillDetails({
   bill,
   history,
   tone,
+  lang,
 }: {
   bill: NonNullable<VerifyLookupResult['bill']>;
   history?: VerifyLookupResult['history'];
   tone: 'valid' | 'cancelled';
+  lang?: AppLanguage;
 }) {
-  const t = useT();
+  const storeT = useT();
+  const t = (k: AppLangKey) => (lang ? appT(lang, k) : storeT(k));
   const d = new Date(bill.billDateISO);
 
   return (

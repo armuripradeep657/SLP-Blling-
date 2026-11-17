@@ -320,7 +320,7 @@ export async function registerVerifiedBill(
 }
 
 export interface VerifyLookupResult {
-  status: 'valid' | 'cancelled' | 'not_found' | 'rate_limited';
+  status: 'valid' | 'cancelled' | 'not_found' | 'rate_limited' | 'offline';
   bill?: {
     companyName: string;
     billNo: string;
@@ -351,9 +351,18 @@ export async function apiVerifyLookup(code: string): Promise<VerifyLookupResult>
       signal: AbortSignal.timeout(15000),
     });
     if (res.status === 429) return { status: 'rate_limited' };
-    return ((await res.json()) as VerifyLookupResult) ?? { status: 'not_found' };
-  } catch {
-    return { status: 'not_found' }; // offline — no registry, no claim
+    // 404 carries {status:'not_found'}; anything that is not well-formed JSON
+    // (5xx page, gateway junk) is NOT a verdict — offline, retryable
+    try {
+      const body = (await res.json()) as VerifyLookupResult;
+      if (body && typeof body.status === 'string') return body;
+    } catch {
+      /* non-JSON body — offline below */
+    }
+    return { status: 'offline' };
+  } catch (e) {
+    // offline / timeout — NEVER claim INVALID BILL without the server's answer
+    return { status: 'offline' };
   }
 }
 

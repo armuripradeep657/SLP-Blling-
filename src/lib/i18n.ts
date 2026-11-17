@@ -341,6 +341,10 @@ export const APP_EN = {
   'verify.cameraDenied': 'Camera access denied — allow the camera, or type the number instead.',
   'verify.badFormat': 'That is not a valid verification number — check the SLP-XXXXXXXX-XXXX printed on the bill.',
   'verify.network': 'Could not reach the server — try again.',
+  'verify.retry': 'Retry',
+  'verify.publicTag': 'Bill verification — Code 128',
+  'verify.publicNote':
+    'Scan the Code 128 barcode on any SLP bill, or type its verification number. Verification always reflects the live database record — a cancelled bill stops verifying immediately.',
   'verify.invalidTitle': 'INVALID BILL – BARCODE NOT FOUND',
   'verify.invalidDesc': 'No bill carries this verification number in the register.',
   'verify.cancelledTitle': 'CANCELLED BILL – THIS INVOICE IS NO LONGER VALID',
@@ -734,6 +738,10 @@ export const APP_TE: Record<AppLangKey, string> = {
   'verify.cameraDenied': 'కెమెరా అనుమతి లేదు — కెమెరా అనుమతించండి లేదా నంబర్ టైప్ చేయండి.',
   'verify.badFormat': 'ఇది సరైన ధృవీకరణ నంబర్ కాదు — బిల్లుపై ముద్రించిన SLP-XXXXXXXX-XXXX చూడండి.',
   'verify.network': 'సర్వర్‌ను సంప్రదించలేకపోయాము — మళ్ళీ ప్రయత్నించండి.',
+  'verify.retry': 'మళ్లీ ప్రయత్నించండి',
+  'verify.publicTag': 'బిల్లు ధృవీకరణ — Code 128',
+  'verify.publicNote':
+    'ఏదైనా SLP బిల్లుపై ఉన్న Code 128 బార్‌కోడ్‌ను స్కాన్ చేయండి లేదా దాని ధృవీకరణ నంబర్‌ను టైప్ చేయండి. ధృవీకరణ ఎప్పుడూ లైవ్ డేటాబేస్ రికార్డ్‌నే చూపుతుంది — రద్దు చేయబడిన బిల్లు వెంటనే ధృవీకరణ విఫలమవుతుంది.',
   'verify.invalidTitle': 'చెల్లని బిల్లు – బార్‌కోడ్ కనుగొనబడలేదు',
   'verify.invalidDesc': 'ఈ ధృవీకరణ నంబర్‌తో ఎటువంటి బిల్లు రిజిస్టర్‌లో లేదు.',
   'verify.cancelledTitle': 'రద్దు చేయబడిన బిల్లు – ఈ ఇన్వాయిస్ ఇకపై చెల్లదు',
