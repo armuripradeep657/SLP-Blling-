@@ -267,3 +267,14 @@ model PasswordResetLog {
   photoData String   @default("")
   createdAt DateTime @default(now())
 }
+
+/// Tombstones of deleted bills (v40): a bill the owner deleted can NEVER
+/// come back — a stale device or an old backup re-importing it is blocked
+/// here, matched on both the bill id and the bill number.
+model DeletedBill {
+  id        String   @id
+  no        String
+  deletedAt DateTime @default(now())
+
+  @@index([no])
+}

@@ -89,6 +89,10 @@ export async function POST(req: Request) {
   /* ---- customer ---- */
   const customer = (draft.customer ?? {}) as Record<string, unknown>;
 
+  /* ---- v40: bills record WHO made them — a staff session stamps the
+     staff's name, so their History can show only their own bills ---- */
+  const creator = auth.role === 'staff' ? auth.name : 'Owner';
+
   /* ---- assemble the CANONICAL bill ---- */
   const invoice: Invoice = {
     id: typeof draft.id === 'string' && draft.id ? draft.id.slice(0, 60) : `inv-${Date.now()}`,
@@ -133,7 +137,7 @@ export async function POST(req: Request) {
     status: status as Invoice['status'],
     paymentRef: typeof draft.paymentRef === 'string' ? draft.paymentRef.slice(0, 80) : undefined,
     verifyCode: code,
-    createdBy: 'Owner',
+    createdBy: creator,
     cancelled: false,
     delivery: (draft.delivery as Invoice['delivery']) ?? undefined,
     payments: Array.isArray(draft.payments) ? (draft.payments as Invoice['payments']) : undefined,
@@ -171,7 +175,7 @@ export async function POST(req: Request) {
         paymentMode,
         verifyCode: code,
         cancelled: false,
-        createdBy: 'Owner',
+        createdBy: creator,
         payloadJson: JSON.stringify(invoice),
       },
     });
@@ -183,7 +187,7 @@ export async function POST(req: Request) {
       customerName: invoice.customer.name,
       bill,
       paymentMode,
-      createdBy: 'Owner',
+      createdBy: creator,
     });
     // deduct stock on the central catalog (products with tracked stock only)
     for (const it of bill.items) {

@@ -72,8 +72,19 @@ export async function POST(req: Request) {
   const companyName = String((settings as { companyName?: string } | null)?.companyName ?? 'SLP Cement Works');
   let registered = 0;
   let maxImportedNo = 0;
+  /* tombstones (v40): bills the owner deleted are PERMANENT — a stale
+     device re-importing its old local list (or an old backup) must never
+     resurrect them. Both the bill id and the bill number are matched. */
+  const importedIds = invoices.filter((i) => i && typeof i.id === 'string').map((i) => String(i.id));
+  const importedNos = invoices.map((i) => String((i as { no?: unknown })?.no ?? ''));
+  const tombstones = await db.deletedBill.findMany({
+    where: { OR: [{ id: { in: importedIds } }, { no: { in: importedNos } }] },
+  });
+  const blockedIds = new Set(tombstones.map((t) => t.id));
+  const blockedNos = new Set(tombstones.map((t) => t.no));
   for (const inv of invoices) {
     if (!inv || typeof inv.id !== 'string' || !inv.id) continue;
+    if (blockedIds.has(inv.id) || blockedNos.has(String(inv.no ?? ''))) continue;
     const items = Array.isArray(inv.items) ? (inv.items as Array<Record<string, unknown>>) : [];
     const totals = (inv.totals ?? {}) as Record<string, unknown>;
     const cfg = await db.appConfig.findUnique({ where: { slot: 'owner' } });

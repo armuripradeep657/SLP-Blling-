@@ -123,15 +123,16 @@ export function BottomNav() {
   const cart = useStore((s) => s.cart);
   const count = cart.reduce((s, c) => s + c.qty, 0);
 
-  /** Role gating (v39): staff see ONLY Bill, History and their own Profile;
-   *  the owner keeps every tab. */
+  /** Role gating (v39 + v40): staff see Bill, History, Verify and their own
+   *  Profile — the scanner verifies any bill's barcode; the owner keeps
+   *  every tab (products, ledger, settings, delete). */
   const staff = useStore((s) => s.staff);
   const tabs = [
     { id: 'bill', label: t('nav.bill'), icon: ReceiptIcon },
     { id: 'products', label: t('nav.products'), icon: PackageIcon, ownerOnly: true },
     { id: 'ledger', label: t('nav.ledger'), icon: LedgerIcon, ownerOnly: true },
     { id: 'history', label: t('nav.history'), icon: HistoryIcon },
-    { id: 'verify', label: t('nav.verify'), icon: ScanIcon, ownerOnly: true },
+    { id: 'verify', label: t('nav.verify'), icon: ScanIcon },
     { id: 'settings', label: t('nav.settings'), icon: SettingsIcon, ownerOnly: true },
     { id: 'profile', label: t('nav.profile'), icon: ProfileIcon, staffOnly: true },
   ].filter((x) => {
@@ -189,7 +190,7 @@ export function DesktopTabs() {
     { id: 'products', label: t('nav.products'), ownerOnly: true },
     { id: 'ledger', label: t('nav.ledger'), ownerOnly: true },
     { id: 'history', label: t('nav.invoiceHistory') },
-    { id: 'verify', label: t('nav.verify'), ownerOnly: true },
+    { id: 'verify', label: t('nav.verify') },
     { id: 'settings', label: t('nav.settings'), ownerOnly: true },
     { id: 'profile', label: t('nav.profile'), staffOnly: true },
   ].filter((x) => {

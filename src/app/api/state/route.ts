@@ -26,7 +26,9 @@ export async function GET(req: Request) {
     return Response.json({
       rev: st.rev,
       products: full.products,
-      invoices: full.invoices,
+      /* v40: staff devices see ONLY the bills they created — the owner's
+         full history never leaves the server for a staff session */
+      invoices: full.invoices.filter((i) => i.createdBy === staff.name),
       config: full.config,
       staffMode: true,
     });

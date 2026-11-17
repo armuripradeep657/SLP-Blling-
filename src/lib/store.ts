@@ -333,6 +333,12 @@ export const useStore = create<BillingStore>()(
         const ok = await apiSettingsPut(s);
         if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
         set((st) => ({ settings: { ...st.settings, ...s } }));
+        // the owner's "next invoice no" lifts the central counter — reflect it
+        // on the billing screen INSTANTLY (the poll confirms the same value)
+        const entered = Math.round(Number(s.nextInvoiceNo ?? 0));
+        if (Number.isFinite(entered) && entered > 1) {
+          set((st) => ({ srvConfig: { ...st.srvConfig, nextBillNo: Math.max(st.srvConfig.nextBillNo, entered - 1) } }));
+        }
         await pollOnce();
       },
 
@@ -549,11 +555,18 @@ export const useStore = create<BillingStore>()(
           throw new StoreError(res.error === 'offline' ? 'offline' : 'saveFailed');
         }
         const invoice = res.invoice;
+        // v40: the "Next Bill #" banner advances the moment a bill is saved —
+        // the saved bill's own number IS the new counter (no poll wait)
+        const savedNo = Number(invoice.no.replace(/\D/g, ''));
 
         // stock: the SERVER deducts it from the central catalog at save time;
         // the local mirror gets the authoritative stock on the next poll
         set((st) => ({
           invoices: [invoice, ...st.invoices],
+          srvConfig:
+            Number.isFinite(savedNo) && savedNo > st.srvConfig.nextBillNo
+              ? { ...st.srvConfig, nextBillNo: savedNo }
+              : st.srvConfig,
           products: get().products.map((p) => {
             const sold = cart.filter((c) => c.productId === p.id).reduce((s, c) => s + c.qty, 0);
             if (sold > 0 && typeof p.stock === 'number') return { ...p, stock: Math.max(p.stock - sold, 0) };
@@ -600,7 +613,11 @@ export const useStore = create<BillingStore>()(
       deleteInvoice: async (id) => {
         const ok = await apiBillDelete(id);
         if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ invoices: st.invoices.filter((i) => i.id !== id) }));
+        set((st) => ({
+          invoices: st.invoices.filter((i) => i.id !== id),
+          // a deleted bill is gone EVERYWHERE — including the "last bill" banner
+          lastInvoice: st.lastInvoice && st.lastInvoice.id === id ? null : st.lastInvoice,
+        }));
         await pollOnce();
       },
 

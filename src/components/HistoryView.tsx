@@ -41,7 +41,13 @@ export default function HistoryView({
 
   // ONE central history — every bill saved on any device shows here (the
   // store mirrors the server; the poll keeps it current within seconds)
-  const visible = invoices;
+  // v40: staff see ONLY the bills they created (the server filters the
+  // snapshot too — this local filter keeps stale cached lists honest)
+  const staffName = useStore((s) => s.staff?.name ?? '');
+  const visible = useMemo(
+    () => (isStaff ? invoices.filter((i) => i.createdBy === staffName) : invoices),
+    [invoices, isStaff, staffName]
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -70,14 +76,14 @@ export default function HistoryView({
           <p className="text-xs text-muted-foreground">{t('history.totalBilled')}</p>
           <p className="text-xl font-extrabold tabular-nums">₹{fmt(totalSales)}</p>
           <p className="text-[11px] text-muted-foreground">
-            {invoices.length} {t('history.invoices')}
+            {visible.length} {t('history.invoices')}
           </p>
         </div>
         <div className="anim-pop rounded-xl border bg-card p-3" style={{ animationDelay: '60ms' }}>
           <p className="text-xs text-muted-foreground">{t('history.balanceDue')}</p>
           <p className="text-xl font-extrabold tabular-nums text-red-600">₹{fmt(totalDue)}</p>
           <p className="text-[11px] text-muted-foreground">
-            {invoices.filter((i) => i.status !== 'Paid').length} {t('history.pending')}
+            {visible.filter((i) => i.status !== 'Paid').length} {t('history.pending')}
           </p>
         </div>
       </div>

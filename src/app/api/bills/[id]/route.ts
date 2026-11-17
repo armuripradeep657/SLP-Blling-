@@ -91,6 +91,11 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   if (!row) return Response.json({ ok: true });
   await db.bizInvoice.delete({ where: { id } });
   await db.verifiedBill.deleteMany({ where: { billNo: row.no } });
+  // tombstone (v40): the deleted bill can never come back — imports and
+  // syncs from stale devices carrying this id/number are dropped server-side
+  await db.deletedBill
+    .create({ data: { id: row.id, no: row.no } })
+    .catch(() => undefined); // already tombstoned by an earlier delete
   const rev = await bumpRev();
   return Response.json({ ok: true, rev });
 }

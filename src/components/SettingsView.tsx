@@ -31,7 +31,16 @@ import {
   lockApp,
 } from '@/lib/cloud';
 import { deriveKek, exportDek, importDek, randomB64, wrapDek } from '@/lib/crypto';
-import { CloudUpload, Download, ImageUp, KeyRound, Lock, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, TriangleAlert, Upload, UserRound } from 'lucide-react';
+import {
+  clearFaceProfile,
+  enrollFace,
+  ensureFaceLandmarker,
+  getFaceProfile,
+  openFaceCamera,
+  saveFaceProfile,
+  type FaceProfile,
+} from '@/lib/face';
+import { CloudUpload, Download, ImageUp, KeyRound, Lock, Plus, RefreshCw, RotateCcw, ScanFace, ShieldCheck, Trash2, TriangleAlert, Upload, UserRound } from 'lucide-react';
 import type {
   Appearance,
   BgThemeId,
@@ -173,6 +182,9 @@ export default function SettingsView() {
 
       <Separator />
 
+      <FaceUnlockSection />
+
+      <Separator />
 
       <AppearanceSection />
 
@@ -623,6 +635,99 @@ function SecuritySection() {
         <Lock className="size-4" />
         {t('settings.lockBtn')}
       </Button>
+    </section>
+  );
+}
+
+/* Face Unlock (v40) — enroll the owner's face on THIS device. Samples    */
+/* become normalized landmark embeddings stored in localStorage only; the */
+/* server never receives a face. Enabled here, the lock screen opens      */
+/* without the MPIN when the camera matches (MPIN stays as fallback).     */
+function FaceUnlockSection() {
+  const t = useT();
+  const { toast } = useToast();
+  const [profile, setProfile] = useState<FaceProfile | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState('');
+  const videoHostRef = useRef<HTMLDivElement | null>(null);
+  const stopRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    setProfile(getFaceProfile());
+    return () => stopRef.current?.();
+  }, []);
+
+  const enroll = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setProgress(t('settings.faceStarting'));
+      const cam = await openFaceCamera();
+      stopRef.current = cam.stop;
+      const host = videoHostRef.current;
+      if (host) {
+        host.replaceChildren(cam.video);
+        cam.video.style.width = '100%';
+        cam.video.style.height = '100%';
+        cam.video.style.objectFit = 'cover';
+        cam.video.style.transform = 'scaleX(-1)'; // selfie mirror
+      }
+      setProgress(t('settings.faceModel'));
+      await ensureFaceLandmarker(); // loads wasm + model (same-origin, cached)
+      setProgress(t('settings.faceCapturing'));
+      const samples = await enrollFace(cam.video, 4, (done, total) => {
+        setProgress(`${t('settings.faceCapturing')} ${done}/${total}`);
+      });
+      const next: FaceProfile = { enabled: true, samples, enrolledAt: Date.now() };
+      saveFaceProfile(next);
+      setProfile(next);
+      toast({ title: t('settings.faceUnlock'), description: t('settings.faceDone') });
+    } catch {
+      toast({ title: t('settings.faceUnlock'), description: t('face.errCamera'), variant: 'destructive' });
+    } finally {
+      stopRef.current?.();
+      stopRef.current = null;
+      setBusy(false);
+      setProgress('');
+      videoHostRef.current?.replaceChildren();
+    }
+  };
+
+  const disable = () => {
+    clearFaceProfile();
+    setProfile(null);
+    toast({ title: t('settings.faceUnlock'), description: t('settings.faceRemoved') });
+  };
+
+  return (
+    <section aria-label="Face unlock" className="space-y-3">
+      <h3 className="flex items-center gap-1.5 text-sm font-bold text-blue-800">
+        <ScanFace className="size-4" />
+        {t('settings.faceUnlock')}
+      </h3>
+      <p className="text-xs text-muted-foreground">{t('settings.faceUnlockDesc')}</p>
+      {profile?.enabled ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700">
+            {t('settings.faceEnrolled')}
+          </span>
+          <Button type="button" variant="outline" size="sm" onClick={disable}>
+            <Trash2 className="size-4" />
+            {t('settings.faceDisable')}
+          </Button>
+        </div>
+      ) : (
+        <Button type="button" onClick={() => void enroll()} disabled={busy} className="h-10">
+          <ScanFace className="size-4" />
+          {t('settings.faceEnroll')}
+        </Button>
+      )}
+      {(busy || progress) && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold text-blue-800">{progress}</p>
+          <div ref={videoHostRef} className="h-40 w-56 overflow-hidden rounded-lg bg-slate-900" />
+        </div>
+      )}
     </section>
   );
 }
