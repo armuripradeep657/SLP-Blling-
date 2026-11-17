@@ -28,12 +28,9 @@ export async function GET() {
     },
   });
   const legacy = Boolean(account?.pinVerifier) && account?.pinVerifier === ZERO_VERIFIER;
-  const staffCount = await db.staffUser.count({ where: { active: true } });
   return Response.json({
     hasMpin: Boolean(account?.pinVerifier),
     dekSalt: account?.dekSalt ?? null,
-    // the gate shows the staff login only when the owner has created staff
-    staffCount,
     // v35 — the Owner username+password login (Pradeep / 2125 until changed)
     hasOwnerPassword: Boolean(account?.ownerPasswordHash),
     ownerUsername: account?.ownerUsername ?? null,

@@ -3,7 +3,7 @@
 # run-e2e.sh's own exit code is pkill's, so pass/fail is read from the
 # suite's "N passed, M failed" summary line.
 cd /home/z/my-project
-SUITES="shot-v24 shot-v25 shot-v27 shot-v29 shot-v30 shot-v32 shot-v34-public shot-v35-auth shot-v35-billing shot-v35-dashboard"
+SUITES="shot-v25 shot-v29 shot-v30 shot-v34-public shot-v35-camera shot-v35-invoice shot-v37-online"
 PASS=0
 FAIL=0
 FAILED=""

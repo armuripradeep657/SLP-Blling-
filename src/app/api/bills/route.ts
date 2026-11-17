@@ -1,116 +1,194 @@
 import { db } from '@/lib/db';
-import { bearerToken, sessionAuth } from '@/lib/server/auth';
+import { bearerToken, requireOwner } from '@/lib/server/auth';
+import { bumpRev, ensureBizState, mintVerifyCode, readSettings, CODE_RE, recomputeBill, statusOf, upsertRegistry } from '@/lib/server/biz';
+import type { Invoice } from '@/lib/types';
 
 /**
- * GET /api/bills — OWNER-ONLY staff-billing monitor (v35). Reads the
- * VerifiedBill registry (the centralized, immutable bill store — bills are
- * written ONLY by the save/registration path, so staff can neither hide,
- * delete nor modify saved records here).
- *
- * Query params:
- *   q      — free text: bill no / customer name / staff name
- *   staff  — exact staff username filter ("Owner" for owner bills)
- *   from,to— ISO date bounds on the bill date
- *   limit  — max rows (default 300)
- *
- * Returns the rows PLUS per-staff totals (sales, discounts, bill count) and
- * flags bills whose item discounts are unusually high (> 20% of the line).
+ * POST /api/bills — THE bill save. A bill exists for the business ONLY
+ * after this endpoint returns ok: the server recomputes every total from
+ * the raw lines (GST from the central AppConfig), atomically resolves the
+ * bill number, registers the Code 128 verification barcode, stores the
+ * full bill centrally and bumps the revision so every other device sees
+ * the new bill within seconds. The client never shows "saved" before the
+ * server confirms — and an offline device cannot save at all.
  */
-export async function GET(req: Request) {
-  const auth = await sessionAuth(bearerToken(req));
+export async function POST(req: Request) {
+  const auth = await requireOwner(bearerToken(req));
   if (!auth) return Response.json({ error: 'unauthorized' }, { status: 401 });
-  if (auth.role !== 'owner') return Response.json({ error: 'forbidden' }, { status: 403 });
 
-  const url = new URL(req.url);
-  const q = (url.searchParams.get('q') ?? '').trim().toLowerCase();
-  const staff = (url.searchParams.get('staff') ?? '').trim();
-  const from = url.searchParams.get('from');
-  const to = url.searchParams.get('to');
-  const limit = Math.min(Number(url.searchParams.get('limit') ?? 300) || 300, 500);
-
-  const where: Record<string, unknown> = {};
-  if (staff) where.createdBy = staff;
-  if (from && !Number.isNaN(new Date(from).getTime())) {
-    where.billDateISO = { ...(where.billDateISO as object | undefined), gte: new Date(from) };
-  }
-  if (to && !Number.isNaN(new Date(to).getTime())) {
-    const end = new Date(to);
-    end.setHours(23, 59, 59, 999);
-    where.billDateISO = { ...(where.billDateISO as object | undefined), lte: end };
-  }
-  const rowsAll = await db.verifiedBill.findMany({
-    where,
-    orderBy: { billDateISO: 'desc' },
-    take: limit,
-  });
-  // q — CASE-INSENSITIVE contains. SQLite has no insensitive mode in Prisma
-  // (a lowercased q never matches "Ravi Kumar"), so the free-text filter
-  // runs in JS over the fetched window.
-  const rows = q
-    ? rowsAll.filter(
-        (b) =>
-          (b.billNo || '').toLowerCase().includes(q) ||
-          (b.customerName || '').toLowerCase().includes(q) ||
-          (b.createdBy || '').toLowerCase().includes(q)
-      )
-    : rowsAll;
-
-  const bills = rows.map((b) => {
-    const items = safeParse(b.itemsJson) as Array<Record<string, unknown>>;
-    // flag bills with an unusually high per-line discount (> 20% of the line)
-    const highDiscount = items.some((it) => {
-      const price = Number(it.price ?? 0);
-      const qty = Number(it.qty ?? 0);
-      const disc = Number(it.discountAmount ?? it.discount ?? 0);
-      return price * qty > 0 && disc / (price * qty) > 0.2;
-    });
-    return {
-      code: b.code,
-      billNo: b.billNo,
-      companyName: b.companyName,
-      billDateISO: b.billDateISO,
-      customerName: b.customerName,
-      items,
-      gstPercent: b.gstPercent,
-      gstAmount: b.gstAmount,
-      discount: b.discount,
-      labourCharge: b.labourCharge,
-      autoCharge: b.autoCharge,
-      subtotal: b.subtotal,
-      total: b.total,
-      paid: b.paid,
-      balance: b.balance,
-      paymentMode: b.paymentMode,
-      paymentStatus: b.paymentStatus,
-      createdBy: b.createdBy,
-      createdById: b.createdById,
-      cancelled: b.cancelled,
-      highDiscount,
-    };
-  });
-
-  // per-staff totals over ALL matching rows
-  const byStaff = new Map<string, { staff: string; bills: number; sales: number; discounts: number }>();
-  for (const b of bills) {
-    if (b.cancelled) continue;
-    const key = b.createdBy || 'Owner';
-    const cur = byStaff.get(key) ?? { staff: key, bills: 0, sales: 0, discounts: 0 };
-    cur.bills += 1;
-    cur.sales = Math.round((cur.sales + b.total) * 100) / 100;
-    cur.discounts = Math.round((cur.discounts + b.discount) * 100) / 100;
-    byStaff.set(key, cur);
-  }
-
-  return Response.json({
-    bills,
-    staffTotals: [...byStaff.values()].sort((a, b) => b.sales - a.sales),
-  });
-}
-
-function safeParse(s: string): unknown {
+  let body: Record<string, unknown>;
   try {
-    return JSON.parse(s);
+    body = (await req.json()) as Record<string, unknown>;
   } catch {
-    return [];
+    return Response.json({ error: 'badRequest' }, { status: 400 });
+  }
+
+  const draft = (body.invoice ?? {}) as Record<string, unknown>;
+  const items = Array.isArray(draft.items) ? (draft.items as Array<Record<string, unknown>>) : [];
+  if (items.length === 0) return Response.json({ error: 'badRequest' }, { status: 400 });
+
+  const cfg = await db.appConfig.findUnique({ where: { slot: 'owner' } });
+  const shop = (await readSettings()) as { companyName?: string; invoicePrefix?: string };
+
+  /* ---- server-side totals: recomputed from the lines, GST from AppConfig ----
+     The client sends its computed totals nested under `totals` — the money
+     ALREADY paid (cash at the counter, UPI auto-detected, owner-confirmed)
+     lives in totals.paid. Dropping it made every bill land as DUE. */
+  const draftTotals = (draft.totals ?? {}) as Record<string, unknown>;
+  const bill = recomputeBill(items, {
+    discountType: draft.discountType,
+    discountValue: draft.discountValue,
+    labourCharge: draft.labourCharge,
+    autoCharge: draft.autoCharge,
+    paid: Number(draft.paid ?? draftTotals.paid ?? 0) || 0,
+    gstPercent: cfg?.gstPercent ?? 0,
+  });
+  const paymentMode = String(draft.paymentMode ?? 'Cash').slice(0, 10);
+  const status = statusOf(bill.total, bill.paid);
+  const dateRaw = new Date(String(draft.dateISO ?? ''));
+  const dateISO = Number.isNaN(dateRaw.getTime()) ? new Date() : dateRaw;
+
+  /* ---- bill number: reserved at cart-start or the next atomic number ----
+     The reservation already bumped AppConfig.nextBillNo on THIS device's
+     cart-start; the server here guarantees no collision regardless. */
+  const reserved = Number(body.reservedNo ?? 0);
+  const prefix = String(shop.invoicePrefix ?? '').trim() || 'SLP-INV-';
+  let noNum = Number.isFinite(reserved) && reserved > 0 ? Math.round(reserved) : 0;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (noNum <= 0) noNum = (cfg?.nextBillNo ?? 0) + 1;
+    const no = `${prefix}${noNum}`;
+    const clash = await db.bizInvoice.findUnique({ where: { no } });
+    if (!clash) break;
+    // taken — always move forward past the counter
+    noNum = Math.max((cfg?.nextBillNo ?? 0) + 1, noNum + 1);
+    if (cfg && noNum > cfg.nextBillNo) {
+      await db.appConfig.update({ where: { slot: 'owner' }, data: { nextBillNo: noNum - 1 } }).catch(() => undefined);
+    }
+  }
+  const no = `${prefix}${noNum}`;
+
+  /* ---- verification code: client-minted or server-minted, always unique ---- */
+  let code = typeof draft.verifyCode === 'string' && CODE_RE.test(draft.verifyCode) ? draft.verifyCode : '';
+  if (code && (await db.verifiedBill.findUnique({ where: { code } }))) code = '';
+  for (let attempt = 0; attempt < 5 && !code; attempt++) code = mintVerifyCode();
+
+  /* ---- customer ---- */
+  const customer = (draft.customer ?? {}) as Record<string, unknown>;
+
+  /* ---- assemble the CANONICAL bill ---- */
+  const invoice: Invoice = {
+    id: typeof draft.id === 'string' && draft.id ? draft.id.slice(0, 60) : `inv-${Date.now()}`,
+    no,
+    dateISO: dateISO.toISOString(),
+    customer: {
+      name: String(customer.name ?? '').slice(0, 80),
+      phone: String(customer.phone ?? '').slice(0, 15),
+      address: String(customer.address ?? '').slice(0, 200) || undefined,
+    },
+    items: bill.items.map((it, i) => ({
+      key: it.key ?? `line-${i}`,
+      productId: it.productId ?? 'custom',
+      name: it.name,
+      nameTe: it.nameTe,
+      size: it.size,
+      price: it.price,
+      origPrice: it.origPrice,
+      qty: it.qty,
+      discount: it.discount,
+      discountType: it.discountType,
+      discountValue: it.discountValue,
+    })),
+    totals: {
+      subtotal: bill.subtotal,
+      itemDiscounts: bill.itemDiscounts,
+      discount: bill.discount,
+      labourCharge: bill.labourCharge,
+      autoCharge: bill.autoCharge,
+      roundOff: 0,
+      gst: bill.gst,
+      total: bill.total,
+      paid: bill.paid,
+      balance: bill.balance,
+    },
+    discountType: draft.discountType === 'percent' ? 'percent' : 'amount',
+    discountValue: Number(draft.discountValue ?? 0) || 0,
+    labourCharge: bill.labourCharge,
+    autoCharge: bill.autoCharge,
+    paymentMode: paymentMode as Invoice['paymentMode'],
+    language: draft.language === 'te' || draft.language === 'both' ? draft.language : 'en',
+    status: status as Invoice['status'],
+    paymentRef: typeof draft.paymentRef === 'string' ? draft.paymentRef.slice(0, 80) : undefined,
+    verifyCode: code,
+    createdBy: 'Owner',
+    cancelled: false,
+    delivery: (draft.delivery as Invoice['delivery']) ?? undefined,
+    payments: Array.isArray(draft.payments) ? (draft.payments as Invoice['payments']) : undefined,
+  };
+
+  /* ---- keep the bill-number counter at least as far as this bill ---- */
+  if (!cfg || noNum > cfg.nextBillNo) {
+    await db.appConfig.upsert({
+      where: { slot: 'owner' },
+      update: { nextBillNo: noNum },
+      create: { slot: 'owner', nextBillNo: noNum },
+    });
+  }
+
+  /* ---- idempotent save: a retry after a dropped network reply does NOT
+     create a duplicate bill — the same bill id returns the saved bill ---- */
+  const existing = await db.bizInvoice.findUnique({ where: { id: invoice.id } });
+  if (existing) {
+    const saved = JSON.parse(existing.payloadJson) as Invoice;
+    return Response.json({ ok: true, invoice: saved, duplicate: true, rev: (await ensureBizState()).rev });
+  }
+
+  try {
+    await db.bizInvoice.create({
+      data: {
+        id: invoice.id,
+        no,
+        dateISO,
+        customerName: invoice.customer.name,
+        customerPhone: invoice.customer.phone,
+        total: bill.total,
+        paid: bill.paid,
+        balance: bill.balance,
+        status,
+        paymentMode,
+        verifyCode: code,
+        cancelled: false,
+        createdBy: 'Owner',
+        payloadJson: JSON.stringify(invoice),
+      },
+    });
+    await upsertRegistry({
+      code,
+      billNo: no,
+      companyName: String(shop.companyName ?? 'SLP Cement Works'),
+      billDateISO: dateISO,
+      customerName: invoice.customer.name,
+      bill,
+      paymentMode,
+      createdBy: 'Owner',
+    });
+    // deduct stock on the central catalog (products with tracked stock only)
+    for (const it of bill.items) {
+      if (!it.productId || it.productId === 'custom') continue;
+      const prod = await db.bizProduct.findUnique({ where: { id: it.productId } });
+      if (prod && typeof prod.stock === 'number') {
+        await db.bizProduct.update({
+          where: { id: prod.id },
+          data: { stock: Math.max(prod.stock - Math.round(it.qty), 0) },
+        });
+      }
+    }
+    const rev = await bumpRev();
+    return Response.json({ ok: true, invoice, rev });
+  } catch (e) {
+    // unique-code / unique-number races surface here
+    const msg = String(e);
+    if (msg.includes('VerifiedBill_code_key')) return Response.json({ error: 'codeInUse' }, { status: 409 });
+    if (msg.includes('BizInvoice_no_key')) return Response.json({ error: 'billNoTaken' }, { status: 409 });
+    return Response.json({ error: 'saveFailed' }, { status: 500 });
   }
 }

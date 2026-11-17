@@ -43,7 +43,8 @@ const closePopup = async (target = page) => {
 
 /** complete a CASH bill through the UI, return {no, code} from the slip */
 const makeCashBill = async (name, phone) => {
-  await page.locator('main button:has-text("FT")').first().click();
+  await page.evaluate(() => window.scrollTo(0, 0)); // clear any persisted scroll
+await page.locator('main button[title="2FT — ₹200"]').first().click();
   await page.waitForTimeout(600);
   await page.getByRole('button', { name: 'View bill' }).click();
   await page.waitForTimeout(700);
@@ -62,7 +63,7 @@ const makeCashBill = async (name, phone) => {
 };
 
 /* ---------------- setup: owner MPIN + one real bill ---------------- */
-await page.addInitScript(() => localStorage.setItem('slp-update-notice-seen', '35'));
+await page.addInitScript(() => localStorage.setItem('slp-update-notice-seen', '37'));
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(2600);
 const mpinBox = page.getByLabel('New MPIN');

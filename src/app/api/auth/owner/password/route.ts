@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { bearerToken, hashPassword, sessionAuth, verifyPassword } from '@/lib/server/auth';
+import { bearerToken, hashPassword, requireOwner, verifyPassword } from '@/lib/server/auth';
 
 /**
  * POST /api/auth/owner/password — seed or change the Owner (Admin)
@@ -17,8 +17,8 @@ import { bearerToken, hashPassword, sessionAuth, verifyPassword } from '@/lib/se
  * (only password-logins need the new password next time).
  */
 export async function POST(req: Request) {
-  const auth = await sessionAuth(bearerToken(req));
-  if (!auth || auth.role !== 'owner') {
+  const auth = await requireOwner(bearerToken(req));
+  if (!auth) {
     return Response.json({ error: 'unauthorized' }, { status: 401 });
   }
 
@@ -39,13 +39,11 @@ export async function POST(req: Request) {
   if (password.length < 4 || password.length > 64) {
     return Response.json({ error: 'badPassword' }, { status: 400 });
   }
-  // DEK material is required — password login must be able to open the vault
+  // DEK material is legacy (the encrypted vault is gone — data lives in the
+  // central database); whatever the device sends is stored as-is
   const dekSalt = typeof body.dekSalt === 'string' ? body.dekSalt : '';
   const dekIv = typeof body.dekIv === 'string' ? body.dekIv : '';
   const dekWrapped = typeof body.dekWrapped === 'string' ? body.dekWrapped : '';
-  if (!dekSalt || !dekIv || !dekWrapped) {
-    return Response.json({ error: 'badRequest' }, { status: 400 });
-  }
 
   const account = await db.syncAccount.findUnique({ where: { slot: 'owner' } });
   if (!account) return Response.json({ error: 'notFound' }, { status: 404 });
@@ -71,18 +69,6 @@ export async function POST(req: Request) {
     },
   });
 
-  await db.auditEvent
-    .create({
-      data: {
-        slot: 'owner',
-        actor: updated.ownerUsername ?? 'Owner',
-        actorRole: 'owner',
-        action: account.ownerPasswordHash ? 'owner_password_changed' : 'owner_password_seeded',
-        target: updated.ownerUsername ?? '',
-        detailsJson: '{}',
-      },
-    })
-    .catch(() => undefined);
 
   return Response.json({ ok: true, username: updated.ownerUsername });
 }

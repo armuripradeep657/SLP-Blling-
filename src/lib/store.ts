@@ -3,10 +3,23 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from './defaultData';
-import { computeTotals, getStatus, priceForSize, applyPayment } from './billing';
+import { computeTotals, priceForSize } from './billing';
 import { newVerifyCode } from './verify-id';
-import { getIdentity, setIdentity } from './role';
-import { registerVerifiedBill, apiVerifyCancel, authedFetch } from './cloud';
+import {
+  apiBillSave,
+  apiBillPatch,
+  apiBillDelete,
+  apiProductPut,
+  apiProductDelete,
+  apiSettingsPut,
+  apiLabourPut,
+  apiLabourDelete,
+  apiLedgerPut,
+  apiLedgerDelete,
+  apiReserveNo,
+  apiStateGet,
+  apiStateImport,
+} from './cloud';
 import type {
   Appearance,
   BillConfig,
@@ -14,7 +27,6 @@ import type {
   BusinessSettings,
   CartItem,
   Customer,
-  DeletedIds,
   Expense,
   IncomeEntry,
   Invoice,
@@ -24,84 +36,37 @@ import type {
   MainTab,
   PaymentMode,
   Product,
-  ServerConfig,
 } from './types';
 
-const EMPTY_DELETED: DeletedIds = {
-  invoices: [],
-  expenses: [],
-  incomes: [],
-  labours: [],
-  products: [],
-};
-
-/** Helper: mark an id deleted (tombstone) so sync never resurrects it */
-function tomb(all: DeletedIds, key: keyof DeletedIds, id: string): DeletedIds {
-  const list = all[key];
-  return list.includes(id) ? all : { ...all, [key]: [id, ...list] };
-}
-
-/** Helper: bump the sync LWW clock (config-level changes) */
-function touch(now = Date.now()): number {
-  return now;
-}
+/* ------------------------------------------------------------------ */
+/* ONLINE-ONLY STORE — the server's central database is the ONLY       */
+/* source of truth. Nothing business-related is persisted on the       */
+/* device: this store is a MIRROR of the server, refreshed by a short  */
+/* poll (every device sees every change within seconds, no manual      */
+/* refresh) and updated locally only AFTER the server confirms a       */
+/* write. A bill is never shown as saved before the server confirmed   */
+/* it, and with no internet NOTHING can be saved.                      */
+/*                                                                     */
+/* Only device-local UI state persists (cart in progress, bill config, */
+/* customer being typed, open tab) — never business data.              */
+/* ------------------------------------------------------------------ */
 
 const r2 = (n: number): number => Math.round(n * 100) / 100;
 
-
-/**
- * RESERVE the next bill number from the server (atomic counter — two staff
- * billing at the same instant can never print the same number). Called when
- * the FIRST item lands in an empty cart. Offline → no reservation; the bill
- * falls back to the local counter (same as before v35).
- */
-async function reserveBillNo(): Promise<void> {
-  try {
-    const st = useStore.getState();
-    if (st.billConfig.reservedNo !== undefined) return;
-    const res = await authedFetch('/api/bills/reserve', 'POST', {
-      floor: st.settings.nextInvoiceNo,
-    });
-    if (res.status === 200 && typeof res.data.no === 'number') {
-      useStore.getState().setBillConfig({ reservedNo: res.data.no });
-    }
-  } catch {
-    /* offline — local counter fallback at completion */
+/** Error codes thrown by every mutation — the UI maps them to messages */
+export type SaveError = 'offline' | 'saveFailed' | 'unauthorized';
+export class StoreError extends Error {
+  code: SaveError;
+  constructor(code: SaveError) {
+    super(code);
+    this.code = code;
   }
 }
-
-/**
- * Register one bill in the server's barcode verification registry, adopting
- * the winning code after a 409 race. When the network is down the bill id
- * joins `pendingRegIds` (persisted) — `flushPendingRegistrations` retries
- * until the server accepts it, so an offline-saved bill verifies as soon as
- * the connection returns. Notifications + audit records are created
- * SERVER-SIDE from the registration, so a bill that never saved never
- * notifies.
- */
-async function registerInvoice(invoice: Invoice): Promise<void> {
-  const settings = useStore.getState().settings;
-  const reg = await registerVerifiedBill(invoice, settings);
-  if (reg.ok) {
-    if (reg.code && reg.code !== invoice.verifyCode) {
-      useStore.getState().setInvoiceVerifyCode(invoice.id, reg.code);
-    }
-    if (useStore.getState().pendingRegIds.includes(invoice.id)) {
-      useStore.setState((st) => ({ pendingRegIds: st.pendingRegIds.filter((x) => x !== invoice.id) }));
-    }
-    return;
-  }
-  const st = useStore.getState();
-  if (!st.pendingRegIds.includes(invoice.id)) {
-    useStore.setState({ pendingRegIds: [invoice.id, ...st.pendingRegIds] });
-  }
-}
-
 
 /**
  * Normalise a labour entry: guarantees the wage + payments list exist (legacy
  * rows are converted once) and keeps the stored paid/balance fields in sync
- * so older views and merged devices always agree.
+ * so the server, the notebook and every device always agree.
  */
 function normalizeLabourWork(e: LabourWork): LabourWork {
   const legacyPaid = r2(e.paid ?? e.amount ?? 0);
@@ -124,7 +89,13 @@ function normalizeLabourWork(e: LabourWork): LabourWork {
 }
 
 interface BillingStore {
-  hydrated: boolean;
+  /** true once the first successful central-state pull happened */
+  synced: boolean;
+  /** connectivity + server reachability — drives the offline banner */
+  online: boolean;
+  /** the server revision this device has already applied */
+  rev: number;
+
   settings: BusinessSettings;
   products: Product[];
   cart: CartItem[];
@@ -143,34 +114,36 @@ interface BillingStore {
   labourWorkers: LabourWorker[];
   /** App look — background theme, header colour, owner's watermark photo */
   appearance: Appearance;
-  /** Tombstones — ids deleted anywhere, so cloud sync never brings them back */
-  deletedIds: DeletedIds;
-  /** Sync LWW clock — bumped whenever settings/appearance/products/bills numbering change */
-  dataUpdatedAt: number;
-  /**
-   * Server-authoritative billing configuration (v35) — polled from the
-   * server every few seconds: UPI ID (payment QRs), GST rate for new bills
-   * and the OWNER's staff discount limits. Cached on-device so billing works
-   * offline; the server copy always wins when reachable.
-   */
-  srvConfig: ServerConfig;
-  setSrvConfig: (c: ServerConfig) => void;
-  /** admin notification unread count — refreshed by the sync poll (owner) */
-  unreadNotifs: number;
-  setUnreadNotifs: (n: number) => void;
-  /**
-   * Bills whose server registration did not complete (offline / restart) —
-   * retried automatically until the barcode registry accepts them, so an
-   * offline-saved bill still verifies once the connection returns.
-   */
-  pendingRegIds: string[];
-  flushPendingRegistrations: () => Promise<void>;
+
+  /** Central server config mirror (UPI ID + GST — authoritative on the server) */
+  srvConfig: { upiId: string; gstPercent: number };
+
+  /* ---- lifecycle ---- */
+  /** pull the central state once (login / manual refresh) — imports the
+   *  device's old offline-era data when the central db starts empty */
+  bootstrap: () => Promise<void>;
+  /** the background poll — keeps every device in sync without any refresh */
+  startSync: () => void;
+  stopSync: () => void;
+  /** apply a server snapshot to this device's mirror */
+  applySnapshot: (s: {
+    settings?: Partial<BusinessSettings>;
+    appearance?: Partial<Appearance>;
+    products?: Product[];
+    invoices?: Invoice[];
+    expenses?: Expense[];
+    incomes?: IncomeEntry[];
+    labourWorks?: LabourWork[];
+    labourWorkers?: LabourWorker[];
+    config?: { upiId: string; gstPercent: number };
+    rev?: number;
+  }) => void;
 
   setActiveTab: (t: MainTab) => void;
-  saveSettings: (s: Partial<BusinessSettings>) => void;
-  addProduct: (p: Product) => void;
-  updateProduct: (id: string, p: Partial<Product>) => void;
-  deleteProduct: (id: string) => void;
+  saveSettings: (s: Partial<BusinessSettings>) => Promise<void>;
+  addProduct: (p: Product) => Promise<void>;
+  updateProduct: (id: string, p: Partial<Product>) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
 
   addToCart: (product: Product, size: string) => void;
   addCustomItem: (name: string, size: string, price: number, qty: number, nameTe?: string) => void;
@@ -187,41 +160,43 @@ interface BillingStore {
   setBillConfig: (c: Partial<BillConfig>) => void;
   resetBillConfig: () => void;
 
-  completeInvoice: (opts?: { paymentRef?: string; paidAmount?: number }) => Invoice | null;
+  /** save the bill — RESOLVED ONLY WHEN THE SERVER CONFIRMS IT; returns the
+   *  canonical bill (server number, server totals, registry-registered code) */
+  completeInvoice: (opts?: { paymentRef?: string; paidAmount?: number }) => Promise<Invoice>;
   clearLastInvoice: () => void;
-  /** one-time migration: give pre-barcode bills a verification ID + register it */
-  migrateVerifyCodes: () => void;
-  /** adopt the registry's winning code after a registration race (409) */
+  /** adopt the registry's winning code after a registration race (unused — kept for compat) */
   setInvoiceVerifyCode: (id: string, code: string) => void;
-  deleteInvoice: (id: string) => void;
-  /** OWNER: cancel a bill — verification answers CANCELLED for its barcode */
-  cancelInvoice: (id: string) => void;
-  updateInvoiceStatus: (id: string, paidAmount: number) => void;
-  updateInvoiceLanguage: (id: string, language: BillLanguage) => void;
+  deleteInvoice: (id: string) => Promise<void>;
+  /** cancel a bill — verification answers CANCELLED for its barcode */
+  cancelInvoice: (id: string) => Promise<void>;
+  updateInvoiceStatus: (id: string, paidAmount: number) => Promise<void>;
+  updateInvoiceLanguage: (id: string, language: BillLanguage) => Promise<void>;
   /** Receive a dues payment — recorded as income on the day received */
-  receiveDuePayment: (id: string, amount: number, mode: PaymentMode) => void;
-  addExpense: (e: Omit<Expense, 'id'>) => void;
-  deleteExpense: (id: string) => void;
+  receiveDuePayment: (id: string, amount: number, mode: PaymentMode) => Promise<void>;
+  /** give pre-barcode bills (imported old data) a verification ID + register it */
+  migrateVerifyCodes: () => Promise<void>;
+  addExpense: (e: Omit<Expense, 'id'>) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
   /** Add a manual income entry (name + Cash/UPI mode) — counts in the ledger day/month */
-  addIncome: (e: Omit<IncomeEntry, 'id'>) => void;
-  deleteIncome: (id: string) => void;
+  addIncome: (e: Omit<IncomeEntry, 'id'>) => Promise<void>;
+  deleteIncome: (id: string) => Promise<void>;
   /** Add a labour work entry (worker, date, work done, product) — unknown
    *  worker names are saved to the labourers list automatically */
-  addLabourWork: (e: Omit<LabourWork, 'id'>) => void;
-  addLabourWorker: (name: string, nameTe?: string, phone?: string) => void;
-  deleteLabourWorker: (id: string) => void;
-  deleteLabourWork: (id: string) => void;
+  addLabourWork: (e: Omit<LabourWork, 'id'>) => Promise<void>;
+  addLabourWorker: (name: string, nameTe?: string, phone?: string) => Promise<void>;
+  deleteLabourWorker: (id: string) => Promise<void>;
+  deleteLabourWork: (id: string) => Promise<void>;
   /** Edit the details of an entered labour work (date, name, work, qty, wage, mode) */
   updateLabourWork: (
     id: string,
     patch: Partial<Pick<LabourWork, 'dateISO' | 'name' | 'work' | 'qty' | 'wage' | 'mode'>>
-  ) => void;
+  ) => Promise<void>;
   /** Record money given to the labour later — balance paid or extra money */
-  addLabourPayment: (id: string, p: { amount: number; mode?: PaymentMode; note?: string; dateISO?: string }) => void;
+  addLabourPayment: (id: string, p: { amount: number; mode?: PaymentMode; note?: string; dateISO?: string }) => Promise<void>;
   /** Remove a wrongly-entered payment */
-  deleteLabourPayment: (id: string, paymentId: string) => void;
+  deleteLabourPayment: (id: string, paymentId: string) => Promise<void>;
   /** Change the app look — background theme / header colour / watermark photo */
-  setAppearance: (a: Partial<Appearance>) => void;
+  setAppearance: (a: Partial<Appearance>) => Promise<void>;
 }
 
 const DEFAULT_CONFIG: BillConfig = {
@@ -238,7 +213,10 @@ const DEFAULT_CONFIG: BillConfig = {
 export const useStore = create<BillingStore>()(
   persist(
     (set, get) => ({
-      hydrated: false,
+      synced: false,
+      online: true,
+      rev: -1,
+
       settings: DEFAULT_SETTINGS,
       products: DEFAULT_PRODUCTS,
       cart: [],
@@ -252,39 +230,111 @@ export const useStore = create<BillingStore>()(
       labourWorks: [],
       labourWorkers: [],
       appearance: { bgTheme: 'blue', headerTheme: 'blue', watermark: '' },
-      deletedIds: EMPTY_DELETED,
-      dataUpdatedAt: 0,
-      srvConfig: {
-        upiId: '',
-        gstPercent: 0,
-        discountMaxPercent: 100,
-        discountMaxAmount: 999999,
-        discountApprovalRequired: false,
+      srvConfig: { upiId: '', gstPercent: 0 },
+
+      /* ---------------------------------------------------------- */
+      /* LIFECYCLE — bootstrap + poll                                */
+      /* ---------------------------------------------------------- */
+
+      applySnapshot: (s) =>
+        set((st) => ({
+          ...(s.settings ? { settings: { ...st.settings, ...s.settings } } : {}),
+          ...(s.appearance ? { appearance: { ...st.appearance, ...s.appearance } } : {}),
+          ...(s.products ? { products: s.products } : {}),
+          ...(s.invoices ? { invoices: s.invoices } : {}),
+          ...(s.expenses ? { expenses: s.expenses } : {}),
+          ...(s.incomes ? { incomes: s.incomes } : {}),
+          ...(s.labourWorks ? { labourWorks: s.labourWorks } : {}),
+          ...(s.labourWorkers ? { labourWorkers: s.labourWorkers } : {}),
+          ...(s.config ? { srvConfig: s.config } : {}),
+          ...(s.rev !== undefined ? { rev: s.rev } : {}),
+          online: true,
+          synced: true,
+        })),
+
+      bootstrap: async () => {
+        const res = await apiStateGet(get().rev);
+        if (res.kind === 'offline') {
+          set({ online: false });
+          throw new StoreError('offline');
+        }
+        if (res.kind === 'auth') throw new StoreError('unauthorized');
+        if (res.kind === 'data') {
+          get().applySnapshot(res.state);
+          // FIRST RUN on the central db: migrate this device's old offline-era
+          // data (the previous app kept everything in localStorage), or seed
+          // the defaults for a brand-new business. Either way the central db
+          // ends up with the full catalog + history, and every other device
+          // picks it up on their next poll.
+          const empty =
+            res.state.products.length === 0 &&
+            res.state.invoices.length === 0 &&
+            res.state.expenses.length === 0 &&
+            res.state.incomes.length === 0 &&
+            res.state.labourWorks.length === 0;
+          if (empty) {
+            await migrateOldData();
+            const after = await apiStateGet(-1);
+            if (after.kind === 'data') get().applySnapshot(after.state);
+          }
+        }
       },
-      setSrvConfig: (c) => set((st) => ({ srvConfig: { ...st.srvConfig, ...c } })),
-      unreadNotifs: 0,
-      setUnreadNotifs: (n) => set({ unreadNotifs: n }),
-      pendingRegIds: [],
+
+      startSync: () => {
+        if (typeof window === 'undefined') return;
+        stopSyncInternal();
+        const timer = window.setInterval(() => {
+          void pollOnce();
+        }, 4000);
+        const onVis = () => {
+          if (document.visibilityState === 'visible') void pollOnce();
+        };
+        window.addEventListener('visibilitychange', onVis);
+        window.addEventListener('online', onVis);
+        syncHandle = { timer, onVis };
+      },
+
+      stopSync: () => stopSyncInternal(),
+
+      /* ---------------------------------------------------------- */
+      /* SETTINGS + PRODUCTS — saved centrally, confirmed before use */
+      /* ---------------------------------------------------------- */
 
       setActiveTab: (t) => set({ activeTab: t }),
 
-      saveSettings: (s) =>
-        set((st) => ({ settings: { ...st.settings, ...s }, dataUpdatedAt: touch() })),
+      saveSettings: async (s) => {
+        const ok = await apiSettingsPut(s);
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ settings: { ...st.settings, ...s } }));
+        await pollOnce();
+      },
 
-      addProduct: (p) => set((st) => ({ products: [p, ...st.products], dataUpdatedAt: touch() })),
+      addProduct: async (p) => {
+        const ok = await apiProductPut(p);
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ products: [p, ...st.products.filter((x) => x.id !== p.id)] }));
+        await pollOnce();
+      },
 
-      updateProduct: (id, p) =>
-        set((st) => ({
-          products: st.products.map((x) => (x.id === id ? { ...x, ...p } : x)),
-          dataUpdatedAt: touch(),
-        })),
+      updateProduct: async (id, p) => {
+        const merged = { ...get().products.find((x) => x.id === id), ...p, id } as Product;
+        const ok = await apiProductPut(merged);
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ products: st.products.map((x) => (x.id === id ? { ...x, ...p } : x)) }));
+        await pollOnce();
+      },
 
-      deleteProduct: (id) =>
-        set((st) => ({
-          products: st.products.filter((x) => x.id !== id),
-          deletedIds: tomb(st.deletedIds, 'products', id),
-          dataUpdatedAt: touch(),
-        })),
+      deleteProduct: async (id) => {
+        const ok = await apiProductDelete(id);
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ products: st.products.filter((x) => x.id !== id) }));
+        await pollOnce();
+      },
+
+      /* ---------------------------------------------------------- */
+      /* CART — device-local by design (a bill half-typed on this    */
+      /* phone is nobody else's business)                            */
+      /* ---------------------------------------------------------- */
 
       addToCart: (product, size) => {
         const price = priceForSize(product.price, product.sizePrices, size);
@@ -357,11 +407,15 @@ export const useStore = create<BillingStore>()(
               ...st.products,
             ];
           }
+          // persist the merged/created product centrally (fire-and-forget —
+          // the poll reconciles the catalog on the next tick if it fails)
+          const toSave = idx >= 0 ? products[idx] : products[0];
+          void apiProductPut(toSave).catch(() => undefined);
           return { cart, products };
         });
       },
 
-      // Owner AND staff edit while billing: change the unit price directly on
+      // The ADMIN edits while billing: change the unit price directly on
       // the line (origPrice stays as proof) and/or discount that one item —
       // ₹ flat or % of the line. The catalog itself is never touched.
       updateCartItem: (key, patch) =>
@@ -406,20 +460,22 @@ export const useStore = create<BillingStore>()(
           billConfig: { ...DEFAULT_CONFIG, language: st.billConfig.language },
         })),
 
-      completeInvoice: (opts) => {
-        const { cart, customer, billConfig, settings, products } = get();
-        if (cart.length === 0) return null;
+      /* ---------------------------------------------------------- */
+      /* THE BILL SAVE — online-only, server-confirmed               */
+      /* ---------------------------------------------------------- */
+
+      completeInvoice: async (opts) => {
+        const { cart, customer, billConfig, settings } = get();
+        if (cart.length === 0) throw new StoreError('saveFailed');
         const totals = computeTotals(cart, billConfig, settings.gstPercent || 0);
         // UPI auto-detection: the customer paid (maybe partially) while the
         // QR was on screen — the detected amount becomes the paid amount
-        if (opts?.paidAmount !== undefined && totals.paid !== opts.paidAmount) {
+        if (opts?.paidAmount !== undefined) {
           totals.paid = Math.min(opts.paidAmount, totals.total);
           totals.balance = Math.max(totals.total - totals.paid, 0);
         }
-        // the bill number RESERVED at cart-start (server-issued, race-free);
-        // offline bills fall back to the device counter as before
-        const noNum = get().billConfig.reservedNo ?? settings.nextInvoiceNo;
-        const no = `${settings.invoicePrefix}${noNum}`;
+        // GST comes from the SERVER's AppConfig at save time — the response
+        // totals are authoritative (the server recomputes everything anyway)
         const dateISO = new Date().toISOString();
         // Delivery / driver details only when the bill is marked Delivered
         const delivery =
@@ -439,36 +495,42 @@ export const useStore = create<BillingStore>()(
                 },
               ]
             : undefined;
-        const invoice: Invoice = {
+
+        const draft: Partial<Invoice> = {
           id: `inv-${Date.now()}`,
-          no,
           dateISO,
           customer: { ...customer },
           items: cart.map((c) => ({ ...c })),
-          totals,
           discountType: billConfig.discountType,
           discountValue: billConfig.discountValue,
           labourCharge: billConfig.labourCharge || 0,
           autoCharge: billConfig.autoCharge || 0,
           paymentMode: billConfig.paymentMode,
           language: billConfig.language,
-          status: getStatus(totals.total, totals.paid),
           paymentRef: opts?.paymentRef,
-          /** Code 128 verification ID — unique, unpredictable, never reused */
           verifyCode: newVerifyCode(),
-          createdBy: getIdentity().role === 'staff' ? getIdentity().name || 'Staff' : 'Owner',
           delivery,
           payments,
+          totals,
         };
-        // deduct stock where tracked
-        const updatedProducts = products.map((p) => {
-          const sold = cart.filter((c) => c.productId === p.id).reduce((s, c) => s + c.qty, 0);
-          if (sold > 0 && typeof p.stock === 'number') return { ...p, stock: Math.max(p.stock - sold, 0) };
-          return p;
-        });
+
+        // THE SAVE — the server recomputes, numbers, registers and stores.
+        // No server confirmation = no saved bill, no slip, no QR.
+        const res = await apiBillSave(draft, get().billConfig.reservedNo);
+        if (!res.ok || !res.invoice) {
+          throw new StoreError(res.error === 'offline' ? 'offline' : 'saveFailed');
+        }
+        const invoice = res.invoice;
+
+        // stock: the SERVER deducts it from the central catalog at save time;
+        // the local mirror gets the authoritative stock on the next poll
         set((st) => ({
           invoices: [invoice, ...st.invoices],
-          products: updatedProducts,
+          products: get().products.map((p) => {
+            const sold = cart.filter((c) => c.productId === p.id).reduce((s, c) => s + c.qty, 0);
+            if (sold > 0 && typeof p.stock === 'number') return { ...p, stock: Math.max(p.stock - sold, 0) };
+            return p;
+          }),
           cart: [],
           lastInvoice: invoice,
           // fresh customer for the next bill — name & mobile are entered new every time
@@ -476,259 +538,348 @@ export const useStore = create<BillingStore>()(
           // fresh config for the next bill (Cash mode, no leftover discount/charges;
           // chosen bill language stays sticky)
           billConfig: { ...DEFAULT_CONFIG, language: billConfig.language },
-          settings: { ...st.settings, nextInvoiceNo: Math.max(st.settings.nextInvoiceNo, noNum + 1) },
-          dataUpdatedAt: touch(),
+          settings: { ...st.settings, gstPercent: st.srvConfig.gstPercent || st.settings.gstPercent },
+          rev: res.rev ?? st.rev,
         }));
-        // register the bill in the server's barcode verification registry —
-        // this is what makes every scan of the printed Code 128 resolvable;
-        // a failed attempt (offline) joins the retry queue instead of dying
-        void registerInvoice(invoice);
         return invoice;
       },
 
-      /** adopt the registry's winning code after a registration race (409) */
+      clearLastInvoice: () => set({ lastInvoice: null }),
+
       setInvoiceVerifyCode: (id, code) =>
         set((st) => ({
           invoices: st.invoices.map((i) => (i.id === id ? { ...i, verifyCode: code } : i)),
           lastInvoice: st.lastInvoice && st.lastInvoice.id === id ? { ...st.lastInvoice, verifyCode: code } : st.lastInvoice,
-          dataUpdatedAt: touch(),
         })),
 
-      /** OWNER: cancel a bill — every barcode scan then answers CANCELLED */
-      cancelInvoice: (id) =>
-        set((st) => {
-          const inv = st.invoices.find((i) => i.id === id);
-          if (inv && !inv.cancelled) {
-            void apiVerifyCancel(inv.no, true);
-          }
-          return {
-            invoices: st.invoices.map((i) => (i.id === id ? { ...i, cancelled: true } : i)),
-            lastInvoice: st.lastInvoice && st.lastInvoice.id === id ? { ...st.lastInvoice, cancelled: true } : st.lastInvoice,
-            dataUpdatedAt: touch(),
-          };
-        }),
+      /* ---------------------------------------------------------- */
+      /* BILL MUTATIONS — every change hits the central database,    */
+      /* the registry entry follows, other devices see it instantly  */
+      /* ---------------------------------------------------------- */
 
-      clearLastInvoice: () => set({ lastInvoice: null }),
-
-      /** Retry every bill whose server registration was queued (offline). */
-      flushPendingRegistrations: async () => {
-        const st = get();
-        if (st.pendingRegIds.length === 0) return;
-        for (const id of [...st.pendingRegIds]) {
-          const inv = get().invoices.find((i) => i.id === id);
-          if (!inv?.verifyCode) {
-            // bill vanished (deleted) — drop it from the queue
-            useStore.setState((s2) => ({ pendingRegIds: s2.pendingRegIds.filter((x) => x !== id) }));
-            continue;
-          }
-          await registerInvoice(inv);
-        }
+      deleteInvoice: async (id) => {
+        const ok = await apiBillDelete(id);
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ invoices: st.invoices.filter((i) => i.id !== id) }));
+        await pollOnce();
       },
 
-
-      // bills finalized BEFORE the barcode system have no verification ID —
-      // mint one for each and register it, so a re-printed old bill scans too
-      migrateVerifyCodes: () => {
-        const { invoices } = get();
-        const missing = invoices.filter((i) => !i.verifyCode);
-        if (missing.length === 0) return;
-        const withCodes = new Map(invoices.map((i) => [i.id, i.verifyCode] as const));
-        const patched = invoices.map((i) => (i.verifyCode ? i : { ...i, verifyCode: newVerifyCode() }));
-        set((st) => ({ invoices: patched, dataUpdatedAt: touch() }));
-        patched.forEach((i) => {
-          if (!withCodes.get(i.id)) void registerInvoice(i);
-        });
-      },
-
-      deleteInvoice: (id) =>
+      cancelInvoice: async (id) => {
+        const res = await apiBillPatch(id, { action: 'cancel' });
+        if (!res.ok || !res.invoice) throw new StoreError(res.error === 'offline' ? 'offline' : 'saveFailed');
         set((st) => ({
-          invoices: st.invoices.filter((i) => i.id !== id),
-          deletedIds: tomb(st.deletedIds, 'invoices', id),
-        })),
-
-      // Marking paid records the newly-received amount as income today
-      updateInvoiceStatus: (id, paidAmount) => {
-        set((st) => {
-          const patchOne = (i: Invoice): Invoice => {
-            if (i.id !== id) return i;
-            const paid = Math.min(paidAmount, i.totals.total);
-            const added = Math.round((paid - i.totals.paid) * 100) / 100;
-            if (added <= 0) return i;
-            return (
-              applyPayment(i, added, 'Cash', new Date().toISOString()) ?? i
-            );
-          };
-          return {
-            invoices: st.invoices.map(patchOne),
-            lastInvoice: st.lastInvoice ? patchOne(st.lastInvoice) : st.lastInvoice,
-            dataUpdatedAt: touch(),
-          };
-        });
-        // the payment status changed — refresh the barcode registry entry
-        const patched = get().invoices.find((i) => i.id === id);
-        if (patched?.verifyCode) void registerInvoice(patched);
+          invoices: st.invoices.map((i) => (i.id === id ? res.invoice! : i)),
+          lastInvoice: st.lastInvoice && st.lastInvoice.id === id ? res.invoice! : st.lastInvoice,
+          rev: res.rev ?? st.rev,
+        }));
+        await pollOnce();
       },
 
-      // Flip the bill language (also from the invoice modal while sharing) —
-      // updates the saved invoice so History re-shares in the same language
-      updateInvoiceLanguage: (id, language) =>
+      updateInvoiceStatus: async (id, paidAmount) => {
+        const inv = get().invoices.find((i) => i.id === id);
+        if (!inv) return;
+        const paid = Math.min(paidAmount, inv.totals.total);
+        const added = Math.round((paid - inv.totals.paid) * 100) / 100;
+        if (added <= 0) return;
+        await get().receiveDuePayment(id, added, 'Cash');
+      },
+
+      updateInvoiceLanguage: async (id, language) => {
+        const res = await apiBillPatch(id, { action: 'language', language });
+        if (!res.ok || !res.invoice) throw new StoreError(res.error === 'offline' ? 'offline' : 'saveFailed');
         set((st) => ({
-          invoices: st.invoices.map((i) => (i.id === id ? { ...i, language } : i)),
-          lastInvoice:
-            st.lastInvoice && st.lastInvoice.id === id ? { ...st.lastInvoice, language } : st.lastInvoice,
-          dataUpdatedAt: touch(),
-        })),
+          invoices: st.invoices.map((i) => (i.id === id ? res.invoice! : i)),
+          lastInvoice: st.lastInvoice && st.lastInvoice.id === id ? res.invoice! : st.lastInvoice,
+          rev: res.rev ?? st.rev,
+        }));
+        await pollOnce();
+      },
 
       // Dues list: receive a balance payment — counts as income TODAY
-      receiveDuePayment: (id, amount, mode) => {
-        set((st) => {
-          const now = new Date().toISOString();
-          const patchOne = (i: Invoice): Invoice =>
-            i.id === id ? (applyPayment(i, amount, mode, now) ?? i) : i;
-          return {
-            invoices: st.invoices.map(patchOne),
-            lastInvoice: st.lastInvoice ? patchOne(st.lastInvoice) : st.lastInvoice,
-            dataUpdatedAt: touch(),
-          };
-        });
-        // payment status changed — refresh the barcode registry entry
-        const patched = get().invoices.find((i) => i.id === id);
-        if (patched?.verifyCode) void registerInvoice(patched);
+      receiveDuePayment: async (id, amount, mode) => {
+        const res = await apiBillPatch(id, { action: 'pay', amount, mode, dateISO: new Date().toISOString() });
+        if (!res.ok || !res.invoice) throw new StoreError(res.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({
+          invoices: st.invoices.map((i) => (i.id === id ? res.invoice! : i)),
+          lastInvoice: st.lastInvoice && st.lastInvoice.id === id ? res.invoice! : st.lastInvoice,
+          rev: res.rev ?? st.rev,
+        }));
+        await pollOnce();
       },
 
-      addExpense: (e) =>
+      migrateVerifyCodes: async () => {
+        const missing = get().invoices.filter((i) => !i.verifyCode);
+        if (missing.length === 0) return;
+        const patched = missing.map((i) => ({ ...i, verifyCode: newVerifyCode() }));
+        await apiStateImport({ invoices: patched, dataUpdatedAt: Date.now() });
         set((st) => ({
-          expenses: [
-            { ...e, id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` },
-            ...st.expenses,
-          ],
-        })),
+          invoices: st.invoices.map((i) => patched.find((p) => p.id === i.id) ?? i),
+        }));
+        await pollOnce();
+      },
 
-      deleteExpense: (id) =>
-        set((st) => ({
-          expenses: st.expenses.filter((x) => x.id !== id),
-          deletedIds: tomb(st.deletedIds, 'expenses', id),
-        })),
+      /* ---------------------------------------------------------- */
+      /* LEDGER — money out / money in, centrally                    */
+      /* ---------------------------------------------------------- */
 
-      addIncome: (e) =>
-        set((st) => ({
-          incomes: [
-            { ...e, id: `inc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` },
-            ...st.incomes,
-          ],
-        })),
+      addExpense: async (e) => {
+        const entry = { ...e, id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` } as Expense;
+        const ok = await apiLedgerPut('expense', entry);
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ expenses: [entry, ...st.expenses] }));
+        await pollOnce();
+      },
 
-      deleteIncome: (id) =>
-        set((st) => ({
-          incomes: st.incomes.filter((x) => x.id !== id),
-          deletedIds: tomb(st.deletedIds, 'incomes', id),
-        })),
+      deleteExpense: async (id) => {
+        const ok = await apiLedgerDelete('expense', id);
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ expenses: st.expenses.filter((x) => x.id !== id) }));
+        await pollOnce();
+      },
 
-      addLabourWork: (e) => {
+      addIncome: async (e) => {
+        const entry = { ...e, id: `inc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` } as IncomeEntry;
+        const ok = await apiLedgerPut('income', entry);
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ incomes: [entry, ...st.incomes] }));
+        await pollOnce();
+      },
+
+      deleteIncome: async (id) => {
+        const ok = await apiLedgerDelete('income', id);
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ incomes: st.incomes.filter((x) => x.id !== id) }));
+        await pollOnce();
+      },
+
+      /* ---------------------------------------------------------- */
+      /* LABOUR — the work register + the labourer notebook          */
+      /* ---------------------------------------------------------- */
+
+      addLabourWork: async (e) => {
         const name = e.name.trim();
+        const entry = normalizeLabourWork({ ...e, id: `lw-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` } as LabourWork);
+        const ok = await apiLabourPut({ work: entry });
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
         set((st) => ({
-          labourWorks: [normalizeLabourWork({ ...e, id: `lw-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }), ...st.labourWorks],
-          // the notebook remembers every labourer typed for the first time
+          labourWorks: [entry, ...st.labourWorks],
           labourWorkers:
             name && !st.labourWorkers.some((w) => w.name.toLowerCase() === name.toLowerCase())
               ? [{ id: `worker-${Date.now()}`, name }, ...st.labourWorkers]
               : st.labourWorkers,
         }));
+        await pollOnce();
       },
 
-      addLabourWorker: (name, nameTe, phone) =>
-        set((st) =>
-          name.trim() && !st.labourWorkers.some((w) => w.name.toLowerCase() === name.trim().toLowerCase())
-            ? { labourWorkers: [{ id: `worker-${Date.now()}`, name: name.trim(), nameTe, phone }, ...st.labourWorkers] }
-            : {}
-        ),
+      addLabourWorker: async (name, nameTe, phone) => {
+        const trimmed = name.trim();
+        if (!trimmed || get().labourWorkers.some((w) => w.name.toLowerCase() === trimmed.toLowerCase())) return;
+        const worker: LabourWorker = { id: `worker-${Date.now()}`, name: trimmed, nameTe, phone };
+        const ok = await apiLabourPut({ worker });
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ labourWorkers: [worker, ...st.labourWorkers] }));
+        await pollOnce();
+      },
 
-      deleteLabourWorker: (id) =>
-        set((st) => ({ labourWorkers: st.labourWorkers.filter((w) => w.id !== id) })),
+      deleteLabourWorker: async (id) => {
+        const ok = await apiLabourDelete(id, true);
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ labourWorkers: st.labourWorkers.filter((w) => w.id !== id) }));
+        await pollOnce();
+      },
 
-      deleteLabourWork: (id) =>
-        set((st) => ({
-          labourWorks: st.labourWorks.filter((x) => x.id !== id),
-          deletedIds: tomb(st.deletedIds, 'labours', id),
-        })),
+      deleteLabourWork: async (id) => {
+        const ok = await apiLabourDelete(id);
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ labourWorks: st.labourWorks.filter((x) => x.id !== id) }));
+        await pollOnce();
+      },
 
-      updateLabourWork: (id, patch) =>
-        set((st) => ({
-          labourWorks: st.labourWorks.map((x) => (x.id === id ? normalizeLabourWork({ ...x, ...patch }) : x)),
-        })),
+      updateLabourWork: async (id, patch) => {
+        const current = get().labourWorks.find((x) => x.id === id);
+        if (!current) return;
+        const entry = normalizeLabourWork({ ...current, ...patch });
+        const ok = await apiLabourPut({ work: entry });
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ labourWorks: st.labourWorks.map((x) => (x.id === id ? entry : x)) }));
+        await pollOnce();
+      },
 
-      addLabourPayment: (id, p) =>
-        set((st) => ({
-          labourWorks: st.labourWorks.map((x) => {
-            if (x.id !== id) return x;
-            const base = normalizeLabourWork(x);
-            const pay: LabourPayment = {
-              id: `lwp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-              dateISO: p.dateISO ?? new Date().toISOString(),
-              amount: p.amount,
-              mode: p.mode,
-              note: p.note,
-            };
-            return normalizeLabourWork({ ...base, payments: [...(base.payments ?? []), pay] });
-          }),
-        })),
+      addLabourPayment: async (id, p) => {
+        const current = get().labourWorks.find((x) => x.id === id);
+        if (!current) return;
+        const base = normalizeLabourWork(current);
+        const pay: LabourPayment = {
+          id: `lwp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          dateISO: p.dateISO ?? new Date().toISOString(),
+          amount: p.amount,
+          mode: p.mode,
+          note: p.note,
+        };
+        const entry = normalizeLabourWork({ ...base, payments: [...(base.payments ?? []), pay] });
+        const ok = await apiLabourPut({ work: entry });
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ labourWorks: st.labourWorks.map((x) => (x.id === id ? entry : x)) }));
+        await pollOnce();
+      },
 
-      deleteLabourPayment: (id, paymentId) =>
-        set((st) => ({
-          labourWorks: st.labourWorks.map((x) => {
-            if (x.id !== id) return x;
-            const base = normalizeLabourWork(x);
-            return normalizeLabourWork({
-              ...base,
-              payments: (base.payments ?? []).filter((p) => p.id !== paymentId),
-            });
-          }),
-        })),
+      deleteLabourPayment: async (id, paymentId) => {
+        const current = get().labourWorks.find((x) => x.id === id);
+        if (!current) return;
+        const base = normalizeLabourWork(current);
+        const entry = normalizeLabourWork({
+          ...base,
+          payments: (base.payments ?? []).filter((p) => p.id !== paymentId),
+        });
+        const ok = await apiLabourPut({ work: entry });
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ labourWorks: st.labourWorks.map((x) => (x.id === id ? entry : x)) }));
+        await pollOnce();
+      },
 
-      setAppearance: (a) =>
-        set((st) => ({ appearance: { ...st.appearance, ...a }, dataUpdatedAt: touch() })),
+      /* ---------------------------------------------------------- */
+      /* APPEARANCE — theme/watermark, saved centrally               */
+      /* ---------------------------------------------------------- */
+
+      setAppearance: async (a) => {
+        const ok = await apiSettingsPut({}, a);
+        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+        set((st) => ({ appearance: { ...st.appearance, ...a } }));
+        await pollOnce();
+      },
     }),
     {
-      name: 'slp-cement-billing-v1',
+      name: 'slp-device-ui-v1',
       storage: createJSONStorage(() => localStorage),
       // Rehydrate manually after mount (page.tsx) — prevents SSR hydration mismatch
       skipHydration: true,
-      // Deep-merge persisted slices over defaults so partial/old saved data
-      // never wipes new fields (e.g. companyName, upiId)
-      merge: (persisted, current) => {
-        const p = (persisted ?? {}) as Partial<BillingStore>;
-        return {
-          ...current,
-          ...p,
-          settings: { ...current.settings, ...(p.settings ?? {}) },
-          billConfig: { ...current.billConfig, ...(p.billConfig ?? {}) },
-          customer: { ...current.customer, ...(p.customer ?? {}) },
-          appearance: { ...current.appearance, ...(p.appearance ?? {}) },
-        };
-      },
+      // ONLY device-local UI state persists. Business data NEVER touches
+      // localStorage — the central server database is the only store.
       partialize: (st) => ({
-        settings: st.settings,
-        products: st.products,
         cart: st.cart,
-        invoices: st.invoices,
         billConfig: st.billConfig,
         customer: st.customer,
-        srvConfig: st.srvConfig,
-        pendingRegIds: st.pendingRegIds,
-        // persisted so a REFRESH re-opens the tab the user was on; a cold app
-        // open still resets to Bill (page.tsx does that when the MPIN gate shows)
+        // persisted so a REFRESH re-opens the tab the user was on
         activeTab: st.activeTab,
-        expenses: st.expenses,
-        incomes: st.incomes,
-        labourWorks: st.labourWorks,
-        labourWorkers: st.labourWorkers,
-        appearance: st.appearance,
-        deletedIds: st.deletedIds,
-        dataUpdatedAt: st.dataUpdatedAt,
       }),
       onRehydrateStorage: () => (state) => {
-        if (state) state.hydrated = true;
+        if (state) state.synced = state.synced;
       },
     }
   )
 );
+
+/* ------------------------------------------------------------------ */
+/* Sync engine internals                                               */
+/* ------------------------------------------------------------------ */
+
+let syncHandle: { timer: number; onVis: () => void } | null = null;
+let polling = false;
+
+function stopSyncInternal(): void {
+  if (syncHandle && typeof window !== 'undefined') {
+    window.clearInterval(syncHandle.timer);
+    window.removeEventListener('visibilitychange', syncHandle.onVis);
+    window.removeEventListener('online', syncHandle.onVis);
+  }
+  syncHandle = null;
+}
+
+/** One state poll — applies the server snapshot when the revision moved */
+export async function pollOnce(): Promise<void> {
+  if (polling) return;
+  polling = true;
+  try {
+    const res = await apiStateGet(useStore.getState().rev);
+    if (res.kind === 'unchanged') {
+      useStore.setState({ online: true });
+    } else if (res.kind === 'data') {
+      useStore.getState().applySnapshot(res.state);
+    } else if (res.kind === 'offline') {
+      useStore.setState({ online: false });
+    } else if (res.kind === 'auth') {
+      // session expired — lock the app (page.tsx listens)
+      window.dispatchEvent(new CustomEvent('slp-forcelock'));
+    }
+  } catch {
+    useStore.setState({ online: false });
+  } finally {
+    polling = false;
+  }
+}
+
+/** Reserve the next bill number on the server (atomic counter — two devices
+ *  billing at the same moment can never print the same number). Online-only:
+ *  a failed reservation simply leaves the number to the save call. */
+async function reserveBillNo(): Promise<void> {
+  try {
+    const st = useStore.getState();
+    if (st.billConfig.reservedNo !== undefined) return;
+    const no = await apiReserveNo(st.settings.nextInvoiceNo);
+    if (no !== null) useStore.getState().setBillConfig({ reservedNo: no });
+  } catch {
+    /* the save call resolves the number when the reservation failed */
+  }
+}
+
+/**
+ * FIRST-RUN MIGRATION — read the old offline-era store from localStorage
+ * (the previous app kept the whole business in `slp-cement-billing-v1`)
+ * and push it into the central database. Old bills without verification
+ * codes get minted codes first, so every OLD printed barcode verifies too.
+ * After a successful import the old local store is removed — the central
+ * database is then the ONLY copy (online-only requirement).
+ */
+async function migrateOldData(): Promise<void> {
+  try {
+    const raw = localStorage.getItem('slp-cement-billing-v1');
+    const parsed = raw ? (JSON.parse(raw) as { state?: Record<string, unknown> }) : null;
+    const old = parsed?.state as
+      | {
+          settings?: Partial<BusinessSettings>;
+          appearance?: Partial<Appearance>;
+          products?: Product[];
+          invoices?: Invoice[];
+          expenses?: Expense[];
+          incomes?: IncomeEntry[];
+          labourWorks?: LabourWork[];
+          labourWorkers?: LabourWorker[];
+          dataUpdatedAt?: number;
+        }
+      | undefined;
+
+    const hasOld =
+      old &&
+      ((old.invoices?.length ?? 0) > 0 ||
+        (old.products?.length ?? 0) > 0 ||
+        (old.expenses?.length ?? 0) > 0 ||
+        (old.labourWorks?.length ?? 0) > 0);
+    if (hasOld && old) {
+      // mint verification codes for pre-barcode bills so old prints verify
+      const invoices = (old.invoices ?? []).map((i) => (i.verifyCode ? i : { ...i, verifyCode: newVerifyCode() }));
+      await apiStateImport({
+        settings: old.settings,
+        appearance: old.appearance,
+        products: old.products,
+        invoices,
+        expenses: old.expenses,
+        incomes: old.incomes,
+        labourWorks: old.labourWorks,
+        labourWorkers: old.labourWorkers,
+        dataUpdatedAt: old.dataUpdatedAt ?? Date.now(),
+      });
+      localStorage.removeItem('slp-cement-billing-v1');
+      return;
+    }
+
+    // brand-new business (no old data anywhere) — seed the defaults so the
+    // catalog exists on every device from the start
+    await apiStateImport({
+      settings: DEFAULT_SETTINGS,
+      products: DEFAULT_PRODUCTS,
+      dataUpdatedAt: Date.now(),
+    });
+  } catch {
+    /* migration is best-effort — the poll will reconcile */
+  }
+}

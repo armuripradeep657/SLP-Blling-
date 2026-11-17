@@ -41,8 +41,8 @@ const closePopup = async (target = page) => {
 // app's SW update listeners can reload the page at any moment) — it defines
 // window.JsBarcode, deletes BarcodeDetector (forces the ZXING fallback path)
 // and serves canvas-stream "cameras" drawing the code from localStorage
-await page.addInitScript({ path: '/tmp/slp-cam-stub.js' });
-await page.addInitScript(() => localStorage.setItem('slp-update-notice-seen', '35'));
+await page.addInitScript({ path: 'scripts/slp-cam-stub.js' });
+await page.addInitScript(() => localStorage.setItem('slp-update-notice-seen', '37'));
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });
 // NEVER await sw.ready (can hang without a timeout on a fresh origin) —
 // a fixed settle lets the SW's one-time controllerchange reload finish

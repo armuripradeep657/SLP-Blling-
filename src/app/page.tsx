@@ -8,19 +8,15 @@ import LedgerView from '@/components/LedgerView';
 import HistoryView from '@/components/HistoryView';
 import SettingsView from '@/components/SettingsView';
 import VerifyView from '@/components/VerifyView';
-import AdminDashboard from '@/components/AdminDashboard';
 import BillPanel from '@/components/BillPanel';
 import PaymentScreen from '@/components/PaymentScreen';
 import InvoiceModal, { type DocView } from '@/components/InvoiceModal';
 import PwaInstall, { ServiceWorkerRegister } from '@/components/PwaInstall';
 import ConnectivityToast from '@/components/ConnectivityToast';
-import SyncReauth from '@/components/SyncReauth';
 import LockScreen from '@/components/LockScreen';
 import { useStore } from '@/lib/store';
-import { useIdentity, OWNER_ONLY_TABS } from '@/lib/role';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
 import { computeTotals, fmt } from '@/lib/billing';
-import { startSyncEngine } from '@/lib/sync';
 import { apiNotifySend } from '@/lib/cloud';
 import { smsMessage, whatsappMessage } from '@/lib/messages';
 import { normalizePhone } from '@/lib/billing';
@@ -88,17 +84,6 @@ export default function Home() {
   const bgTheme = useStore((s) => s.appearance.bgTheme);
   const watermark = useStore((s) => s.appearance.watermark);
   const settings = useStore((s) => s.settings);
-  const identity = useIdentity();
-
-  // STAFF GATING — a staff session never lands on an owner-only tab, even
-  // via a stale deep-link or a persisted activeTab (backend enforces the
-  // matching APIs too)
-  useEffect(() => {
-    if (identity.role === 'staff' && (OWNER_ONLY_TABS as readonly string[]).includes(activeTab)) {
-      setActiveTab('bill');
-    }
-  }, [identity.role, activeTab, setActiveTab]);
-
 
   const [modalInvoice, setModalInvoice] = useState<Invoice | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -128,8 +113,13 @@ export default function Home() {
       else setShowSplash(false);
     });
     Promise.resolve(useStore.persist.rehydrate()).then(() => {
-      if (fresh) startSyncEngine();
-      else useStore.setState({ activeTab: 'bill' });
+      if (fresh) {
+        void useStore
+          .getState()
+          .bootstrap()
+          .catch(() => undefined); // offline entry — the banner explains it
+        useStore.getState().startSync();
+      } else useStore.setState({ activeTab: 'bill' });
     });
   }, []);
 
@@ -163,8 +153,23 @@ export default function Home() {
   const handleUnlocked = () => {
     markUnlockActive();
     setGate('ready');
-    startSyncEngine();
+    void useStore
+      .getState()
+      .bootstrap()
+      .catch(() => undefined); // offline entry — the banner explains it
+    useStore.getState().startSync();
   };
+
+  // the SERVER ended the session (expired/revoked) — lock immediately
+  useEffect(() => {
+    const onForceLock = () => {
+      clearUnlockSession();
+      setShowSplash(false);
+      setGate('locked');
+    };
+    window.addEventListener('slp-forcelock', onForceLock);
+    return () => window.removeEventListener('slp-forcelock', onForceLock);
+  }, []);
 
   // "Lock app" (Settings) flips the gate the instant it is pressed — the
   // activity listeners unmount, so nothing can re-mark the unlock session
@@ -218,6 +223,14 @@ export default function Home() {
     if (inv) openInvoice(inv);
   };
 
+  /* ----- save errors: an offline save NEVER pretends to have succeeded ----- */
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const showSaveError = (e: unknown) => {
+    const code = e instanceof Error ? e.message : 'saveFailed';
+    setSaveError(code === 'offline' ? t('net.required') : t('net.saveFailed'));
+    setTimeout(() => setSaveError(null), 5000);
+  };
+
   /* ----- UPI auto-payment: QR screen → money arrives → bill completes itself ----- */
   const [pendingPayment, setPendingPayment] = useState<{ billRef: string; amount: number } | null>(null);
 
@@ -230,27 +243,31 @@ export default function Home() {
 
   /** After the money is detected: complete the bill, open the slip and send
    *  the WhatsApp/SMS notification to the customer — no button pressed. */
-  const finishUpiPayment = (paid: number) => {
+  const finishUpiPayment = async (paid: number) => {
     const pending = pendingPayment;
     setPendingPayment(null);
     if (!pending) return;
-    const inv = useStore.getState().completeInvoice({ paymentRef: pending.billRef, paidAmount: paid });
-    if (inv) {
+    try {
+      const inv = await useStore.getState().completeInvoice({ paymentRef: pending.billRef, paidAmount: paid });
       openInvoice(inv);
       void notifyCustomer(inv);
+    } catch (e) {
+      showSaveError(e);
     }
   };
 
   const cancelUpiPayment = () => setPendingPayment(null);
 
   /** customer paid cash instead — complete the bill on the spot as Cash */
-  const upiCashInstead = () => {
+  const upiCashInstead = async () => {
     setPendingPayment(null);
     useStore.getState().setBillConfig({ paymentMode: 'Cash' });
-    const inv = useStore.getState().completeInvoice();
-    if (inv) {
+    try {
+      const inv = await useStore.getState().completeInvoice();
       openInvoice(inv);
       void notifyCustomer(inv);
+    } catch (e) {
+      showSaveError(e);
     }
   };
 
@@ -309,7 +326,17 @@ export default function Home() {
       <Header />
       <PwaInstall />
       <ConnectivityToast />
-      <SyncReauth />
+
+      {/* the online-only save error — the bill did NOT save, say so plainly */}
+      {saveError && (
+        <div
+          data-save-error
+          role="alert"
+          className="fixed left-1/2 top-16 z-[90] -translate-x-1/2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white shadow-xl"
+        >
+          {saveError}
+        </div>
+      )}
 
       <main className="relative z-10 mx-auto max-w-5xl px-3 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-4 lg:pb-10">
         <DesktopTabs />
@@ -318,13 +345,6 @@ export default function Home() {
           <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">{t('page.loading')}</div>
         ) : (
           <div key={activeTab} className="anim-fade-up">
-            {activeTab === 'dashboard' && identity.role === 'owner' && (
-              <div className="mx-auto max-w-2xl">
-                <h2 className="mb-3 text-base font-bold text-neutral-800">{t('dash.title')}</h2>
-                <AdminDashboard />
-              </div>
-            )}
-
             {activeTab === 'bill' && (
               <div className="lg:grid lg:grid-cols-[1fr_400px] lg:gap-6 lg:items-start">
                 <div>
@@ -334,7 +354,7 @@ export default function Home() {
                 {/* Desktop live bill panel */}
                 <aside className="sticky top-20 hidden max-h-[calc(100dvh-6rem)] overflow-y-auto rounded-2xl border bg-card p-4 shadow-sm lg:block">
                   <h3 className="mb-3 text-base font-bold text-neutral-800">{t('page.currentBill')}</h3>
-                  <BillPanel onComplete={onBillCompleted} onUpi={startUpiPayment} />
+                  <BillPanel onComplete={onBillCompleted} onUpi={startUpiPayment} onError={showSaveError} />
                 </aside>
               </div>
             )}

@@ -24,19 +24,12 @@ import InstallAppSection from '@/components/InstallAppSection';
 import { useT, useAppLang } from '@/hooks/use-app-lang';
 import {
   apiAuthState,
-  apiConfigGet,
   apiOwnerPassword,
-  apiStaffCreate,
-  apiStaffDelete,
-  apiStaffList,
-  apiStaffUpdate,
   getAuth,
   getDeviceDek,
   lockApp,
-  type StaffRow,
 } from '@/lib/cloud';
 import { deriveKek, exportDek, importDek, randomB64, wrapDek } from '@/lib/crypto';
-import { getSyncStatus, saveConfigToServer, syncNow } from '@/lib/sync';
 import { CloudUpload, Download, ImageUp, KeyRound, Lock, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, TriangleAlert, Upload, UserRound } from 'lucide-react';
 import type {
   Appearance,
@@ -174,25 +167,16 @@ export default function SettingsView() {
 
       <Separator />
 
-      <DiscountLimitsSection />
-
-      <Separator />
 
       <SecuritySection />
 
       <Separator />
 
-      <StaffSection />
-
-      <Separator />
 
       <AppearanceSection />
 
       <Separator />
 
-      <SyncSecuritySection />
-
-      <Separator />
 
       <InstallAppSection />
 
@@ -281,11 +265,18 @@ function BusinessIdentitySection() {
   const { toast } = useToast();
 
   const [draft, setDraft] = useState<IdentityDraft>(() => identityOf(settings));
-  // re-sync the draft whenever saved settings change (Update pressed / backup restored)
+  // re-sync the draft when the SERVER's identity values actually change —
+  // a poll that only replaces the settings object identity (any other save
+  // bumped the rev) must NOT wipe what the owner is typing right now
+  const [serverIdentity, setServerIdentity] = useState(() => JSON.stringify(identityOf(settings)));
   const [draftSync, setDraftSync] = useState(settings);
   if (draftSync !== settings) {
     setDraftSync(settings);
-    setDraft(identityOf(settings));
+    const now = JSON.stringify(identityOf(settings));
+    if (now !== serverIdentity) {
+      setServerIdentity(now);
+      setDraft(identityOf(settings));
+    }
   }
 
   const saved = identityOf(settings);
@@ -302,14 +293,19 @@ function BusinessIdentitySection() {
       whatsappNumber: normalizePhone(draft.whatsappNumber),
       address: draft.address.trim(),
       upiId: draft.upiId.trim(),
-    });
-    // the UPI ID is ALSO server-authoritative — every device's payment QR
-    // regenerates from it within seconds of this save
-    void saveConfigToServer({ upiId: draft.upiId.trim() });
-    toast({
-      title: t('settings.updatedToast'),
-      description: draft.companyName.trim() || undefined,
-    });
+    })
+      .then(() =>
+        toast({
+          title: t('settings.updatedToast'),
+          description: draft.companyName.trim() || undefined,
+        })
+      )
+      .catch((e: unknown) =>
+        toast({
+          title: e instanceof Error && e.message === 'offline' ? t('net.required') : t('net.saveFailed'),
+          variant: 'destructive',
+        })
+      );
   };
 
   return (
@@ -394,10 +390,17 @@ function BillingSlipSection() {
   const { toast } = useToast();
 
   const [draft, setDraft] = useState<BillingDraft>(() => billingOf(settings));
+  // same guard as the identity section: object-identity poll updates must not
+  // discard an in-progress GST/slip edit (the disabled Save bug)
+  const [serverBilling, setServerBilling] = useState(() => JSON.stringify(billingOf(settings)));
   const [billingSync, setBillingSync] = useState(settings);
   if (billingSync !== settings) {
     setBillingSync(settings);
-    setDraft(billingOf(settings));
+    const now = JSON.stringify(billingOf(settings));
+    if (now !== serverBilling) {
+      setServerBilling(now);
+      setDraft(billingOf(settings));
+    }
   }
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(billingOf(settings));
@@ -412,11 +415,14 @@ function BillingSlipSection() {
       thankYouNote: draft.thankYouNote,
       returnPolicy: draft.returnPolicy,
       gstPercent,
-    });
-    // the GST rate is ALSO server-authoritative (new bills on every device
-    // pick it up within seconds) — push it; offline queues via saveConfigToServer
-    void saveConfigToServer({ gstPercent });
-    toast({ title: t('settings.billingUpdatedToast') });
+    })
+      .then(() => toast({ title: t('settings.billingUpdatedToast') }))
+      .catch((e: unknown) =>
+        toast({
+          title: e instanceof Error && e.message === 'offline' ? t('net.required') : t('net.saveFailed'),
+          variant: 'destructive',
+        })
+      );
   };
 
   return (
@@ -599,109 +605,22 @@ function SecuritySection() {
         {t('settings.changePasswordBtn')}
       </Button>
       <p className="text-[11px] leading-relaxed text-muted-foreground">{t('sync.e2eeNote')}</p>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Staff discount limits — server-enforced at bill save time (v35)     */
-/* ------------------------------------------------------------------ */
-
-function DiscountLimitsSection() {
-  const t = useT();
-  const { toast } = useToast();
-  const srvConfig = useStore((s) => s.srvConfig);
-
-  const [draft, setDraft] = useState(() => ({
-    discountMaxPercent: String(srvConfig.discountMaxPercent),
-    discountMaxAmount: String(srvConfig.discountMaxAmount),
-    discountApprovalRequired: srvConfig.discountApprovalRequired,
-  }));
-  const [synced, setSynced] = useState(srvConfig);
-  if (synced !== srvConfig) {
-    setSynced(srvConfig);
-    setDraft({
-      discountMaxPercent: String(srvConfig.discountMaxPercent),
-      discountMaxAmount: String(srvConfig.discountMaxAmount),
-      discountApprovalRequired: srvConfig.discountApprovalRequired,
-    });
-  }
-
-  const dirty = JSON.stringify(draft) !== JSON.stringify({
-    discountMaxPercent: String(srvConfig.discountMaxPercent),
-    discountMaxAmount: String(srvConfig.discountMaxAmount),
-    discountApprovalRequired: srvConfig.discountApprovalRequired,
-  });
-
-  const save = async () => {
-    const okRes = await saveConfigToServer({
-      discountMaxPercent: Math.min(Math.max(Number(draft.discountMaxPercent) || 0, 0), 100),
-      discountMaxAmount: Math.max(Number(draft.discountMaxAmount) || 0, 0),
-      discountApprovalRequired: draft.discountApprovalRequired,
-    });
-    // mirror locally so staff billing enforces immediately
-    useStore.getState().setSrvConfig({
-      ...srvConfig,
-      discountMaxPercent: Math.min(Math.max(Number(draft.discountMaxPercent) || 0, 0), 100),
-      discountMaxAmount: Math.max(Number(draft.discountMaxAmount) || 0, 0),
-      discountApprovalRequired: draft.discountApprovalRequired,
-    });
-    toast({
-      title: okRes ? t('settings.billingUpdatedToast') : t('sync.syncFailedToast'),
-      description: okRes ? undefined : t('settings.discountLimitsDesc'),
-    });
-  };
-
-  return (
-    <section aria-label="Staff discount limits" className="space-y-3" data-discount-limits>
-      <h3 className="text-sm font-bold text-blue-800">{t('settings.discountLimits')}</h3>
-      <p className="text-xs text-muted-foreground">{t('settings.discountLimitsDesc')}</p>
-      <div className="grid grid-cols-2 gap-2">
-        <Field
-          ariaLabel="Max discount percent"
-          label={t('settings.discountMaxPercent')}
-          value={draft.discountMaxPercent}
-          onChange={(v) => setDraft((d) => ({ ...d, discountMaxPercent: v.replace(/[^\d.]/g, '') }))}
-          type="number"
-          placeholder="10"
-        />
-        <Field
-          ariaLabel="Max discount amount"
-          label={t('settings.discountMaxAmount')}
-          value={draft.discountMaxAmount}
-          onChange={(v) => setDraft((d) => ({ ...d, discountMaxAmount: v.replace(/[^\d.]/g, '') }))}
-          type="number"
-          placeholder="500"
-        />
-      </div>
-      <label className="flex items-start gap-2.5 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={draft.discountApprovalRequired}
-          onChange={(e) => setDraft((d) => ({ ...d, discountApprovalRequired: e.target.checked }))}
-          className="mt-0.5 size-4 accent-blue-600"
-          aria-label="Allow over-limit with approval"
-        />
-        <span className="text-xs leading-snug text-muted-foreground">
-          {t('settings.discountApproval')} — {t('settings.discountApprovalDesc')}
-        </span>
-      </label>
       <Button
-        onClick={() => void save()}
-        disabled={!dirty}
-        className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
-        aria-label="Save discount limits"
+        variant="outline"
+        className="h-11 w-full"
+        onClick={() => {
+          // wipe the session on this device — every other device keeps running
+          lockApp();
+          window.dispatchEvent(new Event('slp-lock'));
+        }}
+        aria-label="Lock app"
       >
-        {t('settings.updateBilling')}
+        <Lock className="size-4" />
+        {t('settings.lockBtn')}
       </Button>
     </section>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/* Appearance — background theme, header colour & owner's own photo     */
-/* Changes apply instantly so the owner sees the look right away.       */
-/* ------------------------------------------------------------------ */
 
 function AppearanceSection() {
   const t = useT();
@@ -830,313 +749,6 @@ function AppearanceSection() {
 /* ------------------------------------------------------------------ */
 /* Sync & security — encrypted cloud sync between the owner's phones   */
 /* (MPIN login, MPIN-protected data) and the manual lock.              */
-/* ------------------------------------------------------------------ */
-
-/* ------------------------------------------------------------------ */
-/* Staff accounts — owner creates logins, resets passwords securely.    */
-/* The vault key is re-wrapped under the staff password HERE (owner's   */
-/* device) — the server stores only wrapped bytes + a scrypt hash.      */
-/* ------------------------------------------------------------------ */
-
-function StaffSection() {
-  const t = useT();
-  const { toast } = useToast();
-  const [rows, setRows] = useState<StaffRow[]>([]);
-  const [username, setUsername] = useState('');
-  const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [resetting, setResetting] = useState<string | null>(null);
-  const [resetPwd, setResetPwd] = useState('');
-
-  const refresh = async () => setRows(await apiStaffList());
-  useEffect(() => {
-    void refresh();
-  }, []);
-
-  /** wrap the vault key under the staff password on THIS device */
-  const dekForPassword = async (pwd: string) => {
-    const dekB64 = getDeviceDek();
-    if (!dekB64) return undefined;
-    const dek = await importDek(dekB64).catch(() => null);
-    if (!dek) return undefined;
-    const salt = randomB64(16);
-    const { kek } = await deriveKek(pwd, salt);
-    const { wrapped, iv } = await wrapDek(dek, kek);
-    return { dekSalt: salt, dekIv: iv, dekWrapped: wrapped };
-  };
-
-  const addStaff = async () => {
-    if (busy) return;
-    const u = username.trim().toLowerCase();
-    const p = password;
-    if (!/^[a-z0-9._-]{3,24}$/.test(u) || p.length < 4) {
-      toast({ title: t('staff.title'), description: t('lock.staffErr'), variant: 'destructive' });
-      return;
-    }
-    setBusy(true);
-    try {
-      const dek = await dekForPassword(p);
-      const res = await apiStaffCreate(u, p, name.trim() || u, dek);
-      if (!res.ok) {
-        toast({ title: t('staff.title'), description: res.error, variant: 'destructive' });
-        return;
-      }
-      setUsername('');
-      setName('');
-      setPassword('');
-      await refresh();
-      toast({ title: t('staff.created') });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resetPassword = async (row: StaffRow) => {
-    if (busy || resetPwd.length < 4) {
-      toast({ title: t('staff.resetPwd'), description: t('lock.staffErr'), variant: 'destructive' });
-      return;
-    }
-    setBusy(true);
-    try {
-      const dek = await dekForPassword(resetPwd);
-      const res = await apiStaffUpdate(row.id, { password: resetPwd, ...dek });
-      if (!res.ok) {
-        toast({ title: t('staff.resetPwd'), description: res.error, variant: 'destructive' });
-        return;
-      }
-      setResetting(null);
-      setResetPwd('');
-      toast({ title: t('staff.updated') });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const toggleActive = async (row: StaffRow) => {
-    setBusy(true);
-    try {
-      await apiStaffUpdate(row.id, { active: !row.active });
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const removeStaff = async (row: StaffRow) => {
-    if (!window.confirm(t('staff.confirmDelete'))) return;
-    setBusy(true);
-    try {
-      await apiStaffDelete(row.id);
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <section aria-label="Staff accounts" className="space-y-3">
-      <h3 className="flex items-center gap-1.5 text-sm font-bold text-blue-800">
-        <UserRound className="size-4" />
-        {t('staff.title')}
-      </h3>
-      <p className="text-xs leading-relaxed text-muted-foreground">{t('staff.desc')}</p>
-
-      <div className="grid grid-cols-2 gap-2">
-        <Input
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          placeholder={t('staff.username')}
-          aria-label="New staff username"
-          className="h-10"
-        />
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={t('staff.name')}
-          aria-label="New staff name"
-          className="h-10"
-        />
-      </div>
-      <div className="flex gap-2">
-        <Input
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder={t('staff.password')}
-          aria-label="New staff password"
-          type="password"
-          className="h-10"
-        />
-        <Button onClick={addStaff} disabled={busy} className="h-10 shrink-0 bg-blue-600 text-white hover:bg-blue-700" aria-label="Add staff">
-          <Plus className="size-4" />
-          {t('staff.addBtn')}
-        </Button>
-      </div>
-
-      {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground">{t('staff.empty')}</p>
-      ) : (
-        <div className="space-y-2">
-          {rows.map((row) => (
-            <div key={row.id} data-staff-row={row.username} className="rounded-xl border p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-neutral-800">
-                    {row.name} <span className="font-mono text-[10px] text-muted-foreground">@{row.username}</span>
-                  </p>
-                  <p className="text-[10px] font-semibold text-muted-foreground">
-                    {row.active ? t('staff.active') : t('staff.inactive')}
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => void toggleActive(row)} disabled={busy}>
-                    {row.active ? t('staff.inactive') : t('staff.active')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs"
-                    onClick={() => setResetting(resetting === row.id ? null : row.id)}
-                    aria-label={`Reset password for ${row.username}`}
-                  >
-                    {t('staff.resetPwd')}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-destructive hover:text-destructive"
-                    onClick={() => void removeStaff(row)}
-                    aria-label={`Delete ${row.username}`}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
-              {resetting === row.id && (
-                <div className="mt-2 flex gap-2">
-                  <Input
-                    value={resetPwd}
-                    onChange={(e) => setResetPwd(e.target.value)}
-                    placeholder={t('staff.newPwd')}
-                    aria-label={`New password for ${row.username}`}
-                    type="password"
-                    className="h-9"
-                  />
-                  <Button
-                    onClick={() => void resetPassword(row)}
-                    disabled={busy || resetPwd.length < 4}
-                    className="h-9 shrink-0 bg-blue-600 text-white hover:bg-blue-700"
-                    aria-label="Save new password"
-                  >
-                    {t('staff.save')}
-                  </Button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function SyncSecuritySection() {
-  const t = useT();
-  const { toast } = useToast();
-  const [status, setStatus] = useState(() => getSyncStatus());
-  const [online, setOnline] = useState(true);
-  const [busy, setBusy] = useState(false);
-
-  // live status — the engine updates quietly in the background
-  useEffect(() => {
-    const iv = setInterval(() => setStatus(getSyncStatus()), 2000);
-    const upd = () => setOnline(navigator.onLine);
-    window.addEventListener('online', upd);
-    window.addEventListener('offline', upd);
-    upd();
-    return () => {
-      clearInterval(iv);
-      window.removeEventListener('online', upd);
-      window.removeEventListener('offline', upd);
-    };
-  }, []);
-
-  const auth = getAuth();
-
-  const doSync = async () => {
-    setBusy(true);
-    const okRes = await syncNow();
-    setBusy(false);
-    setStatus(getSyncStatus());
-    toast({ title: okRes ? t('sync.syncedToast') : t('sync.syncFailedToast') });
-  };
-
-  const doLock = () => {
-    // tell the page gate FIRST (unmounts the activity listeners — a hot
-    // reload or stray scroll can no longer re-mark the unlock session)
-    window.dispatchEvent(new Event('slp-lock'));
-    lockApp(); // wipes session + key on this device → the MPIN gate returns
-    toast({ title: t('sync.lockedToast') });
-    setTimeout(() => location.reload(), 400);
-  };
-
-  const lastSync =
-    status.lastSyncAt > 0
-      ? t('sync.lastSync').replace(
-          '{time}',
-          new Date(status.lastSyncAt).toLocaleTimeString('en-IN', {
-            hour: '2-digit',
-            minute: '2-digit',
-          })
-        )
-      : t('sync.never');
-
-  return (
-    <section aria-label="Sync and security" className="space-y-3">
-      <h3 className="text-sm font-bold text-blue-800">{t('sync.title')}</h3>
-      <p className="text-xs text-muted-foreground">{t('sync.desc')}</p>
-
-      <div className="space-y-1 rounded-lg border bg-neutral-50 px-3 py-2 text-xs" data-sync-status>
-        {auth && (
-          <p className="font-semibold text-blue-800">{t('sync.mpinOn')}</p>
-        )}
-        <p className={online ? 'text-emerald-700' : 'text-amber-700'}>
-          {online ? t('sync.statusOn') : t('sync.statusOff')}
-        </p>
-        <p className="text-muted-foreground">{lastSync}</p>
-      </div>
-
-      <Button
-        variant="outline"
-        className="h-11 w-full"
-        onClick={doSync}
-        disabled={busy}
-        aria-label="Sync now"
-      >
-        <CloudUpload className="size-4" />
-        {busy ? t('sync.syncing') : t('sync.now')}
-      </Button>
-      <Button
-        variant="outline"
-        className="h-11 w-full text-destructive hover:text-destructive"
-        onClick={doLock}
-        aria-label="Lock app"
-      >
-        <Lock className="size-4" />
-        {t('sync.lockNow')}
-      </Button>
-      <p className="text-[11px] leading-relaxed text-muted-foreground">{t('sync.lockDesc')}</p>
-      <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
-        <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
-        {t('sync.e2eeNote')}
-      </p>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Backup & restore — one file with company details, products, bills   */
-/* and the whole ledger. Download it, keep it safe, restore anywhere.  */
 /* ------------------------------------------------------------------ */
 
 function BackupSection() {

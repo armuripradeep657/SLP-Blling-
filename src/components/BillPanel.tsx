@@ -13,12 +13,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Minus, Plus, Trash2, UserRound, ReceiptText, Tag, Truck, TriangleAlert } from 'lucide-react';
+import { Minus, Plus, Trash2, UserRound, ReceiptText, Tag, Truck } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { computeTotals, fmt, lineNet, lineOverLimit, normalizePhone, itemDiscountAmount } from '@/lib/billing';
+import { computeTotals, fmt, lineNet, normalizePhone, itemDiscountAmount } from '@/lib/billing';
 import { BILL_LANGUAGES } from '@/lib/i18n';
 import { useT } from '@/hooks/use-app-lang';
-import { useIdentity } from '@/lib/role';
 import type { BillLanguage, DeliveryInfo, DiscountType, PaymentMode } from '@/lib/types';
 
 const MODES: PaymentMode[] = ['Cash', 'UPI', 'Card', 'Due'];
@@ -26,11 +25,14 @@ const MODES: PaymentMode[] = ['Cash', 'UPI', 'Card', 'Due'];
 export default function BillPanel({
   onComplete,
   onUpi,
+  onError,
 }: {
   onComplete: () => void;
   /** UPI bills go to the scan-and-pay screen first — the bill completes
    *  itself when the money arrives (auto-detected payment) */
   onUpi?: (amount: number) => void;
+  /** a failed save is reported to the app-level error toast */
+  onError?: (e: unknown) => void;
 }) {
   const t = useT();
   const cart = useStore((s) => s.cart);
@@ -38,16 +40,6 @@ export default function BillPanel({
   const cfg = useStore((s) => s.billConfig);
   const invoices = useStore((s) => s.invoices);
   const settings = useStore((s) => s.settings);
-  const srvConfig = useStore((s) => s.srvConfig);
-  const identity = useIdentity();
-  const isStaff = identity.role === 'staff';
-  /** the OWNER's discount limits — enforced for staff here AND on the server */
-  const limits = isStaff
-    ? { discountMaxPercent: srvConfig.discountMaxPercent, discountMaxAmount: srvConfig.discountMaxAmount }
-    : null;
-  const overLimitLines = limits ? cart.filter((c) => lineOverLimit(c, limits)) : [];
-  /** approval mode: over-limit staff bills still save, flagged for the owner */
-  const approvalMode = srvConfig.discountApprovalRequired;
   const setCustomer = useStore((s) => s.setCustomer);
   const setBillConfig = useStore((s) => s.setBillConfig);
   const incQty = useStore((s) => s.incQty);
@@ -85,15 +77,21 @@ export default function BillPanel({
     if (recent.length >= 4) break;
   }
 
-  const onCompleteClick = () => {
+  const onCompleteClick = async () => {
     // UPI → open the scan-and-pay QR; the bill completes itself when the
     // payment is detected (no extra button pressed)
     if (cfg.paymentMode === 'UPI' && onUpi && cart.length > 0) {
       onUpi(totals.total);
       return;
     }
-    const inv = completeInvoice();
-    if (inv) onComplete();
+    // ONLINE-ONLY: the bill saves ONLY when the server confirms it — a
+    // failed save throws and is reported; nothing is shown as saved.
+    try {
+      await completeInvoice();
+      onComplete();
+    } catch (e) {
+      onError?.(e);
+    }
   };
 
   if (cart.length === 0) {
@@ -179,11 +177,6 @@ export default function BillPanel({
 
       {/* Items */}
       <section aria-label="Bill items" className="space-y-2">
-        {isStaff && (
-          <p className="rounded-lg bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-800">
-            {t('bill.staffEditNote')}
-          </p>
-        )}
         <div className="flex items-center justify-between">
           <Label className="text-sm font-semibold">
             {t('bill.items')} ({cart.length})
@@ -284,11 +277,6 @@ export default function BillPanel({
                         aria-label={`Discount for ${it.name}`}
                       />
                     </div>
-                    {limits && lineOverLimit(it, limits) ? (
-                      <p className="text-[10px] font-bold text-red-600">
-                        {approvalMode ? t('bill.discountNeedsApproval') : t('bill.discountOverLimit')}
-                      </p>
-                    ) : null}
                   </div>
                 </div>
                 <div className="mt-2 flex items-center justify-between">
@@ -496,20 +484,8 @@ export default function BillPanel({
         </div>
       </section>
 
-      {overLimitLines.length > 0 && (
-        <p
-          data-discount-limit-warning
-          className={`flex items-start gap-1.5 rounded-lg px-3 py-2 text-[11px] font-semibold ${
-            approvalMode ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-700'
-          }`}
-        >
-          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-          {approvalMode ? t('bill.discountNeedsApproval') : t('bill.discountOverLimit')}
-        </p>
-      )}
       <Button
-        onClick={onCompleteClick}
-        disabled={overLimitLines.length > 0 && !approvalMode}
+        onClick={() => void onCompleteClick()}
         className="anim-glow w-full h-14 text-base font-bold bg-blue-600 hover:bg-blue-700 text-white"
       >
         <ReceiptText className="size-5" />
@@ -517,7 +493,7 @@ export default function BillPanel({
       </Button>
       <p className="text-center text-[11px] text-muted-foreground">
         {t('bill.invoiceNumbered')} {settings.invoicePrefix}
-        {settings.nextInvoiceNo}
+        {cfg.reservedNo ?? settings.nextInvoiceNo}
       </p>
     </div>
   );

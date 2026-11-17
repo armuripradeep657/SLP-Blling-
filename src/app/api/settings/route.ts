@@ -1,0 +1,56 @@
+import { db } from '@/lib/db';
+import { bearerToken, requireOwner } from '@/lib/server/auth';
+import { bumpRev } from '@/lib/server/biz';
+import type { Appearance, BusinessSettings } from '@/lib/types';
+
+/**
+ * PUT /api/settings — shop settings + appearance, centrally. UPI ID and
+ * GST are ALSO mirrored into AppConfig (the server-enforced fields: the
+ * payment QR and every recomputed bill total use the central values), so
+ * an UPI/GST change updates every device's QR and billing immediately.
+ */
+export async function PUT(req: Request) {
+  const auth = await requireOwner(bearerToken(req));
+  if (!auth) return Response.json({ error: 'unauthorized' }, { status: 401 });
+
+  let body: { settings?: Partial<BusinessSettings>; appearance?: Partial<Appearance> };
+  try {
+    body = (await req.json()) as { settings?: Partial<BusinessSettings>; appearance?: Partial<Appearance> };
+  } catch {
+    return Response.json({ error: 'badRequest' }, { status: 400 });
+  }
+  if (!body.settings && !body.appearance) return Response.json({ error: 'badRequest' }, { status: 400 });
+
+  const prev = await db.bizSettings.findUnique({ where: { id: 'owner' } });
+  const prevSettings: Partial<BusinessSettings> = prev ? safeParse(prev.settingsJson) : {};
+  const prevAppearance: Partial<Appearance> = prev ? safeParse(prev.appearanceJson) : {};
+  const settings = { ...prevSettings, ...(body.settings ?? {}) };
+  const appearance = { ...prevAppearance, ...(body.appearance ?? {}) };
+  // store in SECONDS — the Int column cannot hold Date.now() ms
+  const dataUpdatedAt = Math.floor(Date.now() / 1000);
+
+  await db.bizSettings.upsert({
+    where: { id: 'owner' },
+    update: { settingsJson: JSON.stringify(settings), appearanceJson: JSON.stringify(appearance), dataUpdatedAt },
+    create: { id: 'owner', settingsJson: JSON.stringify(settings), appearanceJson: JSON.stringify(appearance), dataUpdatedAt },
+  });
+
+  const gst = Number(settings.gstPercent ?? 0);
+  await db.appConfig.upsert({
+    where: { slot: 'owner' },
+    update: { upiId: String(settings.upiId ?? ''), gstPercent: Number.isFinite(gst) ? gst : 0 },
+    create: { slot: 'owner', upiId: String(settings.upiId ?? ''), gstPercent: Number.isFinite(gst) ? gst : 0 },
+  });
+
+  const rev = await bumpRev();
+  return Response.json({ ok: true, rev });
+}
+
+function safeParse(s: string): Record<string, unknown> {
+  try {
+    const v = JSON.parse(s);
+    return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}

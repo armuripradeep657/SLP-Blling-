@@ -9,14 +9,10 @@ import { useStore } from '@/lib/store';
 import { useT } from '@/hooks/use-app-lang';
 import {
   apiAuthState,
-  apiMpinRepair,
-  apiMpinReset,
   apiMpinSetup,
   apiMpinUnlock,
   apiOwnerLogin,
   apiOwnerPassword,
-  apiPullVault,
-  apiStaffLogin,
   getDeviceDek,
   getRecoverMaterial,
   setAuth,
@@ -33,10 +29,11 @@ import {
   unwrapDek,
   wrapDek,
 } from '@/lib/crypto';
-import { getIdentity, setIdentity, OWNER_DEFAULT_PASSWORD, OWNER_DEFAULT_USERNAME } from '@/lib/role';
-import { mergeVaultBlob, pushVaultNow } from '@/lib/sync';
+/** Documented initial Admin credentials — seeded silently on first unlock */
+const OWNER_DEFAULT_USERNAME = 'Pradeep';
+const OWNER_DEFAULT_PASSWORD = '2125';
 
-type Step = 'checking' | 'setup' | 'unlock' | 'reclaim' | 'forgot' | 'staff' | 'owner';
+type Step = 'checking' | 'setup' | 'unlock' | 'reclaim' | 'owner';
 
 /**
  * MPIN entry with the digits HIDDEN (the owner asked for that) — the field is
@@ -154,12 +151,6 @@ export default function LockScreen({
   const [error, setError] = useState<string | null>(null);
   /** digits are hidden while typing (owner's request); the eye reveals them */
   const [showPin, setShowPin] = useState(false);
-  /** forgot-MPIN flow: does this device hold the data key? (decides the warning) */
-  const [forgotHasDek, setForgotHasDek] = useState(true);
-  /** staff sign-in (owner-created staff accounts) */
-  const [staffCount, setStaffCount] = useState(0);
-  const [staffUser, setStaffUser] = useState('');
-  const [staffPass, setStaffPass] = useState('');
   /** OWNER (Admin) sign-in — username + password (Pradeep / 2125 until changed) */
   const [ownerPasswordReady, setOwnerPasswordReady] = useState(false);
   const [ownerUser, setOwnerUser] = useState('');
@@ -193,7 +184,6 @@ export default function LockScreen({
       setError(t('lock.errNetwork'));
       return;
     }
-    setStaffCount(res.staffCount ?? 0);
     setOwnerPasswordReady(Boolean(res.hasOwnerPassword));
     setSalt(res.dekSalt ?? null);
     setLegacy(
@@ -201,12 +191,6 @@ export default function LockScreen({
         ? { salt: res.dekSalt, wrapped: res.dekWrapped }
         : null
     );
-    // a STAFF device signs in with its staff credentials, never the MPIN
-    if (getIdentity().role === 'staff') {
-      setStep('staff');
-      setBusyBoth(false);
-      return;
-    }
     if (mode === 'reclaim') {
       // device already holds the data key — the MPIN only re-connects sync
       setStep(res.hasMpin ? 'unlock' : 'reclaim');
@@ -244,10 +228,7 @@ export default function LockScreen({
       // entry itself stays offline and instant
       void apiAuthState()
         .then((res) => {
-          if (res.ok) {
-            setOwnerPasswordReady(Boolean(res.hasOwnerPassword));
-            setStaffCount(res.staffCount ?? 0);
-          }
+          if (res.ok) setOwnerPasswordReady(Boolean(res.hasOwnerPassword));
         })
         .catch(() => undefined);
       return;
@@ -331,7 +312,6 @@ export default function LockScreen({
         setRecoverMaterial({ salt: newSalt, verifier: proof, wrapped: `${iv}.${wrapped}` });
         clearDraft();
         setBusyBoth(false);
-        void pushVaultNow(); // upload whatever this device already has
         finishOwner();
       } catch {
         setBusyBoth(false);
@@ -381,7 +361,6 @@ export default function LockScreen({
         setRecoverMaterial({ salt: newSalt, verifier: proof, wrapped: `${iv}.${wrapped}` });
         clearDraft();
         setBusyBoth(false);
-        void pushVaultNow(); // re-upload this device's data to the fresh vault
         finishOwner();
       } catch {
         setBusyBoth(false);
@@ -397,57 +376,22 @@ export default function LockScreen({
    * (fresh browser), a fresh key is minted after a clear warning — the old
    * encrypted backup cannot be opened without the old MPIN.
    */
+  /** "Forgot MPIN" — recovery now goes through the Admin username +
+   *  password gate (the MPIN itself cannot be reset without the server). */
   const startForgot = () => {
     setError(null);
     setMpin('');
     setMpin2('');
-    setForgotHasDek(Boolean(getDeviceDek()));
-    setStep('forgot');
+    if (ownerPasswordReady) {
+      setOwnerPass('');
+      setStep('owner');
+    } else {
+      setError(t('lock.forgotNoOwnerPwd'));
+    }
   };
 
-  const forgotReset = async () => {
-    if (busyRef.current) return;
-    setError(null);
-    if (!/^\d{4,8}$/.test(mpin)) {
-      setError(t('lock.errPin'));
-      return;
-    }
-    if (mpin !== mpin2) {
-      setError(t('lock.errPinMatch'));
-      return;
-    }
-    await withWatchdog(async () => {
-      setBusyBoth(true);
-      try {
-        // the device key keeps the SAME data decryptable on every device
-        const dekB64 = getDeviceDek();
-        const existing = dekB64 ? await importDek(dekB64).catch(() => null) : null;
-        const dek = existing ?? (await generateDek());
-        const newSalt = randomB64(16);
-        const { kek, proof } = await deriveKek(mpin, newSalt);
-        const { wrapped, iv } = await wrapDek(dek, kek);
-        const res = await apiMpinReset(`${iv}.${wrapped}`, newSalt, proof);
-        if (!res.ok || !res.token) {
-          setBusyBoth(false);
-          setError(t(errKey(res.error)));
-          return;
-        }
-        setAuth(res.token);
-        setDeviceDek(await exportDek(dek));
-        setRecoverMaterial({ salt: newSalt, verifier: proof, wrapped: `${iv}.${wrapped}` });
-        clearDraft();
-        setBusyBoth(false);
-        void pushVaultNow(); // keep the vault in step (fresh-key path replaces it)
-        finishOwner();
-      } catch {
-        setBusyBoth(false);
-        setError(t('lock.errNetwork'));
-      }
-    });
-  };
-
-  /** Every later login: the MPIN opens the app — verified on the phone when the
-   *  device holds its own credential copy (offline, instant), else via the server. */
+  /** Every later login: the MPIN opens the app — verified locally first
+   *  (instant wrong-PIN feedback), then the server issues the session. */
   const unlockData = async () => {
     if (busyRef.current) return; // one submit at a time — double-taps are ignored
     setError(null);
@@ -455,40 +399,16 @@ export default function LockScreen({
       setError(t('lock.errPin'));
       return;
     }
-    /* ---- path 1: local credentials — no network needed at all ---- */
+    /* ---- instant local check when this device holds its credentials ---- */
     const mat = getRecoverMaterial();
-    if (mat?.salt && mat?.verifier && mat?.wrapped) {
-      await withWatchdog(async () => {
-        setBusyBoth(true);
-        try {
-          const { kek, proof } = await deriveKek(mpin, mat.salt);
-          if (proof !== mat.verifier) {
-            setBusyBoth(false);
-            setError(t('lock.errWrongPin'));
-            return;
-          }
-          const dot = mat.wrapped.indexOf('.');
-          let dek: CryptoKey | null = null;
-          if (dot > 0) {
-            dek = await unwrapDek(mat.wrapped.slice(dot + 1), mat.wrapped.slice(0, dot), kek).catch(() => null);
-          }
-          if (!dek) {
-            const dekB64 = getDeviceDek();
-            dek = dekB64 ? await importDek(dekB64).catch(() => null) : null;
-          }
-          if (!dek) dek = await generateDek(); // last resort — sync re-keys silently
-          setDeviceDek(await exportDek(dek));
-          clearDraft();
-          setBusyBoth(false);
-          finishOwner();
-        } catch {
-          setBusyBoth(false);
-          setError(t('lock.errNetwork'));
-        }
-      });
-      return;
+    if (mat?.salt && mat?.verifier) {
+      const local = await deriveKek(mpin, mat.salt).catch(() => null);
+      if (local && local.proof !== mat.verifier) {
+        setError(t('lock.errWrongPin'));
+        return;
+      }
     }
-    /* ---- path 2: no local copy (new browser / cleared storage) — ask the server ---- */
+    /* ---- the server issues the session (online-only app) ---- */
     if (!salt) {
       // no salt from the probe — re-probe (server may have restarted / state changed)
       await probe();
@@ -497,113 +417,7 @@ export default function LockScreen({
     await withWatchdog(async () => {
       setBusyBoth(true);
       try {
-        const { kek, proof } = await deriveKek(mpin, salt);
-
-        /** shared tail: session stored → open the vault → remember the credentials here */
-        const finishWithToken = async (token: string) => {
-          setAuth(token);
-          const remember = async (wrappedStr: string, dekKey: CryptoKey) => {
-            setDeviceDek(await exportDek(dekKey));
-            setRecoverMaterial({ salt, verifier: proof, wrapped: wrappedStr });
-          };
-          const pull = await apiPullVault();
-          if (pull.kind === 'auth') {
-            lockApp();
-            setBusyBoth(false);
-            setError(t(errKey('wrongMpin')));
-            return;
-          }
-          if (pull.kind === 'offline') {
-            setBusyBoth(false);
-            setError(t('lock.errNetwork'));
-            return;
-          }
-          if (pull.kind === 'empty') {
-            // no data pushed yet — open the SAME wrapped key (if any) so devices stay compatible
-            const wrappedEmpty = pull.dekWrapped ?? '';
-            const dotE = wrappedEmpty.indexOf('.');
-            if (dotE > 0 && pull.dekSalt) {
-              const dekSame = await unwrapDek(
-                wrappedEmpty.slice(dotE + 1),
-                wrappedEmpty.slice(0, dotE),
-                kek
-              ).catch(() => null);
-              if (dekSame) {
-                await remember(wrappedEmpty, dekSame);
-                clearDraft();
-                setBusyBoth(false);
-                void pushVaultNow();
-                finishOwner();
-                return;
-              }
-            }
-            // nothing stored at all — start with a fresh key and wrap it right here
-            const dekNew = await generateDek();
-            const w2 = await wrapDek(dekNew, kek);
-            await remember(`${w2.iv}.${w2.wrapped}`, dekNew);
-            clearDraft();
-            setBusyBoth(false);
-            void pushVaultNow();
-            finishOwner();
-            return;
-          }
-          const dot = pull.dekWrapped.indexOf('.');
-          if (dot <= 0) {
-            setBusyBoth(false);
-            setError(t('lock.errNetwork'));
-            return;
-          }
-          const dek = await unwrapDek(
-            pull.dekWrapped.slice(dot + 1),
-            pull.dekWrapped.slice(0, dot),
-            kek
-          ).catch(() => null);
-          if (!dek) {
-            setBusyBoth(false);
-            setError(t('lock.errWrongPin'));
-            return;
-          }
-          await remember(pull.dekWrapped, dek);
-          const opened = await mergeVaultBlob(pull.ciphertext, pull.dataIv, dek);
-          setBusyBoth(false);
-          if (!opened) {
-            setError(t('lock.errWrongPin'));
-            return;
-          }
-          clearDraft();
-          finishOwner();
-        };
-
-        /* ---- legacy account: the old app stored an all-zero verifier, so a
-           normal unlock can never match. The device proves the MPIN by
-           unwrapping the stored key right here (GCM auth fails for a wrong
-           MPIN), then repairs the server account with the REAL verifier. */
-        if (legacy?.salt === salt && legacy.wrapped) {
-          const dotL = legacy.wrapped.indexOf('.');
-          const dekL =
-            dotL > 0
-              ? await unwrapDek(legacy.wrapped.slice(dotL + 1), legacy.wrapped.slice(0, dotL), kek).catch(() => null)
-              : null;
-          if (!dekL) {
-            setBusyBoth(false);
-            setError(t('lock.errWrongPin'));
-            return;
-          }
-          const rep = await apiMpinRepair(proof, salt, legacy.wrapped);
-          if (!rep.ok || !rep.token) {
-            setBusyBoth(false);
-            if (rep.error === 'exists') {
-              // repaired meanwhile (another device) — normal login from here on
-              await probe();
-              return;
-            }
-            setError(t(errKey(rep.error)));
-            return;
-          }
-          await finishWithToken(rep.token);
-          return;
-        }
-
+        const { proof } = await deriveKek(mpin, salt);
         const res = await apiMpinUnlock(proof);
         if (!res.ok || !res.token) {
           setBusyBoth(false);
@@ -614,60 +428,12 @@ export default function LockScreen({
           setError(t(errKey(res.error)));
           return;
         }
-        await finishWithToken(res.token);
-      } catch {
-        setBusyBoth(false);
-        setError(t('lock.errNetwork'));
-      }
-    });
-  };
-
-  /** STAFF sign-in — username + password. The server issues a role-bound
-   *  session and returns the vault key wrapped under THIS staff password
-   *  (wrapped by the owner's device — the key itself never travels). */
-  const staffSignIn = async () => {
-    if (busyRef.current) return;
-    setError(null);
-    const username = staffUser.trim();
-    if (!username || !staffPass) {
-      setError(t('lock.staffErr'));
-      return;
-    }
-    await withWatchdog(async () => {
-      setBusyBoth(true);
-      try {
-        const res = await apiStaffLogin(username, staffPass);
-        if (!res.ok || !res.token) {
-          setBusyBoth(false);
-          setError(res.error === 'rateLimited' ? t('lock.errTooMany') : t('lock.staffErr'));
-          return;
-        }
         setAuth(res.token);
-        setIdentity('staff', res.name || username);
-        // open the encrypted vault with the key wrapped for this staff password
-        if (res.dekSalt && res.dekIv && res.dekWrapped) {
-          const { kek } = await deriveKek(staffPass, res.dekSalt);
-          const dek = await unwrapDek(res.dekWrapped, res.dekIv, kek).catch(() => null);
-          if (!dek) {
-            setBusyBoth(false);
-            setIdentity('owner');
-            lockApp();
-            setError(t('lock.staffErr'));
-            return;
-          }
-          setDeviceDek(await exportDek(dek));
-          const pull = await apiPullVault();
-          if (pull.kind === 'data') {
-            await mergeVaultBlob(pull.ciphertext, pull.dataIv, dek);
-          } else if (pull.kind === 'offline') {
-            // offline staff login — the local vault copy (if any) still opens
-          } else {
-            await pushVaultNow(); // empty vault — staff starts it from local data
-          }
-        }
+        // remember the credentials here — the MPIN was created ONCE
+        setRecoverMaterial({ salt, verifier: proof, wrapped: '' });
+        clearDraft();
         setBusyBoth(false);
-        setStaffPass('');
-        onUnlocked();
+        finishOwner();
       } catch {
         setBusyBoth(false);
         setError(t('lock.errNetwork'));
@@ -708,15 +474,14 @@ export default function LockScreen({
     }
   };
 
-  /** OWNER (Admin) sign-in — username + password. Same mechanics as the staff
-   *  gate: the session binds to the owner role and the vault DEK wrapped
-   *  under THIS password opens the encrypted data. */
+  /** OWNER (Admin) sign-in — username + password. The session token alone
+   *  opens the app; all data comes from the central database. */
   const ownerSignIn = async () => {
     if (busyRef.current) return;
     setError(null);
     const username = ownerUser.trim();
     if (!username || !ownerPass) {
-      setError(t('lock.staffErr'));
+      setError(t('ownerLogin.errWrong'));
       return;
     }
     await withWatchdog(async () => {
@@ -735,30 +500,9 @@ export default function LockScreen({
           return;
         }
         setAuth(res.token);
-        setIdentity('owner');
-        // open the encrypted vault with the key wrapped for the owner password
-        if (res.dekSalt && res.dekIv && res.dekWrapped) {
-          const { kek } = await deriveKek(ownerPass, res.dekSalt);
-          const dek = await unwrapDek(res.dekWrapped, res.dekIv, kek).catch(() => null);
-          if (!dek) {
-            setBusyBoth(false);
-            lockApp();
-            setError(t('ownerLogin.errWrong'));
-            return;
-          }
-          setDeviceDek(await exportDek(dek));
-          const pull = await apiPullVault();
-          if (pull.kind === 'data') {
-            await mergeVaultBlob(pull.ciphertext, pull.dataIv, dek);
-          } else if (pull.kind === 'offline') {
-            // offline owner login — the local vault copy (if any) still opens
-          } else {
-            await pushVaultNow(); // empty vault — start it from local data
-          }
-        }
         setBusyBoth(false);
         setOwnerPass('');
-        onUnlocked();
+        finishOwner();
       } catch {
         setBusyBoth(false);
         setError(t('lock.errNetwork'));
@@ -766,9 +510,7 @@ export default function LockScreen({
     });
   };
 
-  /** owner paths re-stamp the identity so a previous staff login cannot linger */
   const finishOwner = () => {
-    setIdentity('owner');
     void ensureOwnerPassword();
     onUnlocked();
   };
@@ -778,17 +520,6 @@ export default function LockScreen({
     setMpin('');
     setMpin2('');
     clearDraft();
-    void probeRef.current?.();
-  };
-
-  const toStaffStep = () => {
-    setError(null);
-    setStaffPass('');
-    setStep('staff');
-  };
-
-  const backToOwnerStep = () => {
-    setError(null);
     void probeRef.current?.();
   };
 
@@ -912,18 +643,6 @@ export default function LockScreen({
               {t('lock.forgot')}
             </button>
           )}
-          {step === 'unlock' && staffCount > 0 && (
-            <button
-              type="button"
-              onClick={toStaffStep}
-              disabled={busy}
-              aria-label="Staff login"
-              className="mx-auto flex items-center gap-1.5 text-xs font-semibold text-blue-700 underline-offset-2 hover:underline disabled:opacity-40"
-            >
-              <ScanLine className="size-3.5" />
-              {t('lock.staffLink')}
-            </button>
-          )}
           {step === 'unlock' && ownerPasswordReady && (
             <button
               type="button"
@@ -941,138 +660,6 @@ export default function LockScreen({
               {t('ownerLogin.link')}
             </button>
           )}
-        </>
-      )}
-
-      {step === 'forgot' && (
-        <>
-          <div className="text-center">
-            <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-900">
-              <KeyRound className="size-4" />
-              {t('lock.forgotTitle')}
-            </p>
-            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-              {forgotHasDek ? t('lock.forgotDesc') : t('lock.forgotNoKey')}
-            </p>
-          </div>
-          {!forgotHasDek && (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-relaxed text-amber-800">
-              {t('lock.forgotNoKeyWarn')}
-            </p>
-          )}
-          <div className="space-y-1.5">
-            <Label htmlFor="lock-forgotmpin" className="text-xs text-muted-foreground">
-              {t('lock.pinLabel')}
-            </Label>
-            <PinInput
-              id="lock-forgotmpin"
-              value={mpin}
-              onChange={setMpin}
-              show={showPin}
-              onToggle={() => setShowPin((v) => !v)}
-              autoFocus
-              ariaLabel="New MPIN"
-              toggleAriaLabel={showPin ? t('lock.hidePin') : t('lock.showPin')}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="lock-forgotmpin2" className="text-xs text-muted-foreground">
-              {t('lock.pinConfirm')}
-            </Label>
-            <PinInput
-              id="lock-forgotmpin2"
-              value={mpin2}
-              onChange={setMpin2}
-              show={showPin}
-              onToggle={() => setShowPin((v) => !v)}
-              ariaLabel="Confirm MPIN"
-              toggleAriaLabel={showPin ? t('lock.hidePin') : t('lock.showPin')}
-            />
-          </div>
-          <Button
-            onClick={forgotReset}
-            disabled={busy}
-            className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
-            aria-label="Set new MPIN"
-          >
-            <KeyRound className="size-4" />
-            {busy ? t('lock.saving') : t('lock.forgotBtn')}
-          </Button>
-          <Button
-            onClick={() => {
-              setMpin('');
-              setMpin2('');
-              void probeRef.current?.();
-            }}
-            disabled={busy}
-            variant="ghost"
-            className="h-9 w-full text-xs"
-            aria-label="Back to MPIN entry"
-          >
-            <ArrowLeft className="size-3.5" />
-            {t('lock.back')}
-          </Button>
-        </>
-      )}
-
-      {step === 'staff' && (
-        <>
-          <div className="text-center">
-            <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-900">
-              <UserRound className="size-4" />
-              {t('lock.staffTitle')}
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="lock-staff-user" className="text-xs text-muted-foreground">
-              {t('lock.staffUsername')}
-            </Label>
-            <Input
-              id="lock-staff-user"
-              type="text"
-              autoComplete="username"
-              value={staffUser}
-              onChange={(e) => setStaffUser(e.target.value)}
-              aria-label="Staff username"
-              className="h-11"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="lock-staff-pass" className="text-xs text-muted-foreground">
-              {t('lock.staffPassword')}
-            </Label>
-            <Input
-              id="lock-staff-pass"
-              type="password"
-              autoComplete="current-password"
-              value={staffPass}
-              onChange={(e) => setStaffPass(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void staffSignIn();
-              }}
-              aria-label="Staff password"
-              className="h-11"
-            />
-          </div>
-          <Button
-            onClick={staffSignIn}
-            disabled={busy}
-            className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
-            aria-label="Staff sign in"
-          >
-            <Lock className="size-4" />
-            {busy ? t('lock.verifying') : t('lock.staffBtn')}
-          </Button>
-          <Button
-            onClick={backToOwnerStep}
-            disabled={busy}
-            variant="ghost"
-            className="h-9 w-full text-xs"
-            aria-label="Back to owner MPIN"
-          >
-            <ArrowLeft className="size-3.5" />
-            {t('lock.backToOwner')}
-          </Button>
         </>
       )}
 

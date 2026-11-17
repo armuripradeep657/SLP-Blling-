@@ -18,7 +18,6 @@ import {
 import { Search, Trash2, ReceiptText, FileText, IndianRupee, Truck, Ban } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { fmt } from '@/lib/billing';
-import { useIdentity } from '@/lib/role';
 import { useT } from '@/hooks/use-app-lang';
 import type { Invoice } from '@/lib/types';
 import type { DocView } from './InvoiceModal';
@@ -33,18 +32,12 @@ export default function HistoryView({
   const updateInvoiceStatus = useStore((s) => s.updateInvoiceStatus);
   const deleteInvoice = useStore((s) => s.deleteInvoice);
   const cancelInvoice = useStore((s) => s.cancelInvoice);
-  const identity = useIdentity();
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Paid' | 'Due' | 'Partial'>('All');
 
-  /** STAFF see only the bills they created themselves — the owner sees all */
-  const visible = useMemo(
-    () =>
-      identity.role === 'staff'
-        ? invoices.filter((inv) => inv.createdBy && inv.createdBy !== 'Owner' && inv.createdBy === identity.name)
-        : invoices,
-    [invoices, identity]
-  );
+  // ONE central history — every bill saved on any device shows here (the
+  // store mirrors the server; the poll keeps it current within seconds)
+  const visible = invoices;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -160,7 +153,7 @@ export default function HistoryView({
                 </span>
               </div>
               <div className="flex flex-wrap gap-1 justify-end">
-                {identity.role === 'owner' && !inv.cancelled && (
+                {!inv.cancelled && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -171,7 +164,7 @@ export default function HistoryView({
                     <Ban className="size-3" /> {t('history.cancelBill')}
                   </Button>
                 )}
-                {!inv.cancelled && inv.status !== 'Paid' && identity.role === 'owner' && (
+                {!inv.cancelled && inv.status !== 'Paid' && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -192,8 +185,7 @@ export default function HistoryView({
                     <Truck className="size-3" /> {t('history.driver')}
                   </Button>
                 )}
-                {identity.role === 'owner' && (
-                  <AlertDialog>
+                <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="outline" size="icon" className="size-8 text-destructive hover:text-destructive" aria-label={`Delete ${inv.no}`}>
                         <Trash2 className="size-3.5" />
@@ -214,7 +206,6 @@ export default function HistoryView({
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
-                )}
               </div>
             </div>
           </li>

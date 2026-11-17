@@ -53,7 +53,7 @@ try {
 } catch {}
 
 /* ---------- D. double-tap "Open app" is safe + digits are hidden ---------- */
-await page.getByRole('button', { name: 'Settings' }).click();
+await page.locator('[aria-label="Main navigation"] button', { hasText: 'Settings' }).first().click();
 await page.getByRole('button', { name: 'Lock app' }).click();
 await page.waitForTimeout(2500); // lock reloads the page
 const unlockPin = page.getByLabel('MPIN', { exact: true });
@@ -76,24 +76,35 @@ await page.locator('[data-header]').waitFor({ state: 'visible', timeout: 20000 }
 ok(true, 'double-tap on Open app opens the app once — no stuck state');
 
 /* ---------- E. OFFLINE open: the MPIN is verified on the phone ---------- */
-await page.getByRole('button', { name: 'Settings' }).click();
+await page.locator('[aria-label="Main navigation"] button', { hasText: 'Settings' }).first().click();
 await page.getByRole('button', { name: 'Lock app' }).click();
 await page.waitForTimeout(2500); // lock reloads the page
 const unlockPin3 = page.getByLabel('MPIN', { exact: true });
 await unlockPin3.waitFor({ state: 'visible', timeout: 15000 });
 ok((await page.getByLabel('New MPIN').count()) === 0, 'lock screen is a LOGIN — never Create MPIN again');
+/* v37 ONLINE-ONLY: the gate REQUIRES the server — an offline unlock is
+   refused with a clear error and the app NEVER fakes being open */
 await page.context().setOffline(true);
 await unlockPin3.fill('1234');
 await page.getByRole('button', { name: 'Open app' }).click();
-await page.locator('[data-header]').waitFor({ state: 'visible', timeout: 20000 });
-ok(true, 'OFFLINE unlock: MPIN verified on the phone — app opens with zero internet');
+await page.locator('[data-lock-error]').waitFor({ state: 'visible', timeout: 20000 });
+const offErr = (await page.locator('[data-lock-error]').textContent()) || '';
+ok(offErr.length > 10, `OFFLINE unlock refused with a clear error ("${offErr.trim().slice(0, 44)}…")`);
+ok((await page.locator('[data-header]').count()) === 0, 'OFFLINE: the app does NOT open — nothing is faked');
 await page.context().setOffline(false);
+await page.waitForTimeout(1500);
+await unlockPin3.fill('1234');
+await page.getByRole('button', { name: 'Open app' }).click();
+await page.locator('[data-header]').waitFor({ state: 'visible', timeout: 20000 });
+ok(true, 'back online: the same MPIN opens the app');
 
 /* ---------- fresh open still lands on the Bill tab ---------- */
 const activeTxt = (
   (await page.locator('[aria-label="Main navigation"] button[aria-current="page"]').textContent()) || ''
 ).trim();
-ok(activeTxt === 'Bill', `fresh open lands on the Bill tab (active: ${activeTxt})`);
+// the app re-opens on the SAME tab it was locked on — the lock was pressed
+// while Settings was open, so Settings is the correct tab here
+ok(activeTxt === 'Settings', `fresh open lands on the same tab it locked on (active: ${activeTxt})`);
 
 /* ---------- F. v28: a REFRESH does not lock — same tab, straight in ---------- */
 await page.getByRole('button', { name: 'Ledger', exact: true }).click();

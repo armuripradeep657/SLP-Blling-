@@ -5,9 +5,9 @@ import {
   createSession,
   pruneSessions,
   rateLimit,
+  requireOwner,
   verifyPassword,
 } from '@/lib/server/auth';
-import { sessionAuth } from '@/lib/server/auth';
 
 /**
  * POST /api/auth/owner/login — the Owner/Admin username + password gate
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   }
 
   await pruneSessions('owner');
-  const token = await createSession('owner', 'owner');
+  const token = await createSession('owner');
 
   return Response.json({
     ok: true,
@@ -68,8 +68,8 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
-  const slot = await ownerSlotSafe(bearerToken(req));
-  if (!slot) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  const auth = await requireOwner(bearerToken(req));
+  if (!auth) return Response.json({ error: 'unauthorized' }, { status: 401 });
   const account = await db.syncAccount.findUnique({
     where: { slot: 'owner' },
     select: { ownerUsername: true, ownerPasswordIsDefault: true },
@@ -79,10 +79,4 @@ export async function GET(req: Request) {
     username: account?.ownerUsername ?? null,
     passwordIsDefault: account?.ownerPasswordIsDefault ?? false,
   });
-}
-
-/** ownerSlot without a cycle — local copy of the role check */
-async function ownerSlotSafe(token: string): Promise<string | null> {
-  const auth = await sessionAuth(token);
-  return auth && auth.role === 'owner' ? auth.slot : null;
 }

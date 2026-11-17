@@ -93,7 +93,7 @@ const decodeQr = async (pg, selector) => {
 };
 
 /* ---------- setup: owner + UPI ID saved ---------- */
-await page.addInitScript(() => localStorage.setItem('slp-update-notice-seen', '35'));
+await page.addInitScript(() => localStorage.setItem('slp-update-notice-seen', '37'));
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });
 // let the service worker install + claim fully — its one-time controllerchange
 // auto-reload must NOT fire mid-flow (it destroyed page.evaluate mid-decode).
@@ -115,7 +115,8 @@ ok(true, 'UPI ID saved in Admin Settings (slpcement@ybl)');
 /* ---------- 1. the payment screen QR ---------- */
 await page.locator('[aria-label="Main navigation"] button', { hasText: 'Bill' }).first().click();
 await page.waitForTimeout(500);
-await page.locator('main button:has-text("FT")').first().click();
+await page.evaluate(() => window.scrollTo(0, 0)); // clear the persisted Settings scroll
+await page.locator('main button[title="2FT — ₹200"]').first().click();
 await page.waitForTimeout(700);
 await page.getByRole('button', { name: 'View bill' }).click();
 await page.waitForTimeout(800);
@@ -178,7 +179,7 @@ await page.waitForTimeout(500);
 /* ---------- 3b. a bill with a DUE carries the payment QR for the due amount ---------- */
 await page.locator('[aria-label="Main navigation"] button', { hasText: 'Bill' }).first().click();
 await page.waitForTimeout(500);
-await page.locator('main button:has-text("FT")').first().click();
+await page.locator('main button[title="2FT — ₹200"]').first().click();
 await page.waitForTimeout(700);
 await page.getByRole('button', { name: 'View bill' }).click();
 await page.waitForTimeout(800);
@@ -263,11 +264,13 @@ await page.waitForTimeout(700);
 await page.getByLabel('UPI ID').fill('slpcement@ybl');
 await page.getByRole('button', { name: 'Update details' }).click();
 await page.getByLabel('GST percent').fill('5');
+await page.getByRole('button', { name: 'Update bill settings' }).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+await page.waitForTimeout(300);
 await page.getByRole('button', { name: 'Update bill settings' }).click();
 await page.waitForTimeout(600);
 await page.locator('[aria-label="Main navigation"] button', { hasText: 'Bill' }).first().click();
 await page.waitForTimeout(500);
-await page.locator('main button:has-text("FT")').first().click();
+await page.locator('main button[title="2FT — ₹200"]').first().click();
 await page.waitForTimeout(700);
 await page.getByRole('button', { name: 'View bill' }).click();
 await page.waitForTimeout(800);

@@ -30,6 +30,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
     ? await db.verifiedBill.findUnique({ where: { code } })
     : null;
 
+  // the ORIGINAL bill in the central database (for the in-app scanner to
+  // open the real record) — only its id is exposed, never private fields
+  const central = bill
+    ? await db.bizInvoice.findUnique({ where: { no: bill.billNo }, select: { id: true } })
+    : null;
+
   const status = !bill ? 'not_found' : bill.cancelled ? 'cancelled' : 'valid';
 
   // verification history — every attempt, valid or not
@@ -68,6 +74,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
 
   return Response.json({
     status,
+    invoiceId: central?.id ?? null,
     bill: {
       companyName: bill.companyName,
       billNo: bill.billNo,
@@ -86,8 +93,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
       paymentMode: bill.paymentMode,
       paymentStatus: bill.paymentStatus,
       createdBy: bill.createdBy,
-      createdById: bill.createdById,
-      needsApproval: bill.needsApproval,
       registeredAtISO: bill.createdAt,
     },
     history: { count: logCount, recent },
