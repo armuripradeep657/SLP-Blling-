@@ -55,3 +55,6 @@ server.log
 .next-test/
 upload/
 .next-dev/
+
+# agent-generated artifacts (bundles, render outputs) — never commit
+download/
