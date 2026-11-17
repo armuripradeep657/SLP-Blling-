@@ -3,10 +3,11 @@ import { chromium } from 'playwright';
 /**
  * v35 VISUAL — screenshots of the final artifacts for the layout review:
  *   1. the formal INVOICE (Code 128 barcode top-right "SCAN TO VERIFY BILL",
- *      shop details + bill no, per-line orig→edited price + discount + GST,
- *      UPI payment QR section "QR CODE – MAKE PAYMENT")
- *   2. the PAYMENT screen (QR + UPI ID)
- *   3. the 58mm THERMAL SLIP (both codes)
+ *      shop details + bill no, per-line orig→edited price + discount + GST;
+ *      NO payment QR when fully paid — the QR appears only on a bill with a
+ *      balance due, labeled "QR CODE – PAY BALANCE DUE", UPI ID never printed)
+ *   2. the PAYMENT screen (QR + UPI ID — staff collection UI keeps both)
+ *   3. the 58mm THERMAL SLIP (both codes on a due bill)
  * Saved to /home/z/my-project/download/v35-*.png — Read them afterwards.
  */
 const BASE = process.env.BASE_URL || 'http://localhost:3100';

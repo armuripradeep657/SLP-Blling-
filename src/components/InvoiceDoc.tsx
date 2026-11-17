@@ -396,12 +396,14 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
           </div>
         </div>
 
-        {/* UPI PAYMENT QR — built from the SAVED UPI ID; customers scan it
-            with any UPI app to pay. Amount = balance due (or the bill total
-            when fully paid — a re-print keeps a working payment QR). The
-            verification Code 128 lives at the TOP-RIGHT of the header — this
-            is never a QR and the QR is never a verification barcode. */}
-        {isValidUpiId(settings.upiId || '') ? (
+        {/* UPI PAYMENT QR — printed ONLY when the bill still has a balance
+            due. A fully-paid bill (cash or online) carries NO payment QR.
+            The QR is built from the SAVED UPI ID and carries the DUE amount;
+            the UPI ID itself is never printed as text — the customer just
+            scans. The verification Code 128 lives at the TOP-RIGHT of the
+            header — this is never a QR and the QR is never a verification
+            barcode. */}
+        {invoice.totals.balance > 0 && isValidUpiId(settings.upiId || '') ? (
           <div
             data-payment-qr-section
             style={{
@@ -418,19 +420,16 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
             }}
           >
             <QrCode
-              value={upiUri(
-                settings.upiId,
-                invoice.totals.balance > 0 ? invoice.totals.balance : invoice.totals.total,
-                invoice.no
-              )}
+              value={upiUri(settings.upiId, invoice.totals.balance, invoice.no)}
               size={110}
+              label="QR CODE – PAY BALANCE DUE"
             />
             <div style={{ textAlign: 'left' }}>
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.2, color: NAVY, textTransform: 'uppercase' }}>
                 {L.payQrLabel}
               </div>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', marginTop: 2, wordBreak: 'break-all' }}>
-                {settings.upiId}
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', marginTop: 2 }}>
+                {fill(L.balancePay, { rs: fmt(invoice.totals.balance) })}
               </div>
               <div style={{ fontSize: 9.5, color: '#475569', marginTop: 2 }}>{L.payQrHint}</div>
             </div>

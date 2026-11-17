@@ -262,25 +262,25 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
           </div>
         </div>
       ) : null}
-      {isValidUpiId(settings.upiId || '') ? (
-        /* UPI PAYMENT QR from the SAVED UPI ID + the ID as text — on every
-           slip, paid or not (a fully-paid re-print carries the bill TOTAL,
-           exactly like the formal invoice). This is a PAYMENT QR — the
-           bill-verification Code 128 barcode is printed separately below
-           and is never a QR. */
+      {invoice.totals.balance > 0 && isValidUpiId(settings.upiId || '') ? (
+        /* UPI PAYMENT QR from the SAVED UPI ID — printed ONLY when the bill
+           still has a balance due; a fully-paid slip (cash or online) carries
+           NO payment QR. The UPI ID itself is never printed as text. This is
+           a PAYMENT QR — the bill-verification Code 128 barcode is printed
+           separately below and is never a QR. */
         <div data-slip-payment-qr style={{ textAlign: 'center', marginTop: 7 }}>
           <div style={{ display: 'flex', justifyContent: 'center' }}>
             <QrCode
-              value={upiUri(settings.upiId, invoice.totals.balance > 0 ? invoice.totals.balance : invoice.totals.total, invoice.no)}
+              value={upiUri(settings.upiId, invoice.totals.balance, invoice.no)}
               size={settings.slipWidthMm === 58 ? 96 : 128}
-              label="QR CODE – MAKE PAYMENT"
+              label="QR CODE – PAY BALANCE DUE"
             />
           </div>
           <div style={{ fontSize: baseFont - 1.5, fontWeight: 700, letterSpacing: 0.4, color: '#111', marginTop: 2 }}>
             {L.payQrLabel}
           </div>
           <div style={{ marginTop: 2, fontSize: baseFont - 0.5 }}>
-            {fill(L.balancePay, { rs: fmt(invoice.totals.balance > 0 ? invoice.totals.balance : invoice.totals.total) })} <b>{settings.upiId}</b>
+            {fill(L.balancePay, { rs: fmt(invoice.totals.balance) })}
           </div>
         </div>
       ) : null}

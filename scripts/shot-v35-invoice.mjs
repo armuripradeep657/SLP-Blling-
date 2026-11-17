@@ -3,14 +3,17 @@ import jsQR from 'jsqr';
 
 /**
  * v35 INVOICE — the two codes, clearly separated (req 4/5/7):
- *   1. UPI PAYMENT QR built from the SAVED UPI ID — on the payment screen
- *      AND on the bill (invoice + slip); the QR DECODES (ZXing) to a valid
- *      upi://pay URI with pa=<saved id> + the amount
+ *   1. UPI PAYMENT QR built from the SAVED UPI ID — ALWAYS on the payment
+ *      screen; on a printed bill (invoice + slip) ONLY when the bill still
+ *      has a balance DUE, and then for the DUE amount; the UPI ID itself is
+ *      NEVER printed as text on a bill; the QR DECODES (jsQR in Node) to a
+ *      valid upi://pay URI with pa=<saved id> + the amount
  *   2. the Code 128 verification barcode sits at the TOP-RIGHT of the
- *      invoice labeled "SCAN TO VERIFY BILL" — never a QR
- *   3. changing the UPI ID in Admin Settings regenerates every payment QR
- *   4. an invalid UPI ID never produces a QR
- *   5. GST + totals + per-line orig→edited prices print on the invoice
+ *      invoice labeled "SCAN TO VERIFY BILL" — never a QR, on every bill
+ *   3. a FULLY-PAID bill (cash or online) prints NO payment QR at all
+ *   4. changing the UPI ID in Admin Settings regenerates every payment QR
+ *   5. an invalid UPI ID never produces a QR
+ *   6. GST + totals + per-line orig→edited prices print on the invoice
  */
 const BASE = process.env.BASE_URL || 'http://localhost:3100';
 const MPIN = '1234';
@@ -137,7 +140,7 @@ await page.locator('[data-payment-received]').click();
 await dlg().first().waitFor({ state: 'visible', timeout: 15000 });
 await page.waitForTimeout(1200);
 
-/* ---------- 2. the invoice: verification barcode top-right + payment QR ---------- */
+/* ---------- 2. the invoice: verification barcode top-right, NO payment QR ---------- */
 await dlg().first().getByRole('button', { name: 'Invoice' }).click();
 await page.waitForTimeout(1200);
 const doc = dlg().first();
@@ -156,27 +159,66 @@ const vCode = (await vb.getAttribute('data-verify-code')) || '';
 const vbSvg = await vb.locator('[data-barcode]').first().getAttribute('data-barcode');
 ok(!!vbSvg, `the Code 128 encodes the verification ID (${vCode || vbSvg})`);
 
-// payment QR section on the invoice
-ok((await doc.locator('[data-payment-qr-section]').count()) === 1, 'the invoice carries the payment QR section');
-ok(docText.includes('QR CODE – MAKE PAYMENT'), 'labeled QR CODE – MAKE PAYMENT');
-const invQr = await decodeQr(page, '[data-payment-qr-section] [data-qr] svg');
-console.log('  DEBUG invoice QR:', JSON.stringify(invQr));
-ok(typeof invQr.text === 'string' && invQr.text.includes('pa=slpcement%40ybl'),
-  `the invoice QR decodes to the SAME saved UPI ID (${invQr.text || invQr.err + ' ' + (invQr.head || '')})`);
+// a FULLY-PAID bill (payment received) prints NO payment QR and NEVER the UPI ID
+ok((await doc.locator('[data-payment-qr-section]').count()) === 0,
+  'a FULLY-PAID bill prints NO payment QR on the invoice');
+ok(!docText.includes('slpcement@ybl'), 'the UPI ID is never printed as text on the invoice');
 
-// the two codes are DIFFERENT things: barcode is 1-D Code 128, QR is the UPI URI
-ok(vbSvg !== invQr.text && !!invQr.text, 'the verification barcode and the payment QR are separate codes');
-
-/* ---------- 3. the thermal slip carries both too ---------- */
+/* ---------- 3. the thermal slip: barcode only, no QR ---------- */
 await dlg().first().getByRole('button', { name: 'Slip' }).click().catch(() => {});
 await page.waitForTimeout(1000);
 const slipText = (await dlg().first().textContent()) || '';
 ok((await dlg().first().locator('[data-barcode]').count()) >= 1, 'Code 128 verification barcode on the thermal slip');
-ok((await dlg().first().locator('[data-slip-payment-qr] [data-qr]').count()) === 1, 'payment QR on the thermal slip');
+ok((await dlg().first().locator('[data-slip-payment-qr]').count()) === 0,
+  'a FULLY-PAID bill carries NO payment QR on the thermal slip');
+ok(!slipText.includes('slpcement@ybl'), 'the UPI ID is never printed as text on the slip');
 await page.keyboard.press('Escape');
 await page.waitForTimeout(500);
 
-/* ---------- 4. changing the UPI ID regenerates the QR ---------- */
+/* ---------- 3b. a bill with a DUE carries the payment QR for the due amount ---------- */
+await page.locator('[aria-label="Main navigation"] button', { hasText: 'Bill' }).first().click();
+await page.waitForTimeout(500);
+await page.locator('main button:has-text("FT")').first().click();
+await page.waitForTimeout(700);
+await page.getByRole('button', { name: 'View bill' }).click();
+await page.waitForTimeout(800);
+await dlg().getByPlaceholder('Customer name').fill('Due Customer');
+await dlg().getByLabel('Payment mode').click();
+await page.getByRole('option', { name: 'Due', exact: true }).click();
+await page.waitForTimeout(600);
+await dlg().getByRole('button', { name: /Complete Bill/ }).first().click();
+await dlg().first().waitFor({ state: 'visible', timeout: 15000 });
+await page.waitForTimeout(900);
+await dlg().first().getByRole('button', { name: 'Invoice' }).click();
+await page.waitForTimeout(1200);
+const dueDoc = dlg().first();
+const dueText = (await dueDoc.textContent()) || '';
+ok((await dueDoc.locator('[data-payment-qr-section]').count()) === 1,
+  'a bill WITH A DUE carries the payment QR section');
+ok(dueText.includes('QR CODE – PAY BALANCE DUE'), 'labeled QR CODE – PAY BALANCE DUE');
+ok(!dueText.includes('slpcement@ybl'), 'the UPI ID is still never printed as text on the invoice');
+const dueQr = await decodeQr(page, '[data-payment-qr-section] [data-qr] svg');
+console.log('  DEBUG due-bill QR:', JSON.stringify(dueQr));
+const dueAmt = dueQr.text?.match(/am=([\d.]+)/)?.[1];
+ok(typeof dueQr.text === 'string' && dueQr.text.includes('pa=slpcement%40ybl'),
+  `the due-bill QR decodes to the SAVED UPI ID (${dueQr.text || dueQr.err + ' ' + (dueQr.head || '')})`);
+ok(dueAmt && Number(dueAmt) === 200, `the due-bill QR carries the DUE amount (₹${dueAmt})`);
+ok((await dueDoc.locator('[data-verify-barcode]').count()) === 1,
+  'the verification barcode coexists with the payment QR on a due bill');
+const dueVbSvg = await dueDoc.locator('[data-verify-barcode] [data-barcode]').first().getAttribute('data-barcode');
+ok(dueVbSvg !== dueQr.text && !!dueQr.text, 'the verification barcode and the payment QR are separate codes');
+
+// the due bill's thermal slip carries the QR too — no UPI ID as text
+await dueDoc.getByRole('button', { name: 'Slip' }).click().catch(() => {});
+await page.waitForTimeout(1000);
+const dueSlipText = (await dlg().first().textContent()) || '';
+ok((await dlg().first().locator('[data-slip-payment-qr] [data-qr]').count()) === 1,
+  'payment QR on the DUE bill thermal slip');
+ok(!dueSlipText.includes('slpcement@ybl'), 'the UPI ID is never printed as text on the slip');
+await page.keyboard.press('Escape');
+await page.waitForTimeout(500);
+
+/* ---------- 4. changing the UPI ID regenerates the due bill's QR ---------- */
 await page.locator('[aria-label="Main navigation"] button', { hasText: 'Settings' }).first().click();
 await page.waitForTimeout(700);
 await page.getByLabel('UPI ID').fill('slpnew@okaxis');
@@ -185,13 +227,15 @@ await page.waitForTimeout(900);
 
 await page.locator('[aria-label="Main navigation"] button', { hasText: 'History' }).first().click();
 await page.waitForTimeout(800);
+await page.getByLabel('Search invoices').fill('Due Customer');
+await page.waitForTimeout(600);
 await page.locator('li button', { hasText: 'SLP-INV-' }).first().click();
 await dlg().first().waitFor({ state: 'visible', timeout: 12000 });
 await dlg().first().getByRole('button', { name: 'Invoice' }).click();
 await page.waitForTimeout(1200);
 const invQr2 = await decodeQr(page, '[data-payment-qr-section] [data-qr] svg');
 ok(typeof invQr2.text === 'string' && invQr2.text.includes('pa=slpnew%40okaxis'),
-  `after the UPI ID change the QR encodes the NEW ID (${invQr2.text || invQr2.err + ' ' + (invQr2.head || '')})`);
+  `after the UPI ID change the due bill's QR encodes the NEW ID (${invQr2.text || invQr2.err + ' ' + (invQr2.head || '')})`);
 await page.keyboard.press('Escape');
 
 /* ---------- 5. an invalid UPI ID never renders a QR ---------- */
@@ -202,6 +246,8 @@ await page.getByRole('button', { name: 'Update details' }).click();
 await page.waitForTimeout(900);
 await page.locator('[aria-label="Main navigation"] button', { hasText: 'History' }).first().click();
 await page.waitForTimeout(800);
+await page.getByLabel('Search invoices').fill('Due Customer');
+await page.waitForTimeout(600);
 await page.locator('li button', { hasText: 'SLP-INV-' }).first().click();
 await dlg().first().waitFor({ state: 'visible', timeout: 12000 });
 await dlg().first().getByRole('button', { name: 'Invoice' }).click();
