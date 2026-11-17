@@ -10,11 +10,34 @@ export const fmtShort = (n: number): string => {
   return Number.isInteger(v) ? String(v) : v.toFixed(2);
 };
 
-/** Net amount of one cart line after its own per-item discount (never below 0) */
+/** Net amount of one cart line after its own discount (never below 0).
+ *  Supports BOTH discount kinds: a flat ₹ amount and a % of the line. */
 export function lineNet(it: CartItem): number {
   const gross = it.price * it.qty;
-  const d = Math.min(Math.max(it.discount || 0, 0), gross);
+  const d = Math.min(Math.max(itemDiscountAmount(it), 0), gross);
   return Math.round((gross - d) * 100) / 100;
+}
+
+/** The discount amount of one line for its type — ₹ flat or % of the line */
+export function itemDiscountAmount(it: CartItem): number {
+  const gross = it.price * it.qty;
+  if (it.discountType === 'percent') {
+    return Math.min(gross, Math.round(((gross * (it.discountValue || 0)) / 100) * 100) / 100);
+  }
+  return Math.min(gross, it.discount || 0);
+}
+
+/** Does this line's discount exceed the owner's configured staff limits? */
+export function lineOverLimit(
+  it: CartItem,
+  limits: { discountMaxPercent: number; discountMaxAmount: number } | null
+): boolean {
+  if (!limits) return false;
+  const gross = it.price * it.qty;
+  if (gross <= 0) return false;
+  const d = itemDiscountAmount(it);
+  if (d <= 0) return false;
+  return d / gross > limits.discountMaxPercent / 100 + 1e-9 || d > limits.discountMaxAmount + 1e-9;
 }
 
 export function computeTotals(items: CartItem[], cfg: BillConfig, gstPercent = 0): Totals {
@@ -75,6 +98,12 @@ export function smsLink(phone: string, message: string): string {
     return p ? `sms:${p}&body=${body}` : `sms:&body=${body}`;
   }
   return p ? `sms:${p}?body=${body}` : `sms:?body=${body}`;
+}
+
+/** A UPI ID looks like name@bank — validated BEFORE any payment QR is built
+ *  (a malformed ID would generate a QR every UPI app rejects) */
+export function isValidUpiId(v: string): boolean {
+  return /^[\w.\-]{2,256}@[a-zA-Z][a-zA-Z0-9\-]{1,64}$/.test((v || '').trim());
 }
 
 export function upiUri(upiId: string, amount: number, note: string): string {

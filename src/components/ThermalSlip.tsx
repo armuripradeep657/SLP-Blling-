@@ -1,8 +1,9 @@
 'use client';
 
-import { fmt, fmtShort } from '@/lib/billing';
+import { fmt, fmtShort, isValidUpiId, upiUri } from '@/lib/billing';
 import { labels, fill, slipFontFamily, companyLines, itemLabel } from '@/lib/i18n';
 import Barcode from './Barcode';
+import QrCode from './QrCode';
 import type { BusinessSettings, Invoice } from '@/lib/types';
 
 interface Props {
@@ -260,16 +261,33 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
             })}
           </div>
         </div>
-      ) : settings.upiId ? (
-        /* Balance due — pay the remaining amount to the shop's UPI ID (text, no QR) */
-        <div style={{ textAlign: 'center', marginTop: 7, fontSize: baseFont - 0.5 }}>
-          {fill(L.balancePay, { rs: fmt(invoice.totals.balance) })} <b>{settings.upiId}</b>
+      ) : isValidUpiId(settings.upiId || '') ? (
+        /* Balance due — UPI PAYMENT QR from the SAVED UPI ID + the ID as text.
+           This is a PAYMENT QR — the bill-verification Code 128 barcode is
+           printed separately below and is never a QR. */
+        <div data-slip-payment-qr style={{ textAlign: 'center', marginTop: 7 }}>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <QrCode
+              value={upiUri(settings.upiId, invoice.totals.balance, invoice.no)}
+              size={settings.slipWidthMm === 58 ? 96 : 128}
+              label="QR CODE – MAKE PAYMENT"
+            />
+          </div>
+          <div style={{ fontSize: baseFont - 1.5, fontWeight: 700, letterSpacing: 0.4, color: '#111', marginTop: 2 }}>
+            {L.payQrLabel}
+          </div>
+          <div style={{ marginTop: 2, fontSize: baseFont - 0.5 }}>
+            {fill(L.balancePay, { rs: fmt(invoice.totals.balance) })} <b>{settings.upiId}</b>
+          </div>
         </div>
       ) : null}
 
       {/* CODE 128 verification barcode — on EVERY bill, paid or not */}
       {invoice.verifyCode ? (
         <div style={{ textAlign: 'center', marginTop: 6 }}>
+          <div style={{ fontSize: baseFont - 1.5, fontWeight: 700, letterSpacing: 0.6, color: '#111', textTransform: 'uppercase' }}>
+            {L.verifyLabel}
+          </div>
           <div style={{ display: 'flex', justifyContent: 'center' }}>
             <Barcode value={invoice.verifyCode} height={settings.slipWidthMm === 58 ? 30 : 38} width={settings.slipWidthMm === 58 ? 0.8 : 1.15} />
           </div>

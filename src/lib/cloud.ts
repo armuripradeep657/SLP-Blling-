@@ -101,7 +101,7 @@ async function postJson(url: string, body?: unknown): Promise<{ status: number; 
   }
 }
 
-async function authedFetch(
+export async function authedFetch(
   url: string,
   method: 'GET' | 'PUT' | 'POST' | 'PATCH' | 'DELETE',
   body?: unknown
@@ -135,6 +135,9 @@ export async function apiAuthState(): Promise<{
   legacy?: boolean;
   dekWrapped?: string | null;
   staffCount?: number;
+  hasOwnerPassword?: boolean;
+  ownerUsername?: string | null;
+  ownerPasswordIsDefault?: boolean;
   error?: string;
 }> {
   try {
@@ -148,6 +151,9 @@ export async function apiAuthState(): Promise<{
         legacy: Boolean(data.legacy),
         dekWrapped: (data.dekWrapped as string) ?? null,
         staffCount: Number(data.staffCount ?? 0),
+        hasOwnerPassword: Boolean(data.hasOwnerPassword),
+        ownerUsername: (data.ownerUsername as string) ?? null,
+        ownerPasswordIsDefault: Boolean(data.ownerPasswordIsDefault),
       };
     }
     return { ok: false, error: (data.error as string) ?? 'network' };
@@ -249,6 +255,10 @@ export interface VerifyItem {
   qty: number;
   price: number;
   discount: number;
+  /** v35 — price-edit + discount oversight (recorded verbatim on the server) */
+  origPrice?: number;
+  discountType?: 'amount' | 'percent';
+  discountValue?: number;
 }
 
 export interface VerifyBillPayload {
@@ -261,6 +271,9 @@ export interface VerifyBillPayload {
   gstPercent: number;
   gstAmount: number;
   discount: number;
+  /** bill-level discount kind + value (₹ or %) — the server recomputes it */
+  discountType?: 'amount' | 'percent';
+  discountValue?: number;
   labourCharge: number;
   autoCharge: number;
   subtotal: number;
@@ -272,14 +285,23 @@ export interface VerifyBillPayload {
   createdBy: string;
 }
 
+export interface RegisterResult {
+  ok: boolean;
+  code?: string;
+  /** network failed — the bill must be queued and retried when back online */
+  offline?: boolean;
+  /** over-limit staff discount — flagged pending approval by the server */
+  needsApproval?: boolean;
+}
+
 /** Register (or refresh) a bill in the barcode verification registry.
  *  Called automatically when a bill is completed / its payment changes.
  *  Returns the code that owns the bill — a 409 race hands back the winner. */
 export async function registerVerifiedBill(
   invoice: Invoice,
   settings: BusinessSettings
-): Promise<{ ok: boolean; code?: string }> {
-  if (!invoice.verifyCode) return { ok: false, code: undefined };
+): Promise<RegisterResult> {
+  if (!invoice.verifyCode) return { ok: false };
   const payload: VerifyBillPayload = {
     code: invoice.verifyCode,
     billNo: invoice.no,
@@ -292,10 +314,14 @@ export async function registerVerifiedBill(
       qty: it.qty,
       price: it.price,
       discount: it.discount || 0,
+      ...(it.origPrice !== undefined ? { origPrice: it.origPrice } : {}),
+      ...(it.discountType ? { discountType: it.discountType, discountValue: it.discountValue || 0 } : {}),
     })),
     gstPercent: invoice.totals.gst ? settings.gstPercent || 0 : 0,
     gstAmount: invoice.totals.gst || 0,
     discount: invoice.totals.discount || 0,
+    discountType: invoice.discountType,
+    discountValue: invoice.discountValue,
     labourCharge: invoice.labourCharge || 0,
     autoCharge: invoice.autoCharge || 0,
     subtotal: invoice.totals.subtotal,
@@ -308,14 +334,20 @@ export async function registerVerifiedBill(
   };
   try {
     const res = await authedFetch('/api/verify/register', 'POST', payload);
+    if (res.status === 200) {
+      return {
+        ok: true,
+        needsApproval: Boolean(res.data.needsApproval),
+      };
+    }
     if (res.status === 409 && res.data.error === 'billRegistered' && typeof res.data.code === 'string') {
       // another device registered this bill first — adopt ITS code so the
       // printed barcode matches the registry (self-healing race recovery)
       return { ok: true, code: res.data.code };
     }
-    return { ok: res.status === 200, code: undefined };
+    return { ok: false };
   } catch {
-    return { ok: false, code: undefined };
+    return { ok: false, offline: true };
   }
 }
 
@@ -458,6 +490,278 @@ export const apiStaffLogin = async (username: string, password: string): Promise
     return { ok: false, error: (data.error as string) ?? 'network' };
   } catch {
     return { ok: false, error: 'network' };
+  }
+};
+
+/* ------------------------------------------------------------------ */
+/* Owner (Admin) username + password login — v35                       */
+/* ------------------------------------------------------------------ */
+
+export interface OwnerLoginResult {
+  ok: boolean;
+  error?: string;
+  token?: string;
+  username?: string;
+  passwordIsDefault?: boolean;
+  dekSalt?: string | null;
+  dekIv?: string | null;
+  dekWrapped?: string | null;
+}
+
+/** Owner/Admin sign-in with the username + password gate (Pradeep / 2125
+ *  until changed). The session is bound to the OWNER role and the vault DEK
+ *  wrapped under THIS password comes back so the device opens the vault. */
+export const apiOwnerLogin = async (username: string, password: string): Promise<OwnerLoginResult> => {
+  try {
+    const { status, data } = await postJson('/api/auth/owner/login', { username, password });
+    if (status === 200) {
+      return {
+        ok: true,
+        token: data.token as string,
+        username: data.username as string,
+        passwordIsDefault: Boolean(data.passwordIsDefault),
+        dekSalt: data.dekSalt as string | null,
+        dekIv: data.dekIv as string | null,
+        dekWrapped: data.dekWrapped as string | null,
+      };
+    }
+    return { ok: false, error: (data.error as string) ?? 'network' };
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+};
+
+export interface OwnerPasswordResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Seed (no owner password yet — the documented initial credentials) or
+ * change (current password proven) the Owner username + password. The DEK
+ * material is re-wrapped under the new password ON THIS DEVICE.
+ */
+export const apiOwnerPassword = async (payload: {
+  username: string;
+  password: string;
+  currentPassword?: string;
+  isDefault?: boolean;
+  dekSalt: string;
+  dekIv: string;
+  dekWrapped: string;
+}): Promise<OwnerPasswordResult> => {
+  const res = await authedFetch('/api/auth/owner/password', 'POST', payload);
+  if (res.status === 200) return { ok: true };
+  return { ok: false, error: String(res.data.error ?? 'network') };
+};
+
+/** STAFF changes their OWN password (current one proven, DEK re-wrapped here) */
+export const apiStaffMePassword = async (payload: {
+  currentPassword: string;
+  password: string;
+  dekSalt: string;
+  dekIv: string;
+  dekWrapped: string;
+}): Promise<OwnerPasswordResult> => {
+  const res = await authedFetch('/api/staff/me/password', 'POST', payload);
+  if (res.status === 200) return { ok: true };
+  return { ok: false, error: String(res.data.error ?? 'network') };
+};
+
+/* ------------------------------------------------------------------ */
+/* Server-authoritative billing configuration — v35                    */
+/* ------------------------------------------------------------------ */
+
+export interface RemoteConfig {
+  upiId: string;
+  gstPercent: number;
+  discountMaxPercent: number;
+  discountMaxAmount: number;
+  discountApprovalRequired: boolean;
+}
+
+const DEFAULT_CONFIG: RemoteConfig = {
+  upiId: '',
+  gstPercent: 0,
+  discountMaxPercent: 100,
+  discountMaxAmount: 999999,
+  discountApprovalRequired: false,
+};
+
+/** Every authed device reads the config (staff billing needs the limits).
+ *  `exists=false` = the owner has never saved config — devices then SEED the
+ *  server from their own saved settings instead of mirroring blanks. */
+export const apiConfigGet = async (): Promise<(RemoteConfig & { exists: boolean }) | null> => {
+  try {
+    const res = await authedFetch('/api/config', 'GET');
+    if (res.status !== 200) return null;
+    const c = res.data.config as Partial<RemoteConfig> | undefined;
+    if (!c) return null;
+    return { ...DEFAULT_CONFIG, ...c, exists: Boolean(res.data.exists) };
+  } catch {
+    return null;
+  }
+};
+
+/** OWNER ONLY — save config changes (the server audits every change).
+ *  PATCH semantics: absent fields keep their current server value. */
+export const apiConfigPut = async (
+  config: Partial<RemoteConfig>
+): Promise<{ ok: boolean; error?: string }> => {
+  const res = await authedFetch('/api/config', 'PUT', config);
+  if (res.status === 200) return { ok: true };
+  return { ok: false, error: String(res.data.error ?? 'network') };
+};
+
+/* ------------------------------------------------------------------ */
+/* Admin notifications — one per successful staff bill — v35           */
+/* ------------------------------------------------------------------ */
+
+export interface NotificationRow {
+  id: string;
+  type: string;
+  billNo: string;
+  staffName: string;
+  staffUsername: string;
+  customerName: string;
+  total: number;
+  discount: number;
+  paymentStatus: string;
+  payload: Record<string, unknown>;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export const apiNotificationsGet = async (
+  since?: string
+): Promise<{ unread: number; notifications: NotificationRow[] } | null> => {
+  try {
+    const qs = since ? `?since=${encodeURIComponent(since)}` : '';
+    const res = await authedFetch(`/api/notifications${qs}`, 'GET');
+    if (res.status !== 200) return null;
+    return {
+      unread: Number(res.data.unread ?? 0),
+      notifications: (res.data.notifications ?? []) as NotificationRow[],
+    };
+  } catch {
+    return null;
+  }
+};
+
+/** mark notifications read — {ids} or {all:true} */
+export const apiNotificationsRead = async (
+  ids?: string[]
+): Promise<{ ok: boolean; unread?: number }> => {
+  const res = await authedFetch('/api/notifications', 'POST', ids ? { ids } : { all: true });
+  if (res.status === 200) return { ok: true, unread: Number(res.data.unread ?? 0) };
+  return { ok: false };
+};
+
+/* ------------------------------------------------------------------ */
+/* Staff Billing Activity — the owner's monitor over the registry — v35 */
+/* ------------------------------------------------------------------ */
+
+export interface BillRecordItem {
+  name: string;
+  size: string;
+  qty: number;
+  price: number;
+  origPrice?: number;
+  discountType?: string;
+  discountValue?: number;
+  discount: number;
+}
+
+export interface BillRecord {
+  code: string;
+  billNo: string;
+  companyName: string;
+  billDateISO: string;
+  customerName: string;
+  items: BillRecordItem[];
+  gstPercent: number;
+  gstAmount: number;
+  discount: number;
+  labourCharge: number;
+  autoCharge: number;
+  subtotal: number;
+  total: number;
+  paid: number;
+  balance: number;
+  paymentMode: string;
+  paymentStatus: string;
+  createdBy: string;
+  createdById: string;
+  cancelled: boolean;
+  highDiscount: boolean;
+}
+
+export interface StaffTotals {
+  staff: string;
+  bills: number;
+  sales: number;
+  discounts: number;
+}
+
+export const apiBillsGet = async (params: {
+  q?: string;
+  staff?: string;
+  from?: string;
+  to?: string;
+}): Promise<{ bills: BillRecord[]; staffTotals: StaffTotals[] } | null> => {
+  try {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    if (params.staff) qs.set('staff', params.staff);
+    if (params.from) qs.set('from', params.from);
+    if (params.to) qs.set('to', params.to);
+    const res = await authedFetch(`/api/bills?${qs.toString()}`, 'GET');
+    if (res.status !== 200) return null;
+    return {
+      bills: (res.data.bills ?? []) as BillRecord[],
+      staffTotals: (res.data.staffTotals ?? []) as StaffTotals[],
+    };
+  } catch {
+    return null;
+  }
+};
+
+/* ------------------------------------------------------------------ */
+/* Audit log — price edits, discounts, cancellations, config — v35     */
+/* ------------------------------------------------------------------ */
+
+export interface AuditRow {
+  id: string;
+  actor: string;
+  actorRole: string;
+  action: string;
+  target: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export const apiAuditGet = async (limit = 200): Promise<AuditRow[]> => {
+  try {
+    const res = await authedFetch(`/api/audit?limit=${limit}`, 'GET');
+    if (res.status !== 200) return [];
+    return (res.data.events ?? []) as AuditRow[];
+  } catch {
+    return [];
+  }
+};
+
+/** record a client-side action (product price change, etc.) — the server
+ *  stamps the ACTOR from the session, so the role is always trustworthy */
+export const apiAuditPost = async (
+  action: string,
+  target: string,
+  details: Record<string, unknown>
+): Promise<boolean> => {
+  try {
+    const res = await authedFetch('/api/audit', 'POST', { action, target, details });
+    return res.status === 200;
+  } catch {
+    return false;
   }
 };
 

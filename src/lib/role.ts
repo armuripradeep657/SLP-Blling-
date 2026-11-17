@@ -77,4 +77,13 @@ export function useIdentity(): SessionIdentity {
 }
 
 /** Tabs only staff may NOT open — the backend rejects the matching APIs too */
-export const OWNER_ONLY_TABS = ['products', 'ledger', 'labour', 'settings'] as const;
+export const OWNER_ONLY_TABS = ['dashboard', 'products', 'ledger', 'labour', 'settings'] as const;
+
+/**
+ * Owner (Admin) INITIAL credentials (v35) — seeded server-side (scrypt
+ * hash + DEK wrapped under a password-derived key; the plain text is never
+ * stored) the first time the owner unlocks with the MPIN. The app nags in
+ * Settings → Security until the password is changed.
+ */
+export const OWNER_DEFAULT_USERNAME = 'Pradeep';
+export const OWNER_DEFAULT_PASSWORD = '2125';

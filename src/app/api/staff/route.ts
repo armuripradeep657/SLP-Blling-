@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { bearerToken, hashPassword, ownerSlot } from '@/lib/server/auth';
+import { bearerToken, hashPassword, sessionAuth } from '@/lib/server/auth';
 
 /**
  * OWNER-ONLY staff management (backend-enforced: staff sessions get 403).
@@ -13,8 +13,10 @@ import { bearerToken, hashPassword, ownerSlot } from '@/lib/server/auth';
  * able to open it (end-to-end encryption preserved for staff logins).
  */
 export async function GET(req: Request) {
-  const slot = await ownerSlot(bearerToken(req));
-  if (!slot) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  const auth = await sessionAuth(bearerToken(req));
+  if (!auth) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (auth.role !== 'owner') return Response.json({ error: 'forbidden' }, { status: 403 });
+  const slot = auth.slot;
 
   const staff = await db.staffUser.findMany({
     orderBy: { createdAt: 'asc' },
@@ -24,8 +26,10 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const slot = await ownerSlot(bearerToken(req));
-  if (!slot) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  const auth = await sessionAuth(bearerToken(req));
+  if (!auth) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (auth.role !== 'owner') return Response.json({ error: 'forbidden' }, { status: 403 });
+  const slot = auth.slot;
 
   let body: Record<string, unknown>;
   try {
@@ -59,6 +63,19 @@ export async function POST(req: Request) {
       dekWrapped: typeof body.dekWrapped === 'string' ? body.dekWrapped : null,
     },
   });
+
+  await db.auditEvent
+    .create({
+      data: {
+        slot,
+        actor: 'Owner',
+        actorRole: 'owner',
+        action: 'staff_created',
+        target: created.username,
+        detailsJson: JSON.stringify({ name: created.name }),
+      },
+    })
+    .catch(() => undefined);
 
   return Response.json({
     ok: true,

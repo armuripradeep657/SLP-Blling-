@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Eye, EyeOff, KeyRound, Lock, RefreshCw, ScanLine, ShieldCheck, UserRound } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, KeyRound, Lock, RefreshCw, ScanLine, ShieldCheck, UserRound, UserCog } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useT } from '@/hooks/use-app-lang';
 import {
@@ -13,6 +13,8 @@ import {
   apiMpinReset,
   apiMpinSetup,
   apiMpinUnlock,
+  apiOwnerLogin,
+  apiOwnerPassword,
   apiPullVault,
   apiStaffLogin,
   getDeviceDek,
@@ -31,10 +33,10 @@ import {
   unwrapDek,
   wrapDek,
 } from '@/lib/crypto';
-import { getIdentity, setIdentity } from '@/lib/role';
+import { getIdentity, setIdentity, OWNER_DEFAULT_PASSWORD, OWNER_DEFAULT_USERNAME } from '@/lib/role';
 import { mergeVaultBlob, pushVaultNow } from '@/lib/sync';
 
-type Step = 'checking' | 'setup' | 'unlock' | 'reclaim' | 'forgot' | 'staff';
+type Step = 'checking' | 'setup' | 'unlock' | 'reclaim' | 'forgot' | 'staff' | 'owner';
 
 /**
  * MPIN entry with the digits HIDDEN (the owner asked for that) — the field is
@@ -158,6 +160,10 @@ export default function LockScreen({
   const [staffCount, setStaffCount] = useState(0);
   const [staffUser, setStaffUser] = useState('');
   const [staffPass, setStaffPass] = useState('');
+  /** OWNER (Admin) sign-in — username + password (Pradeep / 2125 until changed) */
+  const [ownerPasswordReady, setOwnerPasswordReady] = useState(false);
+  const [ownerUser, setOwnerUser] = useState('');
+  const [ownerPass, setOwnerPass] = useState('');
 
   /** Instant double-submit guard — state alone is too slow for fast double-taps */
   const busyRef = useRef(false);
@@ -188,6 +194,7 @@ export default function LockScreen({
       return;
     }
     setStaffCount(res.staffCount ?? 0);
+    setOwnerPasswordReady(Boolean(res.hasOwnerPassword));
     setSalt(res.dekSalt ?? null);
     setLegacy(
       res.legacy && res.dekSalt && res.dekWrapped
@@ -232,6 +239,17 @@ export default function LockScreen({
     if (mat) {
       setSalt(mat.salt);
       setStep('unlock');
+      // the gate still needs the SERVER state for its links (owner password
+      // seeded? staff accounts exist?) — quiet background fetch, the MPIN
+      // entry itself stays offline and instant
+      void apiAuthState()
+        .then((res) => {
+          if (res.ok) {
+            setOwnerPasswordReady(Boolean(res.hasOwnerPassword));
+            setStaffCount(res.staffCount ?? 0);
+          }
+        })
+        .catch(() => undefined);
       return;
     }
     void probeRef.current?.();
@@ -657,9 +675,101 @@ export default function LockScreen({
     });
   };
 
+  /**
+   * OWNER PASSWORD SEEDING (silent, once). The documented initial Admin
+   * credentials (Pradeep / 2125) are registered the first time the owner
+   * unlocks with the MPIN after this update: the DEK is re-wrapped under a
+   * key derived from that password HERE on the owner's device and the server
+   * stores only the scrypt hash + wrapped key. The owner is nudged to change
+   * the password (Settings → Security). Failing silently is fine — the next
+   * MPIN unlock retries.
+   */
+  const ensureOwnerPassword = async () => {
+    try {
+      const st = await apiAuthState();
+      if (!st.ok || st.hasOwnerPassword) return;
+      const dekB64 = getDeviceDek();
+      if (!dekB64) return;
+      const dek = await importDek(dekB64).catch(() => null);
+      if (!dek) return;
+      const salt = randomB64(16);
+      const { kek } = await deriveKek(OWNER_DEFAULT_PASSWORD, salt);
+      const { wrapped, iv } = await wrapDek(dek, kek);
+      await apiOwnerPassword({
+        username: OWNER_DEFAULT_USERNAME,
+        password: OWNER_DEFAULT_PASSWORD,
+        isDefault: true,
+        dekSalt: salt,
+        dekIv: iv,
+        dekWrapped: wrapped,
+      });
+    } catch {
+      /* retried on the next owner unlock */
+    }
+  };
+
+  /** OWNER (Admin) sign-in — username + password. Same mechanics as the staff
+   *  gate: the session binds to the owner role and the vault DEK wrapped
+   *  under THIS password opens the encrypted data. */
+  const ownerSignIn = async () => {
+    if (busyRef.current) return;
+    setError(null);
+    const username = ownerUser.trim();
+    if (!username || !ownerPass) {
+      setError(t('lock.staffErr'));
+      return;
+    }
+    await withWatchdog(async () => {
+      setBusyBoth(true);
+      try {
+        const res = await apiOwnerLogin(username, ownerPass);
+        if (!res.ok || !res.token) {
+          setBusyBoth(false);
+          setError(
+            res.error === 'noOwnerPassword'
+              ? t('ownerLogin.errNotSeeded')
+              : res.error === 'rateLimited'
+                ? t('lock.errTooMany')
+                : t('ownerLogin.errWrong')
+          );
+          return;
+        }
+        setAuth(res.token);
+        setIdentity('owner');
+        // open the encrypted vault with the key wrapped for the owner password
+        if (res.dekSalt && res.dekIv && res.dekWrapped) {
+          const { kek } = await deriveKek(ownerPass, res.dekSalt);
+          const dek = await unwrapDek(res.dekWrapped, res.dekIv, kek).catch(() => null);
+          if (!dek) {
+            setBusyBoth(false);
+            lockApp();
+            setError(t('ownerLogin.errWrong'));
+            return;
+          }
+          setDeviceDek(await exportDek(dek));
+          const pull = await apiPullVault();
+          if (pull.kind === 'data') {
+            await mergeVaultBlob(pull.ciphertext, pull.dataIv, dek);
+          } else if (pull.kind === 'offline') {
+            // offline owner login — the local vault copy (if any) still opens
+          } else {
+            await pushVaultNow(); // empty vault — start it from local data
+          }
+        }
+        setBusyBoth(false);
+        setOwnerPass('');
+        onUnlocked();
+      } catch {
+        setBusyBoth(false);
+        setError(t('lock.errNetwork'));
+      }
+    });
+  };
+
   /** owner paths re-stamp the identity so a previous staff login cannot linger */
   const finishOwner = () => {
     setIdentity('owner');
+    void ensureOwnerPassword();
     onUnlocked();
   };
 
@@ -814,6 +924,23 @@ export default function LockScreen({
               {t('lock.staffLink')}
             </button>
           )}
+          {step === 'unlock' && ownerPasswordReady && (
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setOwnerPass('');
+                setStep('owner');
+              }}
+              disabled={busy}
+              aria-label="Owner admin login"
+              data-owner-login-link
+              className="mx-auto flex items-center gap-1.5 text-xs font-semibold text-blue-700 underline-offset-2 hover:underline disabled:opacity-40"
+            >
+              <UserCog className="size-3.5" />
+              {t('ownerLogin.link')}
+            </button>
+          )}
         </>
       )}
 
@@ -945,6 +1072,70 @@ export default function LockScreen({
           >
             <ArrowLeft className="size-3.5" />
             {t('lock.backToOwner')}
+          </Button>
+        </>
+      )}
+
+      {step === 'owner' && (
+        <>
+          <div className="text-center">
+            <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-900">
+              <UserCog className="size-4" />
+              {t('ownerLogin.title')}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="lock-owner-user" className="text-xs text-muted-foreground">
+              {t('ownerLogin.username')}
+            </Label>
+            <Input
+              id="lock-owner-user"
+              type="text"
+              autoComplete="username"
+              value={ownerUser}
+              onChange={(e) => setOwnerUser(e.target.value)}
+              aria-label="Owner username"
+              className="h-11"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="lock-owner-pass" className="text-xs text-muted-foreground">
+              {t('ownerLogin.password')}
+            </Label>
+            <Input
+              id="lock-owner-pass"
+              type="password"
+              autoComplete="current-password"
+              value={ownerPass}
+              onChange={(e) => setOwnerPass(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void ownerSignIn();
+              }}
+              aria-label="Owner password"
+              className="h-11"
+            />
+          </div>
+          <Button
+            onClick={ownerSignIn}
+            disabled={busy}
+            className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+            aria-label="Owner sign in"
+          >
+            <Lock className="size-4" />
+            {busy ? t('lock.verifying') : t('ownerLogin.btn')}
+          </Button>
+          <Button
+            onClick={() => {
+              setError(null);
+              void probeRef.current?.();
+            }}
+            disabled={busy}
+            variant="ghost"
+            className="h-9 w-full text-xs"
+            aria-label="Back to MPIN"
+          >
+            <ArrowLeft className="size-3.5" />
+            {t('lock.back')}
           </Button>
         </>
       )}

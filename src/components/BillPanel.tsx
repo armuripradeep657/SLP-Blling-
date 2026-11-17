@@ -13,12 +13,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Minus, Plus, Trash2, UserRound, ReceiptText, Tag, Truck } from 'lucide-react';
+import { Minus, Plus, Trash2, UserRound, ReceiptText, Tag, Truck, TriangleAlert } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { computeTotals, fmt, lineNet, normalizePhone } from '@/lib/billing';
+import { computeTotals, fmt, lineNet, lineOverLimit, normalizePhone, itemDiscountAmount } from '@/lib/billing';
 import { BILL_LANGUAGES } from '@/lib/i18n';
 import { useT } from '@/hooks/use-app-lang';
-import type { BillLanguage, DeliveryInfo, PaymentMode } from '@/lib/types';
+import { useIdentity } from '@/lib/role';
+import type { BillLanguage, DeliveryInfo, DiscountType, PaymentMode } from '@/lib/types';
 
 const MODES: PaymentMode[] = ['Cash', 'UPI', 'Card', 'Due'];
 
@@ -37,6 +38,16 @@ export default function BillPanel({
   const cfg = useStore((s) => s.billConfig);
   const invoices = useStore((s) => s.invoices);
   const settings = useStore((s) => s.settings);
+  const srvConfig = useStore((s) => s.srvConfig);
+  const identity = useIdentity();
+  const isStaff = identity.role === 'staff';
+  /** the OWNER's discount limits — enforced for staff here AND on the server */
+  const limits = isStaff
+    ? { discountMaxPercent: srvConfig.discountMaxPercent, discountMaxAmount: srvConfig.discountMaxAmount }
+    : null;
+  const overLimitLines = limits ? cart.filter((c) => lineOverLimit(c, limits)) : [];
+  /** approval mode: over-limit staff bills still save, flagged for the owner */
+  const approvalMode = srvConfig.discountApprovalRequired;
   const setCustomer = useStore((s) => s.setCustomer);
   const setBillConfig = useStore((s) => s.setBillConfig);
   const incQty = useStore((s) => s.incQty);
@@ -168,6 +179,11 @@ export default function BillPanel({
 
       {/* Items */}
       <section aria-label="Bill items" className="space-y-2">
+        {isStaff && (
+          <p className="rounded-lg bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-800">
+            {t('bill.staffEditNote')}
+          </p>
+        )}
         <div className="flex items-center justify-between">
           <Label className="text-sm font-semibold">
             {t('bill.items')} ({cart.length})
@@ -206,7 +222,9 @@ export default function BillPanel({
                     <Trash2 className="size-4" />
                   </Button>
                 </div>
-                {/* Owner can change the cost directly + discount for this item */}
+                {/* Owner AND staff can change the cost of THIS bill line and
+                    discount that item (₹ or %) — the product catalog itself
+                    never changes: the next customer bills at the saved price. */}
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -223,23 +241,54 @@ export default function BillPanel({
                       className="h-9"
                       aria-label={`Unit price for ${it.name}`}
                     />
+                    {it.origPrice !== undefined && Math.abs(it.origPrice - it.price) > 0.001 ? (
+                      <p data-orig-price className="text-[10px] font-semibold text-amber-700">
+                        {t('bill.savedPrice')} ₹{fmt(it.origPrice)}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
                       <Tag className="size-2.5" /> {t('bill.discountItem')}
                     </Label>
-                    <Input
-                      type="number"
-                      inputMode="decimal"
-                      min={0}
-                      value={it.discount || ''}
-                      onChange={(e) =>
-                        updateCartItem(it.key, { discount: Math.max(0, Number(e.target.value) || 0) })
-                      }
-                      placeholder="0"
-                      className="h-9"
-                      aria-label={`Discount for ${it.name}`}
-                    />
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateCartItem(it.key, {
+                            discountType: (it.discountType === 'percent' ? 'amount' : 'percent') as DiscountType,
+                            discountValue: it.discountType === 'percent' ? (it.discountValue || 0) : (it.discount || 0),
+                          })
+                        }
+                        className="h-9 w-9 shrink-0 rounded-md border text-sm font-bold hover:bg-accent"
+                        aria-label={`Discount type for ${it.name}: ${it.discountType === 'percent' ? 'rupees' : 'percent'}`}
+                        title={it.discountType === 'percent' ? 'Switch to ₹' : 'Switch to %'}
+                      >
+                        {it.discountType === 'percent' ? '%' : '₹'}
+                      </button>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        value={it.discountType === 'percent' ? (it.discountValue || '') : (it.discount || '')}
+                        onChange={(e) => {
+                          const v = Math.max(0, Number(e.target.value) || 0);
+                          if (it.discountType === 'percent') {
+                            updateCartItem(it.key, { discountType: 'percent', discountValue: v });
+                          } else {
+                            updateCartItem(it.key, { discountType: 'amount', discountValue: v, discount: v });
+                          }
+                        }}
+                        placeholder="0"
+                        className="h-9"
+                        aria-label={`Discount for ${it.name}`}
+                      />
+                    </div>
+                    {limits && lineOverLimit(it, limits) ? (
+                      <p className="text-[10px] font-bold text-red-600">
+                        {approvalMode ? t('bill.discountNeedsApproval') : t('bill.discountOverLimit')}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="mt-2 flex items-center justify-between">
@@ -447,8 +496,20 @@ export default function BillPanel({
         </div>
       </section>
 
+      {overLimitLines.length > 0 && (
+        <p
+          data-discount-limit-warning
+          className={`flex items-start gap-1.5 rounded-lg px-3 py-2 text-[11px] font-semibold ${
+            approvalMode ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-700'
+          }`}
+        >
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+          {approvalMode ? t('bill.discountNeedsApproval') : t('bill.discountOverLimit')}
+        </p>
+      )}
       <Button
         onClick={onCompleteClick}
+        disabled={overLimitLines.length > 0 && !approvalMode}
         className="anim-glow w-full h-14 text-base font-bold bg-blue-600 hover:bg-blue-700 text-white"
       >
         <ReceiptText className="size-5" />

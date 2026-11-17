@@ -41,7 +41,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
     return Response.json({ status, error: 'INVALID BILL – BARCODE NOT FOUND' }, { status: 404 });
   }
 
-  let items: Array<{ name: string; size: string; qty: number; price: number; discount: number }> = [];
+  let items: Array<{
+    name: string;
+    size: string;
+    qty: number;
+    price: number;
+    discount: number;
+    origPrice?: number;
+    discountType?: string;
+    discountValue?: number;
+  }> = [];
   try {
     const parsed = JSON.parse(bill.itemsJson) as typeof items;
     if (Array.isArray(parsed)) items = parsed;
@@ -77,6 +86,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
       paymentMode: bill.paymentMode,
       paymentStatus: bill.paymentStatus,
       createdBy: bill.createdBy,
+      createdById: bill.createdById,
+      needsApproval: bill.needsApproval,
       registeredAtISO: bill.createdAt,
     },
     history: { count: logCount, recent },

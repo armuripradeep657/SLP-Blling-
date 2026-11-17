@@ -15,11 +15,15 @@
 /* ------------------------------------------------------------------ */
 
 import { useStore } from './store';
-import type { BusinessSettings, SyncPayload } from './types';
+import type { BusinessSettings, ServerConfig, SyncPayload } from './types';
 import { decryptJson, encryptJson, importDek } from './crypto';
+import { getIdentity } from './role';
 import {
+  apiConfigGet,
+  apiConfigPut,
   apiMpinSetup,
   apiMpinUnlock,
+  apiNotificationsGet,
   apiPullVault,
   apiPushVault,
   getDeviceDek,
@@ -41,6 +45,11 @@ let lastSyncAt = 0;
 let lastError: string | null = null;
 let lastPushedSig: string | null = null;
 let lastReauthAt = 0;
+/** config change saved offline — pushed to the server on the next poll */
+let pendingConfig: Partial<ServerConfig> | null = null;
+let lastFlushAt = 0;
+/** config PUTs run ONE AT A TIME — two quick saves must never race */
+let configChain: Promise<unknown> = Promise.resolve();
 
 /** Tell the UI the session needs the owner's MPIN again (server lost it / expired) */
 function maybeNotifyReauth(): void {
@@ -290,6 +299,7 @@ async function pullOnce(): Promise<void> {
       lastSyncAt = Date.now();
       lastError = null;
     }
+    void pollServerData();
   } catch (err) {
     // wrong key / corrupt blob — surface but never wipe local data
     lastError = err instanceof Error ? err.message : 'pullFailed';
@@ -302,6 +312,84 @@ function schedulePush(): void {
     pushTimer = null;
     void pushNow();
   }, PUSH_DEBOUNCE_MS);
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Server-authoritative config + admin notifications (v35)             */
+/*                                                                     */
+/* Every poll cycle (~4 s) the device ALSO:                            */
+/*   • pushes a config change that was saved while offline,            */
+/*   • pulls the server config (UPI ID, GST rate, staff discount       */
+/*     limits) and mirrors it into the local settings — the server is  */
+/*     the single source of truth, so an admin change reaches every    */
+/*     device within seconds,                                          */
+/*   • pulls the admin notification unread count (owner devices),      */
+/*   • retries bills whose barcode registration was queued offline.    */
+/* ------------------------------------------------------------------ */
+
+async function pollServerData(): Promise<void> {
+  if (!isUnlocked()) return;
+  const st = useStore.getState();
+  const now = Date.now();
+
+  // 1) a config change made offline goes to the server first
+  if (pendingConfig) {
+    const res = await apiConfigPut(pendingConfig);
+    if (res.ok) pendingConfig = null;
+  }
+
+  // 2) server config → local mirror (server wins when reachable). Before the
+  //    owner ever saved config (exists=false), devices SEED the server from
+  //    their saved settings instead of mirroring blanks back.
+  const cfg = await apiConfigGet();
+  if (cfg) {
+    const { exists, ...serverConfig } = cfg;
+    st.setSrvConfig(serverConfig);
+    if (!exists && st.settings.upiId) {
+      void saveConfigToServer({
+        ...serverConfig,
+        upiId: st.settings.upiId,
+        gstPercent: st.settings.gstPercent ?? 0,
+      });
+    } else if (exists) {
+      const patch: Partial<BusinessSettings> = {};
+      if ((st.settings.upiId || '') !== serverConfig.upiId) patch.upiId = serverConfig.upiId;
+      if ((st.settings.gstPercent ?? 0) !== serverConfig.gstPercent) patch.gstPercent = serverConfig.gstPercent;
+      if (Object.keys(patch).length > 0) useStore.getState().saveSettings(patch);
+    }
+  }
+
+  // 3) admin notification unread count — owner devices only
+  if (getIdentity().role === 'owner') {
+    const res = await apiNotificationsGet();
+    if (res) useStore.getState().setUnreadNotifs(res.unread);
+  }
+
+  // 4) offline-saved bills join the barcode registry once we are back online
+  if (useStore.getState().pendingRegIds.length > 0 && now - lastFlushAt > 15000) {
+    lastFlushAt = now;
+    void useStore.getState().flushPendingRegistrations();
+  }
+}
+
+/**
+ * Save a config change to the server (OWNER). When offline the change is
+ * queued in memory and retried by the poll loop — a lost connection never
+ * silently drops an admin change.
+ */
+export async function saveConfigToServer(config: Partial<ServerConfig>): Promise<boolean> {
+  const run = configChain.then(async () => {
+    const res = await apiConfigPut(config);
+    if (res.ok) {
+      pendingConfig = null;
+      return true;
+    }
+    pendingConfig = { ...config };
+    return false;
+  });
+  configChain = run.catch(() => undefined);
+  return run;
 }
 
 /** Kick off the engine (idempotent) — call once after the app unlocks */

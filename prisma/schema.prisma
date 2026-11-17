@@ -21,6 +21,18 @@ model SyncAccount {
   dekSalt   String?
   /// SHA-256 of the key derived from the MPIN — proves the MPIN without storing it
   pinVerifier String?
+  /// ---- Owner (Admin) username + password login (v35) ----
+  /// login name for the username+password gate (default "Pradeep")
+  ownerUsername String? @unique
+  /// scrypt hash of the owner password — the password itself is never stored
+  ownerPasswordHash String?
+  /// DEK wrapped (AES-GCM) under a key derived from the owner PASSWORD
+  ownerDekWrapped String?
+  ownerDekIv      String?
+  /// PBKDF2 salt for the owner-password key
+  ownerDekSalt    String?
+  /// true until the owner changes the seeded default password — the app nags
+  ownerPasswordIsDefault Boolean @default(false)
   /// Encrypted snapshot of the whole business data (settings, products, bills, ledger)
   ciphertext  String?
   dataIv      String?
@@ -28,6 +40,76 @@ model SyncAccount {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   sessions    Session[]
+}
+
+/// Server-authoritative billing configuration (v35). The encrypted vault
+/// keeps the shop's private data; THIS table holds the fields the SERVER
+/// must enforce (staff discount limits at registration time) and the fields
+/// every device must agree on without waiting for a vault merge (UPI ID for
+/// payment QRs, GST rate for new bills). Owner-only writes.
+model AppConfig {
+  id        String   @id @default(cuid())
+  slot      String   @unique @default("owner")
+  upiId     String   @default("")
+  gstPercent Float  @default(0)
+  /// staff discount limits — per item, either a % of the line or a flat ₹
+  discountMaxPercent Float  @default(100)
+  discountMaxAmount  Float  @default(999999)
+  /// when true, a staff discount beyond the limits saves the bill flagged
+  /// "pending approval" instead of being rejected
+  discountApprovalRequired Boolean @default(false)
+  /// atomic bill-number counter — every device RESERVES its bill number
+  /// here before printing, so two staff billing at the same moment can
+  /// never print the same bill number (req: unique server-side bill IDs)
+  nextBillNo Int @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+/// Admin notifications (v35) — one row per successful STAFF bill. Created
+/// server-side at registration time from the saved bill data, so a
+/// notification can never exist for a bill that failed to save, and the
+/// unique (type, billNo) index makes duplicate notifications impossible.
+model Notification {
+  id            String    @id @default(cuid())
+  slot          String    @default("owner")
+  /// 'staff_bill' | 'approval' | 'system'
+  type          String    @default("staff_bill")
+  billNo        String
+  /// staff display name + login username + stable staff id
+  staffName     String    @default("")
+  staffUsername String    @default("")
+  customerName  String    @default("")
+  total         Float     @default(0)
+  discount      Float     @default(0)
+  paymentStatus String    @default("Due")
+  payloadJson   String    @default("{}")
+  /// null = unread; set when the owner opens it
+  readAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@unique([type, billNo])
+  @@index([createdAt])
+}
+
+/// Audit log (v35) — price edits, discounts, bill cancellations, staff and
+/// settings changes. Written server-side (trusted role from the session),
+/// immutable for clients; only the owner reads it.
+model AuditEvent {
+  id          String   @id @default(cuid())
+  slot        String   @default("owner")
+  actor       String   @default("")
+  actorRole   String   @default("owner")
+  /// bill_created | price_edit | discount_applied | bill_cancelled |
+  /// staff_created | staff_reset | staff_deactivated | staff_deleted |
+  /// config_changed | owner_password_changed
+  action      String
+  /// bill no / staff username / config key — what the action touched
+  target      String   @default("")
+  detailsJson String   @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action])
 }
 
 model Session {
@@ -116,6 +198,10 @@ model VerifiedBill {
   paymentStatus String   @default("Due")
   /// who billed it — Owner or the staff username
   createdBy     String   @default("Owner")
+  /// the staff ACCOUNT username when a staff member billed it (stable id)
+  createdById   String   @default("")
+  /// staff bill with a discount beyond the owner's limits — awaits approval
+  needsApproval Boolean  @default(false)
   /// cancelled bills fail verification with the CANCELLED message
   cancelled     Boolean  @default(false)
   /// bill line items as JSON [{name, size, qty, price, discount}]

@@ -8,6 +8,7 @@ import LedgerView from '@/components/LedgerView';
 import HistoryView from '@/components/HistoryView';
 import SettingsView from '@/components/SettingsView';
 import VerifyView from '@/components/VerifyView';
+import AdminDashboard from '@/components/AdminDashboard';
 import BillPanel from '@/components/BillPanel';
 import PaymentScreen from '@/components/PaymentScreen';
 import InvoiceModal, { type DocView } from '@/components/InvoiceModal';
@@ -317,6 +318,13 @@ export default function Home() {
           <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">{t('page.loading')}</div>
         ) : (
           <div key={activeTab} className="anim-fade-up">
+            {activeTab === 'dashboard' && identity.role === 'owner' && (
+              <div className="mx-auto max-w-2xl">
+                <h2 className="mb-3 text-base font-bold text-neutral-800">{t('dash.title')}</h2>
+                <AdminDashboard />
+              </div>
+            )}
+
             {activeTab === 'bill' && (
               <div className="lg:grid lg:grid-cols-[1fr_400px] lg:gap-6 lg:items-start">
                 <div>

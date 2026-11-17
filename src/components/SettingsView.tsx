@@ -23,6 +23,9 @@ import { normalizePhone } from '@/lib/billing';
 import InstallAppSection from '@/components/InstallAppSection';
 import { useT, useAppLang } from '@/hooks/use-app-lang';
 import {
+  apiAuthState,
+  apiConfigGet,
+  apiOwnerPassword,
   apiStaffCreate,
   apiStaffDelete,
   apiStaffList,
@@ -33,8 +36,8 @@ import {
   type StaffRow,
 } from '@/lib/cloud';
 import { deriveKek, exportDek, importDek, randomB64, wrapDek } from '@/lib/crypto';
-import { getSyncStatus, syncNow } from '@/lib/sync';
-import { CloudUpload, Download, ImageUp, Lock, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, Upload, UserRound } from 'lucide-react';
+import { getSyncStatus, saveConfigToServer, syncNow } from '@/lib/sync';
+import { CloudUpload, Download, ImageUp, KeyRound, Lock, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, TriangleAlert, Upload, UserRound } from 'lucide-react';
 import type {
   Appearance,
   BgThemeId,
@@ -171,6 +174,14 @@ export default function SettingsView() {
 
       <Separator />
 
+      <DiscountLimitsSection />
+
+      <Separator />
+
+      <SecuritySection />
+
+      <Separator />
+
       <StaffSection />
 
       <Separator />
@@ -292,6 +303,9 @@ function BusinessIdentitySection() {
       address: draft.address.trim(),
       upiId: draft.upiId.trim(),
     });
+    // the UPI ID is ALSO server-authoritative — every device's payment QR
+    // regenerates from it within seconds of this save
+    void saveConfigToServer({ upiId: draft.upiId.trim() });
     toast({
       title: t('settings.updatedToast'),
       description: draft.companyName.trim() || undefined,
@@ -390,14 +404,18 @@ function BillingSlipSection() {
   const upd = (patch: Partial<BillingDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
   const save = () => {
+    const gstPercent = Math.min(Math.max(Number(draft.gstPercent.replace(/[^\d.]/g, '')) || 0, 0), 28);
     saveSettings({
       invoicePrefix: draft.invoicePrefix.trim() || 'SLP-INV-',
       nextInvoiceNo: Math.max(1, Number(draft.nextInvoiceNo.replace(/\D/g, '')) || 1),
       slipWidthMm: draft.slipWidthMm,
       thankYouNote: draft.thankYouNote,
       returnPolicy: draft.returnPolicy,
-      gstPercent: Math.min(Math.max(Number(draft.gstPercent.replace(/[^\d.]/g, '')) || 0, 0), 28),
+      gstPercent,
     });
+    // the GST rate is ALSO server-authoritative (new bills on every device
+    // pick it up within seconds) — push it; offline queues via saveConfigToServer
+    void saveConfigToServer({ gstPercent });
     toast({ title: t('settings.billingUpdatedToast') });
   };
 
@@ -461,6 +479,218 @@ function BillingSlipSection() {
         disabled={!dirty}
         className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
         aria-label="Update bill settings"
+      >
+        {t('settings.updateBilling')}
+      </Button>
+    </section>
+  );
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Security — the Owner/Admin username + password (v35). Seeded with   */
+/* the initial credentials; the nag stays until the password changes.  */
+/* ------------------------------------------------------------------ */
+
+function SecuritySection() {
+  const t = useT();
+  const { toast } = useToast();
+  const [username, setUsername] = useState('');
+  const [isDefault, setIsDefault] = useState(false);
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    void apiAuthState().then((st) => {
+      if (st.ok) {
+        setUsername(st.ownerUsername || '');
+        setIsDefault(Boolean(st.ownerPasswordIsDefault));
+      }
+      setLoaded(true);
+    });
+  }, []);
+
+  const change = async () => {
+    if (busy) return;
+    if (next.length < 4) {
+      toast({ title: t('settings.changePasswordBtn'), description: t('lock.staffErr'), variant: 'destructive' });
+      return;
+    }
+    if (isDefault && current.length === 0 && false) {
+      // (default password IS the current one — no need to retype it)
+    }
+    setBusy(true);
+    try {
+      const dekB64 = getDeviceDek();
+      if (!dekB64) {
+        toast({ title: t('settings.changePasswordBtn'), description: 'locked', variant: 'destructive' });
+        return;
+      }
+      const dek = await importDek(dekB64).catch(() => null);
+      if (!dek) return;
+      const salt = randomB64(16);
+      const { kek } = await deriveKek(next, salt);
+      const { wrapped, iv } = await wrapDek(dek, kek);
+      const res = await apiOwnerPassword({
+        username: username.trim() || 'Pradeep',
+        password: next,
+        currentPassword: current || undefined,
+        dekSalt: salt,
+        dekIv: iv,
+        dekWrapped: wrapped,
+      });
+      if (!res.ok) {
+        toast({ title: t('settings.changePasswordBtn'), description: res.error, variant: 'destructive' });
+        return;
+      }
+      setCurrent('');
+      setNext('');
+      setIsDefault(false);
+      toast({ title: t('settings.passwordChanged') });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section aria-label="Security" className="space-y-3" data-security-section>
+      <h3 className="flex items-center gap-1.5 text-sm font-bold text-blue-800">
+        <KeyRound className="size-4" />
+        {t('settings.security')}
+      </h3>
+      <p className="text-xs text-muted-foreground">{t('settings.securityDesc')}</p>
+      {loaded && isDefault && (
+        <p data-default-password-warn className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+          {t('settings.defaultPasswordWarn')}
+        </p>
+      )}
+      <Field
+        ariaLabel="Admin username"
+        label={t('settings.adminUsername')}
+        value={username}
+        onChange={setUsername}
+      />
+      {!isDefault && (
+        <Field
+          ariaLabel="Current password"
+          label={t('settings.currentPassword')}
+          value={current}
+          onChange={setCurrent}
+          type="password"
+        />
+      )}
+      <Field
+        ariaLabel="New password"
+        label={t('settings.newPassword')}
+        value={next}
+        onChange={setNext}
+        type="password"
+      />
+      <Button
+        onClick={() => void change()}
+        disabled={busy || next.length < 4}
+        className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+        aria-label="Change owner password"
+      >
+        <KeyRound className="size-4" />
+        {t('settings.changePasswordBtn')}
+      </Button>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">{t('sync.e2eeNote')}</p>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Staff discount limits — server-enforced at bill save time (v35)     */
+/* ------------------------------------------------------------------ */
+
+function DiscountLimitsSection() {
+  const t = useT();
+  const { toast } = useToast();
+  const srvConfig = useStore((s) => s.srvConfig);
+
+  const [draft, setDraft] = useState(() => ({
+    discountMaxPercent: String(srvConfig.discountMaxPercent),
+    discountMaxAmount: String(srvConfig.discountMaxAmount),
+    discountApprovalRequired: srvConfig.discountApprovalRequired,
+  }));
+  const [synced, setSynced] = useState(srvConfig);
+  if (synced !== srvConfig) {
+    setSynced(srvConfig);
+    setDraft({
+      discountMaxPercent: String(srvConfig.discountMaxPercent),
+      discountMaxAmount: String(srvConfig.discountMaxAmount),
+      discountApprovalRequired: srvConfig.discountApprovalRequired,
+    });
+  }
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify({
+    discountMaxPercent: String(srvConfig.discountMaxPercent),
+    discountMaxAmount: String(srvConfig.discountMaxAmount),
+    discountApprovalRequired: srvConfig.discountApprovalRequired,
+  });
+
+  const save = async () => {
+    const okRes = await saveConfigToServer({
+      discountMaxPercent: Math.min(Math.max(Number(draft.discountMaxPercent) || 0, 0), 100),
+      discountMaxAmount: Math.max(Number(draft.discountMaxAmount) || 0, 0),
+      discountApprovalRequired: draft.discountApprovalRequired,
+    });
+    // mirror locally so staff billing enforces immediately
+    useStore.getState().setSrvConfig({
+      ...srvConfig,
+      discountMaxPercent: Math.min(Math.max(Number(draft.discountMaxPercent) || 0, 0), 100),
+      discountMaxAmount: Math.max(Number(draft.discountMaxAmount) || 0, 0),
+      discountApprovalRequired: draft.discountApprovalRequired,
+    });
+    toast({
+      title: okRes ? t('settings.billingUpdatedToast') : t('sync.syncFailedToast'),
+      description: okRes ? undefined : t('settings.discountLimitsDesc'),
+    });
+  };
+
+  return (
+    <section aria-label="Staff discount limits" className="space-y-3" data-discount-limits>
+      <h3 className="text-sm font-bold text-blue-800">{t('settings.discountLimits')}</h3>
+      <p className="text-xs text-muted-foreground">{t('settings.discountLimitsDesc')}</p>
+      <div className="grid grid-cols-2 gap-2">
+        <Field
+          ariaLabel="Max discount percent"
+          label={t('settings.discountMaxPercent')}
+          value={draft.discountMaxPercent}
+          onChange={(v) => setDraft((d) => ({ ...d, discountMaxPercent: v.replace(/[^\d.]/g, '') }))}
+          type="number"
+          placeholder="10"
+        />
+        <Field
+          ariaLabel="Max discount amount"
+          label={t('settings.discountMaxAmount')}
+          value={draft.discountMaxAmount}
+          onChange={(v) => setDraft((d) => ({ ...d, discountMaxAmount: v.replace(/[^\d.]/g, '') }))}
+          type="number"
+          placeholder="500"
+        />
+      </div>
+      <label className="flex items-start gap-2.5 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={draft.discountApprovalRequired}
+          onChange={(e) => setDraft((d) => ({ ...d, discountApprovalRequired: e.target.checked }))}
+          className="mt-0.5 size-4 accent-blue-600"
+          aria-label="Allow over-limit with approval"
+        />
+        <span className="text-xs leading-snug text-muted-foreground">
+          {t('settings.discountApproval')} — {t('settings.discountApprovalDesc')}
+        </span>
+      </label>
+      <Button
+        onClick={() => void save()}
+        disabled={!dirty}
+        className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
+        aria-label="Save discount limits"
       >
         {t('settings.updateBilling')}
       </Button>

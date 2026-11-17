@@ -62,7 +62,7 @@ const makeCashBill = async (name, phone) => {
 };
 
 /* ---------------- setup: owner MPIN + one real bill ---------------- */
-await page.addInitScript(() => localStorage.setItem('slp-update-notice-seen', '34'));
+await page.addInitScript(() => localStorage.setItem('slp-update-notice-seen', '35'));
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(2600);
 const mpinBox = page.getByLabel('New MPIN');

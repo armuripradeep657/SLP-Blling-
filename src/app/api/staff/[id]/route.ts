@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { bearerToken, hashPassword, ownerSlot } from '@/lib/server/auth';
+import { bearerToken, hashPassword, sessionAuth } from '@/lib/server/auth';
 
 /**
  * OWNER-ONLY per-staff management (staff sessions get 403).
@@ -10,8 +10,10 @@ import { bearerToken, hashPassword, ownerSlot } from '@/lib/server/auth';
  * DELETE /api/staff/<id> — remove the staff account and kill their sessions.
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const slot = await ownerSlot(bearerToken(req));
-  if (!slot) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  const auth = await sessionAuth(bearerToken(req));
+  if (!auth) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (auth.role !== 'owner') return Response.json({ error: 'forbidden' }, { status: 403 });
+  const slot = auth.slot;
 
   const { id } = await params;
   const staff = await db.staffUser.findUnique({ where: { id } });
@@ -45,6 +47,27 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     await db.session.deleteMany({ where: { staffId: id } }).catch(() => undefined);
   }
 
+  const action =
+    data.passwordHash !== undefined
+      ? 'staff_reset'
+      : data.active === false
+        ? 'staff_deactivated'
+        : data.active === true
+          ? 'staff_activated'
+          : 'staff_updated';
+  await db.auditEvent
+    .create({
+      data: {
+        slot,
+        actor: 'Owner',
+        actorRole: 'owner',
+        action,
+        target: updated.username,
+        detailsJson: '{}',
+      },
+    })
+    .catch(() => undefined);
+
   return Response.json({
     ok: true,
     staff: { id: updated.id, username: updated.username, name: updated.name, active: updated.active },
@@ -52,8 +75,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const slot = await ownerSlot(bearerToken(req));
-  if (!slot) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  const auth = await sessionAuth(bearerToken(req));
+  if (!auth) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (auth.role !== 'owner') return Response.json({ error: 'forbidden' }, { status: 403 });
+  const slot = auth.slot;
 
   const { id } = await params;
   const staff = await db.staffUser.findUnique({ where: { id } });
@@ -61,5 +86,17 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 
   await db.session.deleteMany({ where: { staffId: id } }).catch(() => undefined);
   await db.staffUser.delete({ where: { id } });
+  await db.auditEvent
+    .create({
+      data: {
+        slot,
+        actor: 'Owner',
+        actorRole: 'owner',
+        action: 'staff_deleted',
+        target: staff.username,
+        detailsJson: '{}',
+      },
+    })
+    .catch(() => undefined);
   return Response.json({ ok: true });
 }

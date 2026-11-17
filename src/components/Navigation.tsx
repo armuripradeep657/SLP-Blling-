@@ -2,10 +2,16 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { WifiOff, ReceiptText, Package, History, Settings, BookText, Languages, ScanLine } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { WifiOff, ReceiptText, Package, History, Settings, BookText, Languages, ScanLine, LayoutDashboard, KeyRound } from 'lucide-react';
 import { useSyncExternalStore, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useIdentity } from '@/lib/role';
+import { apiStaffMePassword } from '@/lib/cloud';
+import { deriveKek, exportDek, importDek, randomB64, wrapDek } from '@/lib/crypto';
+import { getDeviceDek } from '@/lib/cloud';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
 import type { HeaderThemeId, MainTab } from '@/lib/types';
 
@@ -30,6 +36,7 @@ const subscribeOnline = (cb: () => void) => {
 export function Header() {
   const t = useT();
   const appLang = useAppLang();
+  const identity = useIdentity();
   const settings = useStore((s) => s.settings);
   const saveSettings = useStore((s) => s.saveSettings);
   const headerTheme = useStore((s) => s.appearance.headerTheme);
@@ -79,6 +86,8 @@ export function Header() {
             <Languages className="size-3.5" />
             {appLang === 'te' ? 'English' : 'తెలుగు'}
           </button>
+          {/* STAFF: change their own password right from the header */}
+          {identity.role === 'staff' && <StaffPasswordButton />}
           {!online && (
             <Badge variant="secondary" className="shrink-0 gap-1 bg-white/20 text-white">
               <WifiOff className="size-3" /> {t('header.offline')}
@@ -111,9 +120,12 @@ export function BottomNav() {
   const cart = useStore((s) => s.cart);
   const count = cart.reduce((s, c) => s + c.qty, 0);
   const identity = useIdentity();
+  const unreadNotifs = useStore((s) => s.unreadNotifs);
 
-  /** staff sees billing, verification and their own history — nothing else */
+  /** staff sees billing, verification and their own history — nothing else;
+   *  the owner leads with the Admin Dashboard (live staff bill monitor) */
   const tabs = [
+    { id: 'dashboard', label: t('nav.dashboard'), icon: DashIcon, ownerOnly: true },
     { id: 'bill', label: t('nav.bill'), icon: ReceiptIcon, ownerOnly: false },
     { id: 'products', label: t('nav.products'), icon: PackageIcon, ownerOnly: true },
     { id: 'ledger', label: t('nav.ledger'), icon: LedgerIcon, ownerOnly: true },
@@ -152,6 +164,15 @@ export function BottomNav() {
                   {count}
                 </span>
               )}
+              {x.id === 'dashboard' && identity.role === 'owner' && unreadNotifs > 0 && (
+                <span
+                  key={`n-${unreadNotifs}`}
+                  data-nav-unread
+                  className="anim-badge absolute right-[18%] top-2 rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white"
+                >
+                  {unreadNotifs}
+                </span>
+              )}
               {x.label}
               {active && <span className="anim-fade-up absolute top-0 h-0.5 w-10 rounded-full bg-blue-600" />}
             </button>
@@ -168,6 +189,7 @@ export function DesktopTabs() {
   const setActiveTab = useStore((s) => s.setActiveTab);
   const identity = useIdentity();
   const tabs = [
+    { id: 'dashboard', label: t('nav.dashboard'), ownerOnly: true },
     { id: 'bill', label: t('nav.newBill'), ownerOnly: false },
     { id: 'products', label: t('nav.products'), ownerOnly: true },
     { id: 'ledger', label: t('nav.ledger'), ownerOnly: true },
@@ -195,7 +217,121 @@ export function DesktopTabs() {
   );
 }
 
+/**
+ * STAFF self-service password change (v35) — the current password is
+ * proven, the new one is re-hashed server-side and the vault key is
+ * re-wrapped under the new password on THIS device.
+ */
+function StaffPasswordButton() {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const save = async () => {
+    if (busy || next.length < 4 || !current) return;
+    setBusy(true);
+    try {
+      const dekB64 = getDeviceDek();
+      let material;
+      if (dekB64) {
+        const dek = await importDek(dekB64).catch(() => null);
+        if (dek) {
+          const salt = randomB64(16);
+          const { kek } = await deriveKek(next, salt);
+          const { wrapped, iv } = await wrapDek(dek, kek);
+          material = { dekSalt: salt, dekIv: iv, dekWrapped: wrapped };
+        }
+      }
+      if (!material) return;
+      const res = await apiStaffMePassword({
+        currentPassword: current,
+        password: next,
+        ...material,
+      });
+      if (res.ok) {
+        setDone(true);
+        setCurrent('');
+        setNext('');
+        setTimeout(() => {
+          setOpen(false);
+          setDone(false);
+        }, 1600);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Change my password"
+        data-staff-password-btn
+        className="flex shrink-0 items-center gap-1 rounded-full border border-white/40 bg-white/15 px-2.5 py-1.5 text-[11px] font-bold hover:bg-white/25"
+      >
+        <KeyRound className="size-3.5" />
+        {t('settings.staffChangePwd')}
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-xs rounded-2xl" aria-label="Change my password">
+          <DialogHeader>
+            <DialogTitle className="text-center text-sm">{t('staffPwd.title')}</DialogTitle>
+          </DialogHeader>
+          {done ? (
+            <p className="py-3 text-center text-sm font-bold text-green-700">{t('staffPwd.changed')}</p>
+          ) : (
+            <div className="space-y-2.5">
+              <div className="space-y-1">
+                <Label htmlFor="staff-pwd-cur" className="text-xs text-muted-foreground">
+                  {t('staffPwd.current')}
+                </Label>
+                <Input
+                  id="staff-pwd-cur"
+                  type="password"
+                  value={current}
+                  onChange={(e) => setCurrent(e.target.value)}
+                  aria-label="Current password"
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="staff-pwd-new" className="text-xs text-muted-foreground">
+                  {t('staffPwd.new')}
+                </Label>
+                <Input
+                  id="staff-pwd-new"
+                  type="password"
+                  value={next}
+                  onChange={(e) => setNext(e.target.value)}
+                  aria-label="New password"
+                  className="h-10"
+                />
+              </div>
+              <Button
+                onClick={() => void save()}
+                disabled={busy || next.length < 4 || !current}
+                className="h-10 w-full bg-blue-600 text-white hover:bg-blue-700"
+                aria-label="Save new password"
+              >
+                {t('staffPwd.btn')}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 // tiny inline icon wrappers to keep this file self-contained
+function DashIcon({ className, active }: { className?: string; active?: boolean }) {
+  return <LayoutDashboard className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
+}
 function ReceiptIcon({ className, active }: { className?: string; active?: boolean }) {
   return <ReceiptText className={`${className} ${active ? 'fill-blue-100' : ''}`} />;
 }

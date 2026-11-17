@@ -6,7 +6,7 @@ import { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } from './defaultData';
 import { computeTotals, getStatus, priceForSize, applyPayment } from './billing';
 import { newVerifyCode } from './verify-id';
 import { getIdentity, setIdentity } from './role';
-import { registerVerifiedBill, apiVerifyCancel } from './cloud';
+import { registerVerifiedBill, apiVerifyCancel, authedFetch } from './cloud';
 import type {
   Appearance,
   BillConfig,
@@ -24,6 +24,7 @@ import type {
   MainTab,
   PaymentMode,
   Product,
+  ServerConfig,
 } from './types';
 
 const EMPTY_DELETED: DeletedIds = {
@@ -46,6 +47,56 @@ function touch(now = Date.now()): number {
 }
 
 const r2 = (n: number): number => Math.round(n * 100) / 100;
+
+
+/**
+ * RESERVE the next bill number from the server (atomic counter — two staff
+ * billing at the same instant can never print the same number). Called when
+ * the FIRST item lands in an empty cart. Offline → no reservation; the bill
+ * falls back to the local counter (same as before v35).
+ */
+async function reserveBillNo(): Promise<void> {
+  try {
+    const st = useStore.getState();
+    if (st.billConfig.reservedNo !== undefined) return;
+    const res = await authedFetch('/api/bills/reserve', 'POST', {
+      floor: st.settings.nextInvoiceNo,
+    });
+    if (res.status === 200 && typeof res.data.no === 'number') {
+      useStore.getState().setBillConfig({ reservedNo: res.data.no });
+    }
+  } catch {
+    /* offline — local counter fallback at completion */
+  }
+}
+
+/**
+ * Register one bill in the server's barcode verification registry, adopting
+ * the winning code after a 409 race. When the network is down the bill id
+ * joins `pendingRegIds` (persisted) — `flushPendingRegistrations` retries
+ * until the server accepts it, so an offline-saved bill verifies as soon as
+ * the connection returns. Notifications + audit records are created
+ * SERVER-SIDE from the registration, so a bill that never saved never
+ * notifies.
+ */
+async function registerInvoice(invoice: Invoice): Promise<void> {
+  const settings = useStore.getState().settings;
+  const reg = await registerVerifiedBill(invoice, settings);
+  if (reg.ok) {
+    if (reg.code && reg.code !== invoice.verifyCode) {
+      useStore.getState().setInvoiceVerifyCode(invoice.id, reg.code);
+    }
+    if (useStore.getState().pendingRegIds.includes(invoice.id)) {
+      useStore.setState((st) => ({ pendingRegIds: st.pendingRegIds.filter((x) => x !== invoice.id) }));
+    }
+    return;
+  }
+  const st = useStore.getState();
+  if (!st.pendingRegIds.includes(invoice.id)) {
+    useStore.setState({ pendingRegIds: [invoice.id, ...st.pendingRegIds] });
+  }
+}
+
 
 /**
  * Normalise a labour entry: guarantees the wage + payments list exist (legacy
@@ -96,6 +147,24 @@ interface BillingStore {
   deletedIds: DeletedIds;
   /** Sync LWW clock — bumped whenever settings/appearance/products/bills numbering change */
   dataUpdatedAt: number;
+  /**
+   * Server-authoritative billing configuration (v35) — polled from the
+   * server every few seconds: UPI ID (payment QRs), GST rate for new bills
+   * and the OWNER's staff discount limits. Cached on-device so billing works
+   * offline; the server copy always wins when reachable.
+   */
+  srvConfig: ServerConfig;
+  setSrvConfig: (c: ServerConfig) => void;
+  /** admin notification unread count — refreshed by the sync poll (owner) */
+  unreadNotifs: number;
+  setUnreadNotifs: (n: number) => void;
+  /**
+   * Bills whose server registration did not complete (offline / restart) —
+   * retried automatically until the barcode registry accepts them, so an
+   * offline-saved bill still verifies once the connection returns.
+   */
+  pendingRegIds: string[];
+  flushPendingRegistrations: () => Promise<void>;
 
   setActiveTab: (t: MainTab) => void;
   saveSettings: (s: Partial<BusinessSettings>) => void;
@@ -105,7 +174,10 @@ interface BillingStore {
 
   addToCart: (product: Product, size: string) => void;
   addCustomItem: (name: string, size: string, price: number, qty: number, nameTe?: string) => void;
-  updateCartItem: (key: string, patch: Partial<Pick<CartItem, 'price' | 'discount' | 'qty'>>) => void;
+  updateCartItem: (
+    key: string,
+    patch: Partial<Pick<CartItem, 'price' | 'discount' | 'qty' | 'discountType' | 'discountValue'>>
+  ) => void;
   incQty: (key: string) => void;
   decQty: (key: string) => void;
   removeFromCart: (key: string) => void;
@@ -182,6 +254,17 @@ export const useStore = create<BillingStore>()(
       appearance: { bgTheme: 'blue', headerTheme: 'blue', watermark: '' },
       deletedIds: EMPTY_DELETED,
       dataUpdatedAt: 0,
+      srvConfig: {
+        upiId: '',
+        gstPercent: 0,
+        discountMaxPercent: 100,
+        discountMaxAmount: 999999,
+        discountApprovalRequired: false,
+      },
+      setSrvConfig: (c) => set((st) => ({ srvConfig: { ...st.srvConfig, ...c } })),
+      unreadNotifs: 0,
+      setUnreadNotifs: (n) => set({ unreadNotifs: n }),
+      pendingRegIds: [],
 
       setActiveTab: (t) => set({ activeTab: t }),
 
@@ -206,6 +289,8 @@ export const useStore = create<BillingStore>()(
       addToCart: (product, size) => {
         const price = priceForSize(product.price, product.sizePrices, size);
         const key = `${product.id}::${size}`;
+        // first item of a NEW bill — reserve this bill's number on the server
+        if (get().cart.length === 0) void reserveBillNo();
         set((st) => {
           const existing = st.cart.find((c) => c.key === key);
           if (existing) {
@@ -216,7 +301,17 @@ export const useStore = create<BillingStore>()(
           return {
             cart: [
               ...st.cart,
-              { key, productId: product.id, name: product.name, nameTe: product.nameTe, size, price, qty: 1 },
+              {
+                key,
+                productId: product.id,
+                name: product.name,
+                nameTe: product.nameTe,
+                size,
+                price,
+                // the product's SAVED price — a bill-line edit never touches it
+                origPrice: price,
+                qty: 1,
+              },
             ],
           };
         });
@@ -227,7 +322,10 @@ export const useStore = create<BillingStore>()(
         const key = `custom::${Date.now()}::${Math.random().toString(36).slice(2, 7)}`;
         const teName = nameTe?.trim() || undefined;
         set((st) => {
-          const cart = [...st.cart, { key, productId: 'custom', name, nameTe: teName, size: norm, price, qty }];
+          const cart = [
+            ...st.cart,
+            { key, productId: 'custom', name, nameTe: teName, size: norm, price, origPrice: price, qty },
+          ];
 
           // Auto-save the custom item into the product catalog — matched by
           // name (case-insensitive); new size/price merges into the product so
@@ -263,11 +361,23 @@ export const useStore = create<BillingStore>()(
         });
       },
 
-      // Owner edits while billing: change the unit price directly on the line
-      // and/or apply a discount for that specific item (catalog stays untouched)
+      // Owner AND staff edit while billing: change the unit price directly on
+      // the line (origPrice stays as proof) and/or discount that one item —
+      // ₹ flat or % of the line. The catalog itself is never touched.
       updateCartItem: (key, patch) =>
         set((st) => ({
-          cart: st.cart.map((c) => (c.key === key ? { ...c, ...patch } : c)),
+          cart: st.cart.map((c) => {
+            if (c.key !== key) return c;
+            const next = { ...c, ...patch };
+            // keep the legacy flat field equal to the ACTUAL discount amount
+            // so old views, slip rendering and totals all agree
+            const gross = next.price * next.qty;
+            const amt =
+              next.discountType === 'percent'
+                ? Math.min(gross, Math.round(((gross * (next.discountValue || 0)) / 100) * 100) / 100)
+                : next.discount ?? 0;
+            return { ...next, discount: Math.min(amt, gross) };
+          }),
         })),
 
       incQty: (key) =>
@@ -306,7 +416,10 @@ export const useStore = create<BillingStore>()(
           totals.paid = Math.min(opts.paidAmount, totals.total);
           totals.balance = Math.max(totals.total - totals.paid, 0);
         }
-        const no = `${settings.invoicePrefix}${settings.nextInvoiceNo}`;
+        // the bill number RESERVED at cart-start (server-issued, race-free);
+        // offline bills fall back to the device counter as before
+        const noNum = get().billConfig.reservedNo ?? settings.nextInvoiceNo;
+        const no = `${settings.invoicePrefix}${noNum}`;
         const dateISO = new Date().toISOString();
         // Delivery / driver details only when the bill is marked Delivered
         const delivery =
@@ -363,16 +476,13 @@ export const useStore = create<BillingStore>()(
           // fresh config for the next bill (Cash mode, no leftover discount/charges;
           // chosen bill language stays sticky)
           billConfig: { ...DEFAULT_CONFIG, language: billConfig.language },
-          settings: { ...st.settings, nextInvoiceNo: st.settings.nextInvoiceNo + 1 },
+          settings: { ...st.settings, nextInvoiceNo: Math.max(st.settings.nextInvoiceNo, noNum + 1) },
           dataUpdatedAt: touch(),
         }));
         // register the bill in the server's barcode verification registry —
-        // this is what makes every scan of the printed Code 128 resolvable
-        void registerVerifiedBill(invoice, settings).then((reg) => {
-          if (reg.ok && reg.code && reg.code !== invoice.verifyCode) {
-            get().setInvoiceVerifyCode(invoice.id, reg.code);
-          }
-        });
+        // this is what makes every scan of the printed Code 128 resolvable;
+        // a failed attempt (offline) joins the retry queue instead of dying
+        void registerInvoice(invoice);
         return invoice;
       },
 
@@ -400,17 +510,33 @@ export const useStore = create<BillingStore>()(
 
       clearLastInvoice: () => set({ lastInvoice: null }),
 
+      /** Retry every bill whose server registration was queued (offline). */
+      flushPendingRegistrations: async () => {
+        const st = get();
+        if (st.pendingRegIds.length === 0) return;
+        for (const id of [...st.pendingRegIds]) {
+          const inv = get().invoices.find((i) => i.id === id);
+          if (!inv?.verifyCode) {
+            // bill vanished (deleted) — drop it from the queue
+            useStore.setState((s2) => ({ pendingRegIds: s2.pendingRegIds.filter((x) => x !== id) }));
+            continue;
+          }
+          await registerInvoice(inv);
+        }
+      },
+
+
       // bills finalized BEFORE the barcode system have no verification ID —
       // mint one for each and register it, so a re-printed old bill scans too
       migrateVerifyCodes: () => {
-        const { invoices, settings } = get();
+        const { invoices } = get();
         const missing = invoices.filter((i) => !i.verifyCode);
         if (missing.length === 0) return;
         const withCodes = new Map(invoices.map((i) => [i.id, i.verifyCode] as const));
         const patched = invoices.map((i) => (i.verifyCode ? i : { ...i, verifyCode: newVerifyCode() }));
         set((st) => ({ invoices: patched, dataUpdatedAt: touch() }));
         patched.forEach((i) => {
-          if (!withCodes.get(i.id)) void registerVerifiedBill(i, settings);
+          if (!withCodes.get(i.id)) void registerInvoice(i);
         });
       },
 
@@ -440,13 +566,7 @@ export const useStore = create<BillingStore>()(
         });
         // the payment status changed — refresh the barcode registry entry
         const patched = get().invoices.find((i) => i.id === id);
-        if (patched?.verifyCode) {
-          void registerVerifiedBill(patched, get().settings).then((reg) => {
-            if (reg.ok && reg.code && reg.code !== patched.verifyCode) {
-              get().setInvoiceVerifyCode(patched.id, reg.code);
-            }
-          });
-        }
+        if (patched?.verifyCode) void registerInvoice(patched);
       },
 
       // Flip the bill language (also from the invoice modal while sharing) —
@@ -473,13 +593,7 @@ export const useStore = create<BillingStore>()(
         });
         // payment status changed — refresh the barcode registry entry
         const patched = get().invoices.find((i) => i.id === id);
-        if (patched?.verifyCode) {
-          void registerVerifiedBill(patched, get().settings).then((reg) => {
-            if (reg.ok && reg.code && reg.code !== patched.verifyCode) {
-              get().setInvoiceVerifyCode(patched.id, reg.code);
-            }
-          });
-        }
+        if (patched?.verifyCode) void registerInvoice(patched);
       },
 
       addExpense: (e) =>
@@ -599,6 +713,8 @@ export const useStore = create<BillingStore>()(
         invoices: st.invoices,
         billConfig: st.billConfig,
         customer: st.customer,
+        srvConfig: st.srvConfig,
+        pendingRegIds: st.pendingRegIds,
         // persisted so a REFRESH re-opens the tab the user was on; a cold app
         // open still resets to Bill (page.tsx does that when the MPIN gate shows)
         activeTab: st.activeTab,

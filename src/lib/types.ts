@@ -41,8 +41,15 @@ export interface CartItem {
   nameTe?: string;
   size: string;
   price: number; // unit price — editable per bill while billing
+  /** the product's SAVED price at add-to-cart time — proof of a price edit
+   *  (the catalog itself is never touched by a bill-line edit) */
+  origPrice?: number;
   qty: number;
-  discount?: number; // per-item flat ₹ discount for this line
+  discount?: number; // per-item flat ₹ discount for this line (legacy/derived)
+  /** per-item discount kind — 'amount' (₹) or 'percent' (% of the line) */
+  discountType?: DiscountType;
+  /** what the staff typed: ₹ value or % depending on discountType */
+  discountValue?: number;
 }
 
 export interface Customer {
@@ -62,6 +69,8 @@ export type AppLanguage = 'en' | 'te';
 export interface BillConfig {
   discountType: DiscountType;
   discountValue: number;
+  /** server-reserved bill number for the bill in progress (race-free) */
+  reservedNo?: number;
   labourCharge: number;
   autoCharge: number;
   paymentMode: PaymentMode;
@@ -246,4 +255,33 @@ export interface SyncPayload {
   dataUpdatedAt: number;
 }
 
-export type MainTab = 'bill' | 'products' | 'ledger' | 'labour' | 'history' | 'verify' | 'settings';
+export type MainTab = 'dashboard' | 'bill' | 'products' | 'ledger' | 'labour' | 'history' | 'verify' | 'settings';
+
+/**
+ * Server-authoritative billing configuration (v35) — the OWNER edits it in
+ * Settings; the server enforces the staff discount limits at registration
+ * time and every device picks changes up on its next sync poll (≤ ~5 s).
+ */
+export interface ServerConfig {
+  upiId: string;
+  gstPercent: number;
+  discountMaxPercent: number;
+  discountMaxAmount: number;
+  discountApprovalRequired: boolean;
+}
+
+/** An admin notification — one successful staff bill (or approval request) */
+export interface StaffNotification {
+  id: string;
+  type: string;
+  billNo: string;
+  staffName: string;
+  staffUsername: string;
+  customerName: string;
+  total: number;
+  discount: number;
+  paymentStatus: string;
+  payload: Record<string, unknown>;
+  readAt: string | null;
+  createdAt: string;
+}

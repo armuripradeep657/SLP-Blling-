@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { BadgeCheck, Ban, Camera, CameraOff, Loader2, ScanLine, Search } from 'lucide-react';
+import { BadgeCheck, Ban, Camera, CameraOff, Loader2, ScanLine, Search, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiVerifyLookup, type VerifyLookupResult } from '@/lib/cloud';
@@ -10,6 +10,17 @@ import { fmt } from '@/lib/billing';
 import { fill, appT, type AppLangKey } from '@/lib/i18n';
 import { useT } from '@/hooks/use-app-lang';
 import type { AppLanguage } from '@/lib/types';
+import { BrowserMultiFormatReader, BarcodeFormat, DecodeHintType } from '@zxing/library';
+
+type DetectCtor = new (opts: { formats?: string[] }) => {
+  detect: (source: HTMLVideoElement | ImageBitmap) => Promise<Array<{ rawValue?: string }>>;
+};
+
+/** ZXing hints — Code 128 ONLY (no false QR reads), harder try per frame */
+const hints = new Map<DecodeHintType, unknown>([
+  [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128]],
+  [DecodeHintType.TRY_HARDER, true],
+]);
 
 /**
  * The barcode scanner and bill verification UI — shared by the in-app
@@ -26,9 +37,6 @@ import type { AppLanguage } from '@/lib/types';
  * server, and the bill details come back from the database registry.
  */
 
-type DetectCtor = new (opts: { formats?: string[] }) => {
-  detect: (source: HTMLVideoElement | ImageBitmap) => Promise<Array<{ rawValue?: string }>>;
-};
 
 export default function VerifyView({
   autoFocus = true,
@@ -47,6 +55,8 @@ export default function VerifyView({
   const [error, setError] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraMsg, setCameraMsg] = useState<string | null>(null);
+  /** permission refused — show the "enable in Settings" help */
+  const [cameraDenied, setCameraDenied] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const stopRef = useRef<() => void>(() => undefined);
@@ -84,33 +94,58 @@ export default function VerifyView({
     setCameraOn(false);
   }, []);
 
-  /** Camera scanning — Code 128 through BarcodeDetector where available */
+  /** Camera scanning — Code 128, REAL decoding on every browser:
+   *  the native BarcodeDetector API where the browser has it (Chrome /
+   *  Android), the ZXing wasm-free decoder everywhere else (Safari, iOS,
+   *  Firefox, older WebViews). The camera STOPS the moment a code reads. */
   const startCamera = useCallback(async () => {
     setCameraMsg(null);
-    const Ctor = (window as unknown as { BarcodeDetector?: DetectCtor }).BarcodeDetector;
-    if (!Ctor) {
-      setCameraMsg(t('verify.noCameraSupport'));
-      return;
-    }
+    setCameraDenied(false);
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraMsg(t('verify.noCameraSupport'));
       return;
     }
+    let stream: MediaStream | null = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
       });
-      streamRef.current = stream;
-      setCameraOn(true);
-      const video = videoRef.current;
-      if (!video) return;
-      video.srcObject = stream;
-      await video.play().catch(() => undefined);
+    } catch (err) {
+      const name = (err as DOMException)?.name || '';
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        // permission refused — tell the user HOW to fix it, keep manual entry
+        setCameraDenied(true);
+        setCameraMsg(t('verify.cameraDenied'));
+      } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+        setCameraMsg(t('verify.cameraNotFound'));
+      } else {
+        setCameraMsg(t('verify.cameraDenied'));
+      }
+      return;
+    }
+    streamRef.current = stream;
+    setCameraOn(true);
+    const video = videoRef.current;
+    if (!video) return;
+    video.srcObject = stream;
+    await video.play().catch(() => undefined);
+
+    let live = true;
+    stopRef.current = () => {
+      live = false;
+    };
+    const onCode = (raw: string) => {
+      if (!live) return;
+      live = false;
+      stopCamera(); // camera OFF the instant a barcode reads — no wasted battery
+      setCode(normalizeVerifyCode(raw) || raw);
+      void lookup(raw);
+    };
+
+    // fast path: the browser's own detector
+    const Ctor = (window as unknown as { BarcodeDetector?: DetectCtor }).BarcodeDetector;
+    if (Ctor) {
       const detector = new Ctor({ formats: ['code_128'] });
-      let live = true;
-      stopRef.current = () => {
-        live = false;
-      };
       const loop = async () => {
         while (live) {
           try {
@@ -118,22 +153,37 @@ export default function VerifyView({
               const hits = await detector.detect(video);
               const raw = hits.find((h) => h.rawValue)?.rawValue;
               if (raw) {
-                stopCamera();
-                setCode(normalizeVerifyCode(raw) || raw);
-                void lookup(raw);
+                onCode(raw);
                 return;
               }
             }
           } catch {
             /* frame not ready — keep sweeping */
           }
-          await new Promise((r) => setTimeout(r, 300));
+          await new Promise((r) => setTimeout(r, 250));
         }
       };
       void loop();
-    } catch {
-      setCameraMsg(t('verify.cameraDenied'));
+      return;
     }
+
+    // fallback path: ZXing decodes Code 128 from the live stream
+    const reader = new BrowserMultiFormatReader(hints as Map<DecodeHintType, unknown>, 200);
+    reader
+      .decodeFromStream(stream, video, (result) => {
+        if (result && live) onCode(result.getText());
+      })
+      .catch(() => {
+        if (live) setCameraMsg(t('verify.noCameraSupport'));
+      });
+    stopRef.current = () => {
+      live = false;
+      try {
+        reader.reset();
+      } catch {
+        /* already released */
+      }
+    };
   }, [t, lookup, stopCamera]);
 
   useEffect(() => () => stopCamera(), [stopCamera]);
@@ -231,12 +281,21 @@ export default function VerifyView({
             {cameraOn ? <CameraOff className="size-4" /> : <Camera className="size-4" />}
             {cameraOn ? t('verify.cameraStop') : t('verify.cameraStart')}
           </Button>
-          {cameraMsg && <span className="text-[11px] font-semibold text-muted-foreground">{cameraMsg}</span>}
+          {cameraMsg && <span data-camera-msg className="text-[11px] font-semibold text-muted-foreground">{cameraMsg}</span>}
         </div>
         {cameraOn && (
           <div className="mt-3 overflow-hidden rounded-xl border">
             <video ref={videoRef} playsInline muted className="max-h-64 w-full bg-black object-cover" />
             <p className="bg-muted px-3 py-1.5 text-center text-[10px] text-muted-foreground">{t('verify.cameraHint')}</p>
+          </div>
+        )}
+        {cameraDenied && (
+          <div data-camera-denied className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-relaxed text-amber-800">
+            <p className="flex items-center gap-1.5">
+              <TriangleAlert className="size-3.5 shrink-0" />
+              {t('verify.cameraDeniedHelp')}
+            </p>
+            <p className="mt-1">{t('verify.cameraDeniedSteps')}</p>
           </div>
         )}
         {error && (

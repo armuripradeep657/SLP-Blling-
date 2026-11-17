@@ -7,7 +7,8 @@ import { useStore } from '@/lib/store';
 import { useT } from '@/hooks/use-app-lang';
 import { apiPaymentsStatus, apiPaymentsWebhook } from '@/lib/cloud';
 import { markUnlockActive } from '@/lib/idle-lock';
-import { fmt, upiUri } from '@/lib/billing';
+import { fmt, isValidUpiId, upiUri } from '@/lib/billing';
+import QrCode from './QrCode';
 
 /** How often the bill screen asks the server whether the money arrived */
 const POLL_MS = 3000;
@@ -149,6 +150,18 @@ export default function PaymentScreen({
       <div data-payment-amount className="text-4xl font-extrabold tabular-nums text-blue-900">
         ₹{fmt(amount)}
       </div>
+
+      {/* UPI PAYMENT QR — built from the UPI ID saved in Settings; the
+          customer scans it with ANY UPI app and the amount + bill ref are
+          pre-filled. Separate from the bill-verification Code 128 barcode. */}
+      {payLink && (
+        <div data-payment-qr className="flex flex-col items-center gap-1 rounded-2xl border-2 border-blue-600 bg-white p-3 shadow-lg">
+          <QrCode value={payLink} size={168} label="QR CODE – MAKE PAYMENT" />
+          <p className="text-[10px] font-bold uppercase tracking-wider text-blue-800">
+            QR CODE – MAKE PAYMENT
+          </p>
+        </div>
+      )}
 
       <div className="w-full max-w-xs rounded-2xl border-2 border-blue-600 bg-white p-4 text-center shadow-lg">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('pay.payTo')}</p>

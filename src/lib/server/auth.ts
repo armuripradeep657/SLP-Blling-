@@ -116,6 +116,12 @@ export async function ownerSlot(token: string): Promise<string | null> {
   return auth && auth.role === 'owner' ? auth.slot : null;
 }
 
+/** The full session auth (role included) — routes use it to answer 403 for staff */
+export async function requireOwner(token: string): Promise<SessionAuth | null> {
+  const auth = await sessionAuth(token);
+  return auth && auth.role === 'owner' ? auth : null;
+}
+
 /** Read the Bearer token from the Authorization header */
 export function bearerToken(req: Request): string {
   const h = req.headers.get('authorization') || '';

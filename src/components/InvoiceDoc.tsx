@@ -1,8 +1,9 @@
 'use client';
 
-import { fmt, fmtShort } from '@/lib/billing';
+import { fmt, fmtShort, isValidUpiId, upiUri } from '@/lib/billing';
 import { labels, fill, slipFontFamily, companyLines, itemLabel, cur } from '@/lib/i18n';
 import Barcode from './Barcode';
+import QrCode from './QrCode';
 import type { BusinessSettings, Invoice } from '@/lib/types';
 
 interface Props {
@@ -167,6 +168,29 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
             {settings.phone ? <div style={{ fontSize: 9.8, color: '#bfdbfe' }}>Ph: {settings.phone}</div> : null}
           </div>
           <div style={{ textAlign: 'right', flexShrink: 0, position: 'relative' }}>
+            {/* SMALL CODE 128 VERIFICATION BARCODE — top-right corner of the
+                invoice, on its own white chip so it scans off the navy band */}
+            {invoice.verifyCode ? (
+              <div
+                data-verify-barcode
+                style={{
+                  background: '#ffffff',
+                  borderRadius: 7,
+                  padding: '4px 7px 3px',
+                  marginBottom: 5,
+                  display: 'inline-block',
+                  textAlign: 'center',
+                }}
+              >
+                <div style={{ fontSize: 6.8, fontWeight: 800, letterSpacing: 0.7, color: NAVY, textTransform: 'uppercase' }}>
+                  {L.verifyLabel}
+                </div>
+                <Barcode value={invoice.verifyCode} height={26} width={0.9} margin={4} />
+                <div style={{ fontSize: 7.2, fontWeight: 700, letterSpacing: 0.4, color: '#0f172a', marginTop: 1 }}>
+                  {invoice.verifyCode}
+                </div>
+              </div>
+            ) : null}
             <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 2.5, color: GOLD, textTransform: 'uppercase' }}>
               {L.mInvoice}
             </div>
@@ -284,16 +308,26 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
                 <td style={{ ...cellCenter, color: '#64748b', fontSize: 10.5 }}>{idx + 1}</td>
                 <td style={cell}>
                   <div style={{ fontWeight: 700, color: '#0f172a' }}>{itemLabel(it, lang)}</div>
+                  {/* the SAVED price → edited selling price, when they differ */}
+                  {it.origPrice !== undefined && Math.abs(it.origPrice - it.price) > 0.001 ? (
+                    <div style={{ fontSize: 9.5, color: '#92400e' }}>
+                      {fmtShort(it.origPrice)} → {fmtShort(it.price)}
+                    </div>
+                  ) : null}
                   {(it.discount || 0) > 0 ? (
                     <div style={{ fontSize: 9.5, color: '#dc2626' }}>
-                      {L.lessDiscount} - {rupee} {fmt(it.discount || 0)}
+                      {L.lessDiscount}{' '}
+                      {it.discountType === 'percent' && it.discountValue ? ` ${it.discountValue}%` : ''} - {rupee}{' '}
+                      {fmt(it.discount || 0)}
                     </div>
                   ) : null}
                 </td>
                 <td style={{ ...cellCenter, fontSize: 10.5 }}>{it.size}</td>
                 <td style={{ ...cellCenter, fontWeight: 600 }}>{it.qty}</td>
                 <td style={{ ...cellRight, color: '#475569' }}>{fmtShort(it.price)}</td>
-                <td style={{ ...cellRight, fontWeight: 700, color: '#0f172a' }}>{fmt(it.price * it.qty)}</td>
+                <td style={{ ...cellRight, fontWeight: 700, color: '#0f172a' }}>
+                  {fmt(it.price * it.qty - (it.discount || 0))}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -361,28 +395,44 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
           </div>
         </div>
 
-        {/* CODE 128 verification barcode — every bill, paid or not */}
-        {invoice.verifyCode ? (
+        {/* UPI PAYMENT QR — built from the SAVED UPI ID; customers scan it
+            with any UPI app to pay. Amount = balance due (or the bill total
+            when fully paid — a re-print keeps a working payment QR). The
+            verification Code 128 lives at the TOP-RIGHT of the header — this
+            is never a QR and the QR is never a verification barcode. */}
+        {isValidUpiId(settings.upiId || '') ? (
           <div
+            data-payment-qr-section
             style={{
               marginTop: 14,
               border: `1.5px solid ${BLUE_BRIGHT}`,
               background: '#f0f7ff',
               borderRadius: 12,
-              padding: '10px 12px',
+              padding: '12px 12px 10px',
               textAlign: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 16,
             }}
           >
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: NAVY, textTransform: 'uppercase' }}>
-              {L.verifyLabel}
+            <QrCode
+              value={upiUri(
+                settings.upiId,
+                invoice.totals.balance > 0 ? invoice.totals.balance : invoice.totals.total,
+                invoice.no
+              )}
+              size={110}
+            />
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.2, color: NAVY, textTransform: 'uppercase' }}>
+                {L.payQrLabel}
+              </div>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', marginTop: 2, wordBreak: 'break-all' }}>
+                {settings.upiId}
+              </div>
+              <div style={{ fontSize: 9.5, color: '#475569', marginTop: 2 }}>{L.payQrHint}</div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 4 }}>
-              <Barcode value={invoice.verifyCode} height={50} width={1.5} />
-            </div>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, marginTop: 3, color: '#0f172a' }}>
-              {invoice.verifyCode}
-            </div>
-            <div style={{ fontSize: 9.5, color: '#475569', marginTop: 2 }}>{L.verifyHint}</div>
           </div>
         ) : null}
 

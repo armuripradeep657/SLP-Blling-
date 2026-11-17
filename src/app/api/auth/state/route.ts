@@ -18,7 +18,14 @@ export const ZERO_VERIFIER = '0'.repeat(64);
 export async function GET() {
   const account = await db.syncAccount.findUnique({
     where: { slot: 'owner' },
-    select: { pinVerifier: true, dekSalt: true, dekWrapped: true },
+    select: {
+      pinVerifier: true,
+      dekSalt: true,
+      dekWrapped: true,
+      ownerUsername: true,
+      ownerPasswordHash: true,
+      ownerPasswordIsDefault: true,
+    },
   });
   const legacy = Boolean(account?.pinVerifier) && account?.pinVerifier === ZERO_VERIFIER;
   const staffCount = await db.staffUser.count({ where: { active: true } });
@@ -27,6 +34,10 @@ export async function GET() {
     dekSalt: account?.dekSalt ?? null,
     // the gate shows the staff login only when the owner has created staff
     staffCount,
+    // v35 — the Owner username+password login (Pradeep / 2125 until changed)
+    hasOwnerPassword: Boolean(account?.ownerPasswordHash),
+    ownerUsername: account?.ownerUsername ?? null,
+    ownerPasswordIsDefault: account?.ownerPasswordIsDefault ?? false,
     ...(legacy ? { legacy: true, dekWrapped: account?.dekWrapped ?? null } : {}),
   });
 }
