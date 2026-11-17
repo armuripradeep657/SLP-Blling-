@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v1.1 HTTPS support: trust the device's user-installed certificates in
+  addition to system ones, so the owner-installed SLP Billing CA
+  (https://server:3000/ca.crt) gives a warning-free encrypted connection.
+  Cleartext stays allowed so http:// server addresses keep working too.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
