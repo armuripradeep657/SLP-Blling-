@@ -261,14 +261,17 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
             })}
           </div>
         </div>
-      ) : isValidUpiId(settings.upiId || '') ? (
-        /* Balance due — UPI PAYMENT QR from the SAVED UPI ID + the ID as text.
-           This is a PAYMENT QR — the bill-verification Code 128 barcode is
-           printed separately below and is never a QR. */
+      ) : null}
+      {isValidUpiId(settings.upiId || '') ? (
+        /* UPI PAYMENT QR from the SAVED UPI ID + the ID as text — on every
+           slip, paid or not (a fully-paid re-print carries the bill TOTAL,
+           exactly like the formal invoice). This is a PAYMENT QR — the
+           bill-verification Code 128 barcode is printed separately below
+           and is never a QR. */
         <div data-slip-payment-qr style={{ textAlign: 'center', marginTop: 7 }}>
           <div style={{ display: 'flex', justifyContent: 'center' }}>
             <QrCode
-              value={upiUri(settings.upiId, invoice.totals.balance, invoice.no)}
+              value={upiUri(settings.upiId, invoice.totals.balance > 0 ? invoice.totals.balance : invoice.totals.total, invoice.no)}
               size={settings.slipWidthMm === 58 ? 96 : 128}
               label="QR CODE – MAKE PAYMENT"
             />
@@ -277,7 +280,7 @@ export default function ThermalSlip({ invoice, settings, rootRef }: Props) {
             {L.payQrLabel}
           </div>
           <div style={{ marginTop: 2, fontSize: baseFont - 0.5 }}>
-            {fill(L.balancePay, { rs: fmt(invoice.totals.balance) })} <b>{settings.upiId}</b>
+            {fill(L.balancePay, { rs: fmt(invoice.totals.balance > 0 ? invoice.totals.balance : invoice.totals.total) })} <b>{settings.upiId}</b>
           </div>
         </div>
       ) : null}

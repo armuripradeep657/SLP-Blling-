@@ -173,6 +173,7 @@ export default function InvoiceDoc({ invoice, settings, rootRef }: Props) {
             {invoice.verifyCode ? (
               <div
                 data-verify-barcode
+                data-verify-code={invoice.verifyCode}
                 style={{
                   background: '#ffffff',
                   borderRadius: 7,

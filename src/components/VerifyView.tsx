@@ -283,12 +283,15 @@ export default function VerifyView({
           </Button>
           {cameraMsg && <span data-camera-msg className="text-[11px] font-semibold text-muted-foreground">{cameraMsg}</span>}
         </div>
-        {cameraOn && (
-          <div className="mt-3 overflow-hidden rounded-xl border">
-            <video ref={videoRef} playsInline muted className="max-h-64 w-full bg-black object-cover" />
-            <p className="bg-muted px-3 py-1.5 text-center text-[10px] text-muted-foreground">{t('verify.cameraHint')}</p>
-          </div>
-        )}
+        {/* ALWAYS MOUNTED (hidden when off): startCamera attaches the stream
+            to videoRef right after setCameraOn(true) — if the <video> only
+            mounted WITH cameraOn, videoRef.current was still null at that
+            moment and the stream never attached (the "camera never opens"
+            bug). A hidden element costs nothing; a null ref costs scanning. */}
+        <div className={cameraOn ? 'mt-3 overflow-hidden rounded-xl border' : 'hidden'} aria-hidden={!cameraOn}>
+          <video ref={videoRef} playsInline muted className="max-h-64 w-full bg-black object-cover" />
+          <p className="bg-muted px-3 py-1.5 text-center text-[10px] text-muted-foreground">{t('verify.cameraHint')}</p>
+        </div>
         {cameraDenied && (
           <div data-camera-denied className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-relaxed text-amber-800">
             <p className="flex items-center gap-1.5">

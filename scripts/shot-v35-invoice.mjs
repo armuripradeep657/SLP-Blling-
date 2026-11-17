@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import jsQR from 'jsqr';
 
 /**
  * v35 INVOICE — the two codes, clearly separated (req 4/5/7):
@@ -19,6 +20,9 @@ const ok = (c, n) => { if (c) { pass++; console.log('  PASS', n); } else { fail+
 
 const browser = await chromium.launch({ args: ['--disable-dev-shm-usage'] });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+page.on('framenavigated', (f) => { if (f === page.mainFrame()) console.log('  NAV->', f.url()); });
+page.on('pageerror', (e) => console.log('  PAGEERR', String(e).slice(0, 120)));
+page.on('crash', () => console.log('  CRASH mainPage'));
 const dlg = (pg = page) => pg.locator('[role="dialog"]');
 const closePopup = async (target = page) => {
   try {
@@ -31,49 +35,67 @@ const closePopup = async (target = page) => {
   } catch {}
 };
 
-/** decode a QR rendered in the page (svg[data-qr]) with ZXing */
+/**
+ * decode a QR rendered in the page (svg[data-qr]) with jsQR IN NODE:
+ * the page only rasterizes the REAL svg (Image → canvas → getImageData),
+ * the pixel buffer comes back to Node and jsQR decodes it there. A second
+ * browser page + in-page ZXing decode kept getting its context destroyed
+ * under this sandbox's memory pressure (no swap, OOM-kill mid-decode) —
+ * this keeps one page and one small allocation instead.
+ */
 const decodeQr = async (pg, selector) => {
-  if (!(await pg.evaluate(() => Boolean(window.ZXing)))) {
-    await pg.addScriptTag({ path: '/home/z/my-project/node_modules/@zxing/library/umd/index.min.js' });
-  }
   await pg.locator(selector).first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
-  return pg.evaluate(async (sel) => {
-    const svg = document.querySelector(sel);
-    if (!svg) return { err: 'qr svg not found' };
-    svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    svg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
-    const xml = new XMLSerializer().serializeToString(svg);
-    const img = new Image();
-    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(xml)));
-    await new Promise((res) => setTimeout(res, 250)).then(() => new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('svg img load failed, len=' + xml.length)); }));
-    const canvas = document.createElement('canvas');
-    const scale = 3;
-    canvas.width = img.width * scale + 60;
-    canvas.height = img.height * scale + 60;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 30, 30, img.width * scale, img.height * scale);
-    const padded = new Image();
-    padded.src = canvas.toDataURL('image/png');
-    await new Promise((res, rej) => { padded.onload = res; padded.onerror = rej; });
-    try {
-      const reader = new ZXing.BrowserQRCodeReader();
-      const res = await reader.decodeFromImage(padded);
-      return { text: res.getText() };
-    } catch (e) {
-      return { err: String(e && e.message ? e.message : e).slice(0, 100) };
-    }
+  const raster = await pg.evaluate((sel) => {
+    const svgs = Array.from(document.querySelectorAll(sel));
+    if (svgs.length === 0) return { err: 'qr svg not found' };
+    return new Promise((resolve) => {
+      let i = 0;
+      const tryNext = () => {
+        if (i >= svgs.length) {
+          resolve({ err: 'svg img load failed', n: svgs.length, head: svgs[0].outerHTML.slice(0, 160) });
+          return;
+        }
+        const svg = svgs[i++];
+        svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        svg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+        const xml = new XMLSerializer().serializeToString(svg);
+        const img = new Image();
+        img.onload = () => {
+          const scale = 3;
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width * scale + 60;
+          canvas.height = img.height * scale + 60;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 30, 30, img.width * scale, img.height * scale);
+          const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const bytes = new Uint8Array(id.data.buffer);
+          let bin = '';
+          for (let k = 0; k < bytes.length; k += 0x8000) {
+            bin += String.fromCharCode.apply(null, bytes.subarray(k, k + 0x8000));
+          }
+          resolve({ b64: btoa(bin), w: canvas.width, h: canvas.height });
+        };
+        img.onerror = () => tryNext();
+        img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(xml)));
+      };
+      tryNext();
+    });
   }, selector);
+  if (!raster || raster.err) return { err: raster?.err || 'qr svg not found', head: raster?.head };
+  const pixels = new Uint8ClampedArray(Buffer.from(raster.b64, 'base64'));
+  const res = jsQR(pixels, raster.w, raster.h);
+  return res ? { text: res.data } : { err: 'no qr decoded' };
 };
 
 /* ---------- setup: owner + UPI ID saved ---------- */
 await page.addInitScript(() => localStorage.setItem('slp-update-notice-seen', '35'));
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });
 // let the service worker install + claim fully — its one-time controllerchange
-// auto-reload must NOT fire mid-flow (it destroyed page.evaluate mid-decode)
-await page.evaluate(() => navigator.serviceWorker?.ready.then(() => undefined).catch(() => undefined)).catch(() => {});
-await page.waitForTimeout(4200);
+// auto-reload must NOT fire mid-flow (it destroyed page.evaluate mid-decode).
+// NEVER await sw.ready here: on a fresh origin it can hang without a timeout.
+await page.waitForTimeout(5200);
 await page.getByLabel('New MPIN').fill(MPIN);
 await page.getByLabel('Confirm MPIN').fill(MPIN);
 await page.getByRole('button', { name: 'Save MPIN' }).click();
@@ -137,10 +159,10 @@ ok(!!vbSvg, `the Code 128 encodes the verification ID (${vCode || vbSvg})`);
 // payment QR section on the invoice
 ok((await doc.locator('[data-payment-qr-section]').count()) === 1, 'the invoice carries the payment QR section');
 ok(docText.includes('QR CODE – MAKE PAYMENT'), 'labeled QR CODE – MAKE PAYMENT');
-const invQr = await decodeQr(page, '[data-payment-qr-section] [data-qr]');
+const invQr = await decodeQr(page, '[data-payment-qr-section] [data-qr] svg');
 console.log('  DEBUG invoice QR:', JSON.stringify(invQr));
 ok(typeof invQr.text === 'string' && invQr.text.includes('pa=slpcement%40ybl'),
-  `the invoice QR decodes to the SAME saved UPI ID (${invQr.text || invQr.err})`);
+  `the invoice QR decodes to the SAME saved UPI ID (${invQr.text || invQr.err + ' ' + (invQr.head || '')})`);
 
 // the two codes are DIFFERENT things: barcode is 1-D Code 128, QR is the UPI URI
 ok(vbSvg !== invQr.text && !!invQr.text, 'the verification barcode and the payment QR are separate codes');
@@ -167,9 +189,9 @@ await page.locator('li button', { hasText: 'SLP-INV-' }).first().click();
 await dlg().first().waitFor({ state: 'visible', timeout: 12000 });
 await dlg().first().getByRole('button', { name: 'Invoice' }).click();
 await page.waitForTimeout(1200);
-const invQr2 = await decodeQr(page, '[data-payment-qr-section] [data-qr]');
+const invQr2 = await decodeQr(page, '[data-payment-qr-section] [data-qr] svg');
 ok(typeof invQr2.text === 'string' && invQr2.text.includes('pa=slpnew%40okaxis'),
-  `after the UPI ID change the QR encodes the NEW ID (${invQr2.text || invQr2.err})`);
+  `after the UPI ID change the QR encodes the NEW ID (${invQr2.text || invQr2.err + ' ' + (invQr2.head || '')})`);
 await page.keyboard.press('Escape');
 
 /* ---------- 5. an invalid UPI ID never renders a QR ---------- */

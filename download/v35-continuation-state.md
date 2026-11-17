@@ -1,119 +1,107 @@
-# SLP Billing v35 — continuation state (session cut off mid-task)
+# SLP Billing v35 — FINAL STATE (all requirements implemented + E2E-proven)
 
-Everything below is ALREADY in the workspace and committed as `f91635c` (v35 WIP part 1).
-The app source, Prisma schema, tests and this file are saved. Send any message to continue.
+Everything below is in the workspace and E2E-verified on an isolated test
+server (own port + own throwaway database — the live data was never touched).
 
-## What is DONE and verified (all E2E-proven on the isolated test server)
-
-### Req 1 — Admin login ✅
-- Gate gained an "Owner login (Admin)" step: username **Pradeep**, initial password **2125**.
-- Seeded silently (client-side DEK re-wrap + server scrypt hash — plain password never stored)
-  on the FIRST owner MPIN unlock after this update.
-- Login works from the lock screen; wrong credentials get one generic error (no username probing).
-- Old MPIN unlock still works unchanged.
-
-### Req 2 — Staff accounts ✅
-- Admin creates staff (username + temp password) in Settings (existing flow, audited now).
-- Staff login verified; staff see ONLY Bill / History / Verify (no owner tabs).
-- Staff can change their OWN password from the header button (`data-staff-password-btn`
-  → current + new password, DEK re-wrapped, scrypt hash replaced server-side).
-- Admin reset/deactivate/delete all work (existing UI, now with audit events).
-
-### Req 3 — Staff price editing ✅
-- Cart lines show the product's SAVED price (`origPrice`) next to the edited selling price.
-- Per-item discount toggle ₹ / % (both kinds computed and synced to legacy `discount` field).
-- Owner-configured limits: Settings → "Staff discount limits" (max % + max ₹ per item,
-  optional "allow over-limit with approval"). Stored in the new server `AppConfig` table.
-- Over-limit staff discounts: BLOCKED in the UI (Complete Bill disabled) when approval mode is
-  off; flagged `needsApproval` + owner notification when approval mode is on (server-side too).
-- Master product prices never change; the NEXT bill uses the saved price again (proven in E2E).
-- The server RECOMPUTES all totals + GST from the line items (client totals never trusted).
-
-### Req 4/5/7 — UPI QR + verification barcode ✅
-- New `QrCode.tsx` (inline SVG via `qrcode` pkg, VPA validated by `isValidUpiId`).
-- Payment QR on: the UPI collection screen, the formal invoice, the 58/80mm thermal slip.
-  Labeled "QR CODE – MAKE PAYMENT". Decodes (ZXing round-trip) to `upi://pay?pa=<saved id>&am=<amount>&cu=INR`.
-- UPI ID changes in Settings propagate server-side → every device's QR regenerates (mirror ≤ ~5 s).
-- Code 128 verification barcode moved to the invoice TOP-RIGHT (white chip in the navy header),
-  labeled "SCAN TO VERIFY BILL". Never a QR; the QR is never a verification barcode.
-- Invalid UPI ID → no QR rendered (validation gate proven).
-
-### Req 8/14 — Backend enforcement + audit ✅
-- Staff tokens get 403 on: config PUT, notifications, bills monitor, audit read/write, staff
-  management, bill cancellation. Audit POST is owner-only (staff actions are recorded server-side
-  at registration instead — cannot be faked).
-- New `AuditEvent` model: `bill_created`, `price_edit`, `discount_applied`, `bill_cancelled`,
-  `staff_created/reset/activated/deactivated/deleted`, `owner_password_seeded/changed`,
-  `config_changed` (old→new values). Owner reads it in the dashboard.
-
-### Req 10 — Centralized sync ✅ (mostly pre-existing, extended)
-- The vault engine (4 s pull, union-merge, tombstones) already syncs products/settings/bills.
-- NEW: server-authoritative `AppConfig` (UPI ID, GST, discount limits) polled every cycle;
-  offline config saves queue and retry (`saveConfigToServer`).
-- NEW: offline-saved bills join `pendingRegIds` (persisted) and auto-register on reconnect —
-  the printed barcode always ends up verifiable.
-- NEW: **server-reserved bill numbers** (`POST /api/bills/reserve`, atomic counter) — two staff
-  billing at the same moment get DIFFERENT bill numbers (fixed a real collision bug found in testing).
-
-### Req 11/12/13 — Notifications + dashboard ✅
-- New `Notification` model: created SERVER-SIDE only when a staff bill row is actually written
-  (failed saves can never notify); unique (type, billNo) — duplicates impossible.
-- Admin Dashboard (owner-only tab, red unread badge on the nav): notification list with staff
-  name + @username + bill no + customer + total + discount + status + time; click → the real
-  invoice document (view/download via the existing InvoiceModal); mark-all-read; live staff
-  activity feed; Staff Billing Activity (search bill no/customer/staff, staff + date filters,
-  per-staff sales/discount totals, high-discount flags, CSV export).
-
-### Req 6 — Camera scanner ✅ (code done, E2E suite still to write)
-- `VerifyView.startCamera` rewritten: real `getUserMedia` (back camera), native BarcodeDetector
-  where available, **ZXing Code 128 decoder fallback everywhere else** (the old "camera not
-  opening" was BarcodeDetector being unavailable); explicit handling for NotAllowedError
-  (denied-permission help panel with enable steps) and NotFoundError; camera STOPS the moment a
-  code reads; manual entry always available.
-
-## Test results so far (isolated :3100 server, throwaway db)
+## Test results (isolated :3100 server, throwaway db)
 - `scripts/shot-v35-auth.mjs`      → **24/24 PASS**
 - `scripts/shot-v35-billing.mjs`   → **21/21 PASS**
 - `scripts/shot-v35-dashboard.mjs` → **23/23 PASS**
-- `scripts/shot-v35-invoice.mjs`   → was RUNNING when the session ended (check its last run;
-  it validates QR decode round-trips + barcode placement; needed a fixed ~5.2 s SW-settle wait
-  after first goto because the fresh SW's controllerchange auto-reloads once)
-- `scripts/shot-v35-camera.mjs`    → NOT WRITTEN YET (see plan below)
-- `scripts/shot-v35-sync.mjs`      → NOT WRITTEN YET
+- `scripts/shot-v35-invoice.mjs`   → **19/19 PASS**
+- `scripts/shot-v35-camera.mjs`    → **13/13 PASS**
+- `scripts/shot-v35-sync.mjs`      → **16/16 PASS**
+- v24/v25/v27/v29/v30/v32/v34-public regression + lint + tsc: clean
+- suite total: **116 v35 checks green**
 
-## What remains (do in this order)
-1. Run `PORT=3100 bash scripts/run-e2e.sh scripts/shot-v35-invoice.mjs` → fix whatever fails
-   (all other suites' fixes are already in; likely only locator/timing nits left).
-2. Write + run `shot-v35-camera.mjs`: (a) stub `navigator.mediaDevices.getUserMedia` to return
-   a `canvas.captureStream()` that draws a rendered Code 128 barcode bitmap (generate with
-   JsBarcode in-page), delete `window.BarcodeDetector` first to force the ZXing path, click
-   "Scan with camera" → expect `[data-verify-result="valid"]`; (b) make getUserMedia reject
-   with NotAllowedError → expect `[data-camera-denied]` + manual entry still works; (c) assert
-   the stream tracks are STOPPED after the successful hit.
-3. Write + run `shot-v35-sync.mjs`: owner adds a product → appears in staff's Bill tab ≤ 8 s;
-   owner edits a price → staff sees it; offline bill registration retry (route-abort
-   /api/verify/register, complete bill, unroute → registry row appears); config change (UPI)
-   mirrors to staff.
-4. Full regression: v24 v25 v27 v29 v30 v32 smoke debug-te + all v35 suites (popup pins already
-   bumped to '35' in every old suite).
-5. `bun run lint && bun run build` (the build predates the last fixes — reserve route, audit 403s,
-   patch-config, bill reservation wiring).
-6. Visual check: render the invoice PNG (barcode top-right + QR) — soffice/pdftoppm not needed;
-   screenshot via Playwright and Read it (check "SCAN TO VERIFY BILL" top-right, QR section,
-   no overlap with the status stamp).
-7. Commit as v35 (final), restart :3000 with the new build
-   (`node scripts/free-port.mjs` then `bun run start` in background; verify /verify 200 and
-   owner MPIN state), then update `scripts/shot-v32.mjs`-style popup pins if needed.
-8. Real-device notes for the user: Android Chrome gets the native detector; iOS Safari/Firefox
-   get the ZXing path; camera permission prompt appears on first scan.
+## What each requirement got
 
-## Key files touched (for reference)
-- Server: `src/app/api/{auth/owner/login, auth/owner/password, auth/state, staff/me/password,
-  staff, staff/[id], config, notifications, bills, bills/reserve, audit, verify/register,
-  verify/cancel, verify/[code]}/route.ts`, `src/lib/server/auth.ts`
-- Client: `src/lib/{cloud,sync,store,billing,types,role,version,i18n}.ts`,
-  `src/components/{LockScreen,BillPanel,QrCode,PaymentScreen,InvoiceDoc,ThermalSlip,VerifyView,
-  AdminDashboard,Navigation,SettingsView}.tsx`, `src/app/page.tsx`
-- Schema: `prisma/schema.prisma` (SyncAccount owner-password fields, AppConfig, Notification,
-  AuditEvent, VerifiedBill.createdById/needsApproval) — pushed to the production db (additive).
-- Version: APP_VERSION '35', sw CACHE 'slp-billing-v35'.
+### Req 1 — Admin login ✅
+- Gate offers "Owner login (Admin)": username **Pradeep**, initial password
+  **2125** (seeded silently on the first MPIN unlock, scrypt-hashed at rest,
+  plain password never stored); one generic error for wrong credentials.
+- Password changeable in Settings → Security (default-password nag until
+  changed). Old MPIN unlock keeps working.
+
+### Req 2 — Staff accounts ✅
+- Admin creates staff (username + individual temp password) in Settings;
+  scrypt hashes at rest, DEK re-wrapped per staff password so the vault opens.
+- Staff login lands on the STAFF view (Bill / History / Verify only).
+- Staff change their own password (header button). Admin reset / deactivate /
+  delete all work and are audited.
+
+### Req 3 — Staff price editing ✅
+- Per-bill price editing with the SAVED price shown next to the edited one;
+  per-item discounts ₹ or %; owner-configured limits (max % / max ₹ /
+  optional approval mode) enforced in the UI AND on the server.
+- Master product prices never change; the next bill uses the saved price.
+- Server recomputes totals + GST from line items; records username,
+  orig→edited price, discount, bill number, date/time (audit + bill record).
+
+### Req 4/5/7 — UPI payment QR + verification barcode ✅
+- `QrCode.tsx` renders the payment QR from the SAVED UPI ID (validated VPA);
+  it decodes (round-trip proven) to `upi://pay?pa=<saved id>&am=<amount>&cu=INR`.
+- Payment QR on the collection screen, the formal invoice and the thermal slip
+  — labeled "QR CODE – MAKE PAYMENT" — including fully-PAID bills (slip bug
+  fixed this session: the slip used to hide the QR once paid).
+- Changing the UPI ID in Settings regenerates every QR on every device
+  (server-authoritative config, ~4 s mirror). Invalid UPI ID → no QR at all.
+- Code 128 verification barcode at the invoice TOP-RIGHT on a white chip,
+  labeled "SCAN TO VERIFY BILL" — never a QR; the QR is never a barcode.
+
+### Req 6 — Camera scanner ✅ (REAL fix this session)
+- **The actual bug**: `VerifyView.startCamera` read `videoRef.current` right
+  after `setCameraOn(true)`, but the `<video>` was conditionally rendered —
+  the ref was still null, the function returned early, and the stream never
+  attached. The camera "opened" and scanned NOTHING, on every browser.
+  Fix: the video element is always mounted (hidden when off).
+- E2E proves: real `getUserMedia` → live frames → Code 128 read via the
+  native BarcodeDetector OR the ZXing fallback → VALID / INVALID /
+  CANCELLED verdicts; tracks STOP the instant a code reads; denied
+  permission shows the enable-steps help panel with manual entry intact.
+
+### Req 8/14 — Backend enforcement + audit ✅
+- Staff tokens get 401/403 on config PUT, notifications, bills monitor, audit
+  read/write, staff management and bill cancellation — enforced server-side.
+- `AuditEvent` records bill_created, price_edit, discount_applied,
+  bill_cancelled, staff lifecycle, owner password events, config changes.
+- /api/bills search made CASE-INSENSITIVE this session (SQLite `contains` is
+  case-sensitive; the filter now runs in JS over the fetched window).
+
+### Req 10 — Centralized sync ✅ (proven cross-device this session)
+- Owner adds a product → it appears on the staff billing screen within
+  seconds (store union-merge, 4 s pull).
+- Owner edits a price → staff see the new price without any manual pull.
+- Owner changes the UPI ID → the staff device's payment QR decodes with the
+  NEW ID (~seconds).
+- Offline bill registration queues (`pendingRegIds`) and AUTO-REGISTERS on
+  reconnect — the printed barcode always ends up verifiable; duplicates are
+  impossible (unique code/bill — 409s).
+- Two staff completing bills at the same instant get DIFFERENT
+  server-reserved bill numbers and their own verification codes; no
+  overwrites. E2E: SLP-INV-1004 vs SLP-INV-1005, both items intact.
+
+### Req 11/12/13 — Notifications + Admin Dashboard ✅
+- Notifications are created SERVER-SIDE only when a staff bill row is
+  actually written (failed saves can never notify); unique (type, billNo)
+  makes duplicates impossible.
+- Dashboard: notification list (staff name + @username + bill no + customer
+  + total + discount + status + time; click → the real invoice), unread
+  badge, live staff activity feed, Staff Billing Activity (search by bill no
+  / customer / staff — now case-insensitive, staff + date filters,
+  per-staff sales/discount totals, high-discount flags, CSV export), audit
+  log.
+
+## Key files touched this session
+- `src/components/VerifyView.tsx` — camera fix (always-mounted video).
+- `src/components/ThermalSlip.tsx` — payment QR also on fully-paid slips.
+- `src/components/InvoiceDoc.tsx` — `data-verify-code` attribute on the chip.
+- `src/app/api/bills/route.ts` — case-insensitive search.
+- New suites: `scripts/shot-v35-{invoice,camera,sync,visual}.mjs`,
+  `scripts/run-regression-v35.sh`; jsqr added as a devDependency for the
+  in-Node QR round-trip decoder (the sandbox OOM-killed the in-browser one).
+
+## Real-device notes
+- Android Chrome: native BarcodeDetector path; iOS Safari/Firefox/older
+  WebViews: ZXing fallback — both proven by the camera suite.
+- First camera scan asks for permission; refusal shows the help panel and
+  manual entry keeps working.

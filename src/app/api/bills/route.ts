@@ -38,19 +38,22 @@ export async function GET(req: Request) {
     end.setHours(23, 59, 59, 999);
     where.billDateISO = { ...(where.billDateISO as object | undefined), lte: end };
   }
-  if (q) {
-    where.OR = [
-      { billNo: { contains: q } },
-      { customerName: { contains: q } },
-      { createdBy: { contains: q } },
-    ];
-  }
-
-  const rows = await db.verifiedBill.findMany({
+  const rowsAll = await db.verifiedBill.findMany({
     where,
     orderBy: { billDateISO: 'desc' },
     take: limit,
   });
+  // q — CASE-INSENSITIVE contains. SQLite has no insensitive mode in Prisma
+  // (a lowercased q never matches "Ravi Kumar"), so the free-text filter
+  // runs in JS over the fetched window.
+  const rows = q
+    ? rowsAll.filter(
+        (b) =>
+          (b.billNo || '').toLowerCase().includes(q) ||
+          (b.customerName || '').toLowerCase().includes(q) ||
+          (b.createdBy || '').toLowerCase().includes(q)
+      )
+    : rowsAll;
 
   const bills = rows.map((b) => {
     const items = safeParse(b.itemsJson) as Array<Record<string, unknown>>;
