@@ -11,6 +11,9 @@ export interface BusinessSettings {
   upiId: string;
   invoicePrefix: string;
   nextInvoiceNo: number;
+  /** v41 transient COMMAND (never persisted): "Start from 1" — the settings
+   *  PUT consumes it to reset the central bill counter to nextInvoiceNo-1 */
+  resetBillNo?: boolean;
   slipWidthMm: 58 | 80;
   thankYouNote: string;
   returnPolicy: string;

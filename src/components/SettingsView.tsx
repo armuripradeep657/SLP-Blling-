@@ -35,6 +35,7 @@ import {
   clearFaceProfile,
   enrollFace,
   ensureFaceLandmarker,
+  FaceCameraError,
   getFaceProfile,
   openFaceCamera,
   saveFaceProfile,
@@ -423,6 +424,23 @@ function BillingSlipSection() {
   const dirty = JSON.stringify(draft) !== JSON.stringify(billingOf(settings));
   const upd = (patch: Partial<BillingDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
+  const [busyReset, setBusyReset] = useState(false);
+  /** v41: restart the bill-number sequence — next bill gets "1" (or whatever
+   *  the owner typed in the Next invoice no. field). A deliberate reset: the
+   *  server accepts it only with this explicit flag, and taken numbers are
+   *  still skipped so no old bill ever shares its number. */
+  const restartFromOne = () => {
+    if (busyReset) return;
+    setBusyReset(true);
+    saveSettings({ nextInvoiceNo: 1, resetBillNo: true })
+      .then(() => {
+        upd({ nextInvoiceNo: '1' });
+        toast({ title: t('settings.startFrom1Toast') });
+      })
+      .catch(() => toast({ title: t('net.saveFailed'), variant: 'destructive' }))
+      .finally(() => setBusyReset(false));
+  };
+
   const save = () => {
     const gstPercent = Math.min(Math.max(Number(draft.gstPercent.replace(/[^\d.]/g, '')) || 0, 0), 28);
     saveSettings({
@@ -460,6 +478,18 @@ function BillingSlipSection() {
           onChange={(v) => upd({ nextInvoiceNo: v.replace(/\D/g, '') })}
           type="number"
         />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={restartFromOne}
+          disabled={busyReset}
+          className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+        >
+          <RotateCcw className="size-3.5" />
+          {t('settings.startFrom1')}
+        </button>
+        <span className="text-[11px] text-muted-foreground">{t('settings.startFrom1Desc')}</span>
       </div>
       <Field
         ariaLabel="GST percent"
@@ -662,16 +692,11 @@ function FaceUnlockSection() {
     setBusy(true);
     try {
       setProgress(t('settings.faceStarting'));
-      const cam = await openFaceCamera();
+      // let the camera card mount FIRST — the video element must attach to
+      // the page before play() (detached elements silently fail to play)
+      await new Promise((r) => setTimeout(r, 60));
+      const cam = await openFaceCamera(videoHostRef.current);
       stopRef.current = cam.stop;
-      const host = videoHostRef.current;
-      if (host) {
-        host.replaceChildren(cam.video);
-        cam.video.style.width = '100%';
-        cam.video.style.height = '100%';
-        cam.video.style.objectFit = 'cover';
-        cam.video.style.transform = 'scaleX(-1)'; // selfie mirror
-      }
       setProgress(t('settings.faceModel'));
       await ensureFaceLandmarker(); // loads wasm + model (same-origin, cached)
       setProgress(t('settings.faceCapturing'));
@@ -682,8 +707,13 @@ function FaceUnlockSection() {
       saveFaceProfile(next);
       setProfile(next);
       toast({ title: t('settings.faceUnlock'), description: t('settings.faceDone') });
-    } catch {
-      toast({ title: t('settings.faceUnlock'), description: t('face.errCamera'), variant: 'destructive' });
+    } catch (e) {
+      toast({
+        title: t('settings.faceUnlock'),
+        description:
+          e instanceof FaceCameraError && e.kind === 'denied' ? t('face.errPerm') : t('face.errCamera'),
+        variant: 'destructive',
+      });
     } finally {
       stopRef.current?.();
       stopRef.current = null;

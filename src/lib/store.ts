@@ -330,13 +330,18 @@ export const useStore = create<BillingStore>()(
       setActiveTab: (t) => set({ activeTab: t }),
 
       saveSettings: async (s) => {
-        const ok = await apiSettingsPut(s);
+        // resetBillNo is a transient command (v41) — never stored as a setting
+        const { resetBillNo, ...persist } = s as Partial<BusinessSettings> & { resetBillNo?: boolean };
+        const ok = await apiSettingsPut(persist);
         if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ settings: { ...st.settings, ...s } }));
+        set((st) => ({ settings: { ...st.settings, ...persist } }));
         // the owner's "next invoice no" lifts the central counter — reflect it
-        // on the billing screen INSTANTLY (the poll confirms the same value)
+        // on the billing screen INSTANTLY (the poll confirms the same value);
+        // the "Start from 1" reset is the one path allowed to go DOWN
         const entered = Math.round(Number(s.nextInvoiceNo ?? 0));
-        if (Number.isFinite(entered) && entered > 1) {
+        if (resetBillNo) {
+          set((st) => ({ srvConfig: { ...st.srvConfig, nextBillNo: Math.max(0, entered - 1) } }));
+        } else if (Number.isFinite(entered) && entered > 1) {
           set((st) => ({ srvConfig: { ...st.srvConfig, nextBillNo: Math.max(st.srvConfig.nextBillNo, entered - 1) } }));
         }
         await pollOnce();

@@ -24,7 +24,12 @@ export async function PUT(req: Request) {
   const prev = await db.bizSettings.findUnique({ where: { id: 'owner' } });
   const prevSettings: Partial<BusinessSettings> = prev ? safeParse(prev.settingsJson) : {};
   const prevAppearance: Partial<Appearance> = prev ? safeParse(prev.appearanceJson) : {};
-  const settings = { ...prevSettings, ...(body.settings ?? {}) };
+  /* v41: resetBillNo is a transient COMMAND, never a stored setting — consume
+     it here and strip it so it can't re-trigger on a later settings save */
+  const bodySettings = { ...(body.settings ?? {}) } as Record<string, unknown>;
+  const resetBillNo = bodySettings.resetBillNo === true;
+  delete bodySettings.resetBillNo;
+  const settings = { ...prevSettings, ...bodySettings };
   const appearance = { ...prevAppearance, ...(body.appearance ?? {}) };
   // store in SECONDS — the Int column cannot hold Date.now() ms
   const dataUpdatedAt = Math.floor(Date.now() / 1000);
@@ -37,13 +42,18 @@ export async function PUT(req: Request) {
 
   const gst = Number(settings.gstPercent ?? 0);
   // the owner's "next invoice no" edit LIFTS the central counter — the slip
-  // sequence continues from wherever the owner sets it, never rewinding
+  // sequence continues from wherever the owner sets it, never rewinding.
+  // EXCEPTION (v41): the explicit "Start from 1" reset — the counter goes
+  // exactly where the owner points it (next bill = nextInvoiceNo), and the
+  // bill-save collision check still skips any number an old bill holds.
   const nextInv = Math.round(Number((settings as { nextInvoiceNo?: number }).nextInvoiceNo ?? 0));
   const prevCfg = await db.appConfig.findUnique({ where: { slot: 'owner' } });
-  const counterVal = Math.max(
+  const lifted = Math.max(
     prevCfg?.nextBillNo ?? 0,
     Number.isFinite(nextInv) && nextInv > 1 ? nextInv - 1 : 0
   );
+  const resetTo = Number.isFinite(nextInv) && nextInv > 0 ? nextInv - 1 : 0;
+  const counterVal = resetBillNo ? Math.min(lifted, resetTo) : lifted;
   await db.appConfig.upsert({
     where: { slot: 'owner' },
     update: { upiId: String(settings.upiId ?? ''), gstPercent: Number.isFinite(gst) ? gst : 0, nextBillNo: counterVal },
@@ -51,7 +61,7 @@ export async function PUT(req: Request) {
   });
 
   const rev = await bumpRev();
-  return Response.json({ ok: true, rev });
+  return Response.json({ ok: true, rev, nextBillNo: counterVal });
 }
 
 function safeParse(s: string): Record<string, unknown> {

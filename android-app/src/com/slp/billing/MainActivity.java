@@ -1,11 +1,14 @@
 package com.slp.billing;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
+import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -25,12 +28,20 @@ import android.widget.Toast;
  * First launch shows a one-time server-address setup screen (remembered in
  * SharedPreferences); every launch afterwards opens the billing app directly
  * in a full-screen WebView, outside any browser chrome.
+ *
+ * v1.2: FACE UNLOCK CAMERA — the web app asks for the front camera
+ * (getUserMedia). WebView silently DENIES that unless the wrapper grants the
+ * request AND holds the CAMERA runtime permission itself, so both are wired
+ * here: onPermissionRequest stores the pending web request, asks Android for
+ * the CAMERA permission, and grants the web request from
+ * onRequestPermissionsResult.
  */
 public class MainActivity extends Activity {
 
     private static final String PREFS = "slp_billing";
     private static final String KEY_URL = "server_url";
     private static final int REQ_FILE_CHOOSER = 1001;
+    private static final int REQ_CAMERA = 1002;
 
     private WebView webView;
     private ProgressBar progressBar;
@@ -41,6 +52,7 @@ public class MainActivity extends Activity {
     private String serverUrl;
     private boolean errored = false;
     private ValueCallback<Uri[]> pendingFileCallback;
+    private PermissionRequest pendingWebPermission;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,7 +76,8 @@ public class MainActivity extends Activity {
         ws.setSupportZoom(false);
         ws.setLoadWithOverviewMode(true);
         ws.setUseWideViewPort(true);
-        ws.setMediaPlaybackRequiresUserGesture(true);
+        // v1.2: face unlock auto-opens the camera on the lock screen without a tap
+        ws.setMediaPlaybackRequiresUserGesture(false);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -138,6 +151,45 @@ public class MainActivity extends Activity {
                     pendingFileCallback = null;
                     Toast.makeText(MainActivity.this, "No file picker available", Toast.LENGTH_SHORT).show();
                     return false;
+                }
+            }
+
+            /** v1.2: the face-unlock camera (getUserMedia) lands here —
+             *  WebView denies everything by default unless we grant it and
+             *  hold the matching Android permission ourselves. */
+            @Override
+            public void onPermissionRequest(final PermissionRequest request) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        boolean wantsVideo = false;
+                        for (String r : request.getResources()) {
+                            if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(r)) {
+                                wantsVideo = true;
+                                break;
+                            }
+                        }
+                        if (!wantsVideo) {
+                            request.deny();
+                            return;
+                        }
+                        if (checkSelfPermission(Manifest.permission.CAMERA)
+                                == PackageManager.PERMISSION_GRANTED) {
+                            request.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+                            return;
+                        }
+                        // ask Android first; the web request is granted in
+                        // onRequestPermissionsResult once the user answers
+                        pendingWebPermission = request;
+                        requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAMERA);
+                    }
+                });
+            }
+
+            @Override
+            public void onPermissionRequestCanceled(PermissionRequest request) {
+                if (pendingWebPermission == request) {
+                    pendingWebPermission = null;
                 }
             }
         });
@@ -248,6 +300,26 @@ public class MainActivity extends Activity {
             return;
         }
         super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    /** v1.2: the Android CAMERA answer → grant or deny the stored web request */
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == REQ_CAMERA) {
+            PermissionRequest web = pendingWebPermission;
+            pendingWebPermission = null;
+            if (web != null) {
+                boolean granted = grantResults.length > 0
+                        && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+                if (granted) {
+                    web.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+                } else {
+                    web.deny();
+                }
+            }
+            return;
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     }
 
     @Override

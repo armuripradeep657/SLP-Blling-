@@ -23,7 +23,7 @@ import {
   setRecoverMaterial,
   lockApp,
 } from '@/lib/cloud';
-import { getFaceProfile, matchFace, openFaceCamera } from '@/lib/face';
+import { FaceCameraError, getFaceProfile, matchFace, openFaceCamera } from '@/lib/face';
 import { fileToSmallDataUrl } from '@/lib/photo';
 import { hasFreshUnlockSession } from '@/lib/idle-lock';
 import {
@@ -654,17 +654,11 @@ export default function LockScreen({
     setError(null);
     setFaceState('scanning');
     try {
-      const cam = await openFaceCamera();
+      // v41: the video element attaches to the card BEFORE play (detached
+      // elements refuse to play in several WebViews) and the FRONT camera is
+      // requested explicitly, with a typed error when permission is missing
+      const cam = await openFaceCamera(faceVideoRef.current);
       faceStopRef.current = cam.stop;
-      const host = faceVideoRef.current;
-      if (host) {
-        host.replaceChildren(cam.video);
-        cam.video.style.width = '100%';
-        cam.video.style.height = '100%';
-        cam.video.style.objectFit = 'cover';
-        cam.video.style.transform = 'scaleX(-1)'; // selfie mirror
-      }
-      await new Promise((r) => setTimeout(r, 400)); // camera warm-up
       const res = await matchFace(cam.video, profile);
       if (!res.ok) {
         setFaceState('denied');
@@ -691,20 +685,23 @@ export default function LockScreen({
       }
       setFaceState('matched');
       finishOwner();
-    } catch {
+    } catch (e) {
       setFaceState('denied');
-      setError(t('face.errCamera'));
+      setError(e instanceof FaceCameraError && e.kind === 'denied' ? t('face.errPerm') : t('face.errCamera'));
     } finally {
       faceBusyRef.current = false;
       stopFaceCam();
     }
   }, [busy, t, stopFaceCam]);
 
-  // auto-attempt on every appearance of the MPIN step; camera dies with it
+  // auto-attempt on every appearance of the MPIN step; camera dies with it.
+  // Runs through a ref so busy/language changes never re-open the camera mid-scan.
+  const runFaceUnlockRef = useRef(runFaceUnlock);
+  runFaceUnlockRef.current = runFaceUnlock;
   useEffect(() => {
-    if (step === 'unlock' && faceEnabled) void runFaceUnlock();
+    if (step === 'unlock' && faceEnabled) void runFaceUnlockRef.current?.();
     return () => stopFaceCam();
-  }, [step, faceEnabled, runFaceUnlock, stopFaceCam]);
+  }, [step, faceEnabled, stopFaceCam]);
 
   /** Explicit retry is the only thing that wipes the form */
   const retryProbe = () => {

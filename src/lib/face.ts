@@ -129,23 +129,96 @@ export function cosine(a: number[], b: number[]): number {
 }
 
 /* ------------------------------------------------------------------ */
-/* Camera                                                               */
+/* Camera — FRONT camera, hardened for phones + the APK WebView         */
 /* ------------------------------------------------------------------ */
 
-export async function openFaceCamera(): Promise<{ video: HTMLVideoElement; stop: () => void }> {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 360 } },
-    audio: false,
-  });
+export type FaceCameraErrorKind = 'denied' | 'unavailable' | 'failed';
+
+/** thrown by openFaceCamera with a .kind the UI can translate */
+export class FaceCameraError extends Error {
+  kind: FaceCameraErrorKind;
+  constructor(kind: FaceCameraErrorKind, cause?: unknown) {
+    super(kind);
+    this.kind = kind;
+    this.cause = cause;
+  }
+}
+
+/**
+ * Open the FRONT camera ('user' facing) and return a PLAYING video element.
+ *
+ * v41 hardening — this is why the camera failed on some devices before:
+ *   1. the video element is attached to the page BEFORE play() — several
+ *      WebViews refuse to play a detached element;
+ *   2. front camera is requested as an IDEAL (never an exact) constraint,
+ *      with a plain-camera fallback for devices that don't label cameras;
+ *   3. permission failures are reported as typed errors so the UI can say
+ *      "allow the camera" instead of a generic failure.
+ */
+export async function openFaceCamera(
+  host?: HTMLElement | null
+): Promise<{ video: HTMLVideoElement; stop: () => void }> {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new FaceCameraError('unavailable'); // insecure context / no media stack
+  }
+  const constraints: MediaStreamConstraints[] = [
+    { video: { facingMode: { ideal: 'user' }, width: { ideal: 480 }, height: { ideal: 360 } }, audio: false },
+    { video: true, audio: false }, // some devices reject facingMode entirely
+  ];
+  let stream: MediaStream | null = null;
+  let lastErr: unknown = null;
+  for (const c of constraints) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(c);
+      break;
+    } catch (e) {
+      lastErr = e;
+      const name = (e as DOMException)?.name ?? '';
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        throw new FaceCameraError('denied', e); // no point trying other constraints
+      }
+    }
+  }
+  if (!stream) {
+    throw new FaceCameraError('unavailable', lastErr);
+  }
   const video = document.createElement('video');
   video.srcObject = stream;
   video.playsInline = true;
   video.muted = true;
-  await video.play();
+  video.setAttribute('playsinline', ''); // iOS Safari legacy attribute
+  // mirror + fill — one place, every caller looks the same
+  video.style.width = '100%';
+  video.style.height = '100%';
+  video.style.objectFit = 'cover';
+  video.style.transform = 'scaleX(-1)'; // selfie mirror
+  if (host) host.replaceChildren(video);
+  try {
+    await video.play();
+  } catch (e) {
+    // detached / gesture-restricted play — retry once the frame is live
+    await new Promise((r) => setTimeout(r, 250));
+    try {
+      await video.play();
+    } catch (e2) {
+      stream.getTracks().forEach((tr) => tr.stop());
+      throw new FaceCameraError('failed', e2);
+    }
+  }
   return {
     video,
-    stop: () => stream.getTracks().forEach((tr) => tr.stop()),
+    stop: () => stream?.getTracks().forEach((tr) => tr.stop()),
   };
+}
+
+/** wait until the stream actually delivers frames (or give up) */
+async function waitFrames(video: HTMLVideoElement, timeoutMs = 2500): Promise<boolean> {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    if (video.readyState >= 2 && video.videoWidth > 0) return true;
+    await new Promise((r) => setTimeout(r, 80));
+  }
+  return false;
 }
 
 /** best similarity of one frame against every enrolled sample */
@@ -155,20 +228,22 @@ function bestScore(emb: number[], samples: number[][]): number {
   return best;
 }
 
-/** Enroll: capture `count` frames with small pauses (slight head moves help) */
+/** Enroll: collect `count` good frames (retries — slight head moves help) */
 export async function enrollFace(
   video: HTMLVideoElement,
   count: number,
   onProgress?: (done: number, total: number) => void
 ): Promise<number[][]> {
+  if (!(await waitFrames(video))) throw new FaceCameraError('failed');
   const samples: number[][] = [];
-  for (let i = 0; i < count; i++) {
+  const maxTries = count * 2;
+  for (let i = 0; i < maxTries && samples.length < count; i++) {
     const emb = await extractEmbedding(video);
     if (emb) samples.push(emb);
     onProgress?.(samples.length, count);
     await new Promise((r) => setTimeout(r, 450));
   }
-  if (samples.length < 2) throw new Error('noFace');
+  if (samples.length < 2) throw new FaceCameraError('failed'); // no usable face frames
   return samples;
 }
 
@@ -177,6 +252,7 @@ export async function matchFace(
   video: HTMLVideoElement,
   profile: FaceProfile
 ): Promise<{ ok: boolean; score: number }> {
+  if (!(await waitFrames(video))) return { ok: false, score: 0 };
   let hits = 0;
   let score = 0;
   for (let i = 0; i < 3; i++) {
