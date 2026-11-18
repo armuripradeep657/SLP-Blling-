@@ -175,20 +175,28 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
 
   // sync form state when target changes
   const [loadedId, setLoadedId] = useState<string | null>(null);
+  // v48 CRASH FIX: useToast + saving were declared BELOW the
+  // `if (!product) return null` early return — React saw a different hook
+  // count the moment editing opened/closed ("Rendered more hooks than during
+  // the previous render") and the error boundary took the whole app down:
+  // the "Something went wrong" screen on every product add/edit. Hooks must
+  // run unconditionally — both are hoisted above the early return now.
+  const { toast } = useToast();
+  const [saving, setSaving] = useState(false);
   const targetKey = p ? p.id : isNew ? 'new' : null;
   if (targetKey !== loadedId) {
     setLoadedId(targetKey);
     if (p) {
-      setName(p.name);
+      setName(p.name ?? '');
       setNameTe(p.nameTe ?? '');
       // existing Telugu name → owner wrote it, don't auto-fill over it;
       // empty → auto-fill resumes as they type the English name
       teAutoRef.current = !p.nameTe;
       setNameTeAuto(false);
-      setCategory(p.category);
+      setCategory(p.category ?? 'Custom');
       setPrice(String(p.price));
       setStock(p.stock !== undefined ? String(p.stock) : '');
-      setSizes([...p.sizes]);
+      setSizes([...(p.sizes ?? [])]);
       setSizePrices({ ...(p.sizePrices ?? {}) });
       setImage(p.image);
     } else if (isNew) {
@@ -224,8 +232,6 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
     });
   };
 
-  const { toast } = useToast();
-
   const onFile = async (f: File | undefined) => {
     if (!f) return;
     try {
@@ -237,7 +243,6 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
     }
   };
 
-  const [saving, setSaving] = useState(false);
   /** v44: the save is now AWAITED — the dialog stays open with a clear toast
    *  if the save fails (offline / server error) instead of silently closing
    *  and losing what the owner typed (the "error while adding/editing" bug) */

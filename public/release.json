@@ -1,15 +1,13 @@
 {
-  "version": 47,
+  "version": 48,
   "notes": {
     "en": [
-      "Fresh start: old bills removed — bill numbering begins again from SLP-INV-1001 (old bills were backed up first)",
-      "Products now appear in the catalogue the moment you tap Save — no more waiting or refreshing on slow internet",
-      "Product edit and delete also apply instantly"
+      "Fixed: the app crashed with 'Something went wrong' when opening product add/edit — now every product opens for editing safely",
+      "Product photos, Telugu names and prices all load correctly in the edit form"
     ],
     "te": [
-      "కొత్త ప్రారంభం: పాత బిల్లులు తొలగించబడ్డాయి — బిల్లు నంబరింగ్ మళ్ళీ SLP-INV-1001 నుండి ప్రారంభమవుతుంది (పాత బిల్లుల బ్యాకప్ భద్రపరచబడింది)",
-      "ప్రొడక్ట్ సేవ్ చేసిన వెంటనే కేటలాగ్‌లో కనిపిస్తుంది — స్లో ఇంటర్నెట్‌లో కూడా వేచి ఉండాల్సిన అవసరం లేదు",
-      "ప్రొడక్ట్ ఎడిట్, డిలీట్ కూడా వెంటనే వర్తిస్తాయి"
+      "పరిష్కారం: ప్రొడక్ట్ యాడ్/ఎడిట్ తెరిచేటప్పుడు 'ఏదో తప్పు జరిగింది' అని యాప్ క్రాష్ అయ్యేది — ఇప్పుడు ప్రతి ప్రొడక్ట్ సురక్షితంగా ఎడిట్ అవుతుంది",
+      "ఎడిట్ ఫారమ్‌లో ఫోటోలు, తెలుగు పేర్లు, ధరలు అన్నీ సరిగ్గా కనిపిస్తాయి"
     ]
   }
 }
