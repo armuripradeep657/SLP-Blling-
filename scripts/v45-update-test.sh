@@ -15,14 +15,14 @@ echo "== release.json served =="
 curl -s "$B/release.json" | python3 -c "
 import sys, json
 r = json.load(sys.stdin)
-assert r['version'] == 48, r['version']
+assert r['version'] == 49, r['version']
 assert len(r['notes']['en']) >= 3 and len(r['notes']['te']) >= 3
 print('release.json OK — version', r['version'], '| en notes:', len(r['notes']['en']), '| te notes:', len(r['notes']['te']))
 "
 
-echo "== sw.js is v48 + consent flow =="
+echo "== sw.js is v49 + consent flow =="
 SW=$(curl -s "$B/sw.js")
-echo "$SW" | grep -q "slp-billing-v48" && echo "cache v48 OK"
+echo "$SW" | grep -q "slp-billing-v49" && echo "cache v49 OK"
 echo "$SW" | grep -q "APPLY_UPDATE" && echo "APPLY_UPDATE handler OK"
 echo "$SW" | grep -q "UPDATE_PROGRESS" && echo "progress messages OK"
 echo "$SW" | grep -q "AbortSignal.timeout(30000)" && echo "per-asset 30s timeout OK (slow-link batches)"

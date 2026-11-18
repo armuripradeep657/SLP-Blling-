@@ -88,6 +88,10 @@ model BizProduct {
   sizePricesJson String   @default("{}")
   image          String?
   stock          Int?
+  /// v49: creation time — the catalogue is ordered by this STABLE field so
+  /// editing a product (name/photo/price/sizes) never moves it in the list
+  /// (the old updatedAt-desc order jumped every edited product to the top)
+  createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
 

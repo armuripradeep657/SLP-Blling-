@@ -323,7 +323,12 @@ export async function snapshot(): Promise<{
     await Promise.all([
       readSettings(),
       readAppearance(),
-      db.bizProduct.findMany({ orderBy: { updatedAt: 'desc' } }),
+      // v49: order by CREATION time, never updatedAt — editing a product
+      // (name/photo/price/sizes) must not move it in the catalogue. The old
+      // updatedAt-desc order jumped every edited product to the top on the
+      // next poll, so the list kept reshuffling after each save. name-asc is
+      // only a deterministic tie-break for identical creation timestamps.
+      db.bizProduct.findMany({ orderBy: [{ createdAt: 'desc' }, { name: 'asc' }] }),
       db.bizInvoice.findMany({ orderBy: [{ dateISO: 'desc' }, { createdAt: 'desc' }] }),
       db.bizExpense.findMany({ orderBy: { dateISO: 'desc' } }),
       db.bizIncome.findMany({ orderBy: { dateISO: 'desc' } }),

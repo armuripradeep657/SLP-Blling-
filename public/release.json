@@ -1,13 +1,17 @@
 {
-  "version": 48,
+  "version": 49,
   "notes": {
     "en": [
-      "Fixed: the app crashed with 'Something went wrong' when opening product add/edit — now every product opens for editing safely",
-      "Product photos, Telugu names and prices all load correctly in the edit form"
+      "Catalogue order is now stable: editing a product (name, photo, sizes, price) no longer moves it to the top — the list stays exactly as you arranged it",
+      "New products appear at the top; everything else keeps its place",
+      "Product edits save straight into the central database — no repeated refreshes needed",
+      "Bill items always appear in the order you entered them"
     ],
     "te": [
-      "పరిష్కారం: ప్రొడక్ట్ యాడ్/ఎడిట్ తెరిచేటప్పుడు 'ఏదో తప్పు జరిగింది' అని యాప్ క్రాష్ అయ్యేది — ఇప్పుడు ప్రతి ప్రొడక్ట్ సురక్షితంగా ఎడిట్ అవుతుంది",
-      "ఎడిట్ ఫారమ్‌లో ఫోటోలు, తెలుగు పేర్లు, ధరలు అన్నీ సరిగ్గా కనిపిస్తాయి"
+      "కేటలాగ్ క్రమం ఇప్పుడు స్థిరంగా ఉంటుంది: ప్రొడక్ట్‌ను ఎడిట్ చేసినా (పేరు, ఫోటో, సైజులు, ధర) అది పైకి కదలదు — జాబితా మీరు ఏర్పాటు చేసిన క్రమంలోనే ఉంటుంది",
+      "కొత్త ప్రొడక్ట్స్ పైన కనిపిస్తాయి; మిగతావి అలాగే ఉంటాయి",
+      "ప్రొడక్ట్ ఎడిట్స్ నేరుగా సెంట్రల్ డేటాబేస్‌లో సేవ్ అవుతాయి — బారీగా రిఫ్రెష్ చేయాల్సిన అవసరం లేదు",
+      "బిల్లులో ఐటమ్స్ ఎల్లప్పుడూ మీరు ఎంటర్ చేసిన క్రమంలోనే కనిపిస్తాయి"
     ]
   }
 }
