@@ -351,7 +351,11 @@ export const useStore = create<BillingStore>()(
         const ok = await apiProductPut(p);
         if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
         set((st) => ({ products: [p, ...st.products.filter((x) => x.id !== p.id)] }));
-        await pollOnce();
+        // v47: the product is saved AND shown — do NOT await the state poll
+        // here. On the shop's slow link the 20s poll blocked the dialog close
+        // and the catalogue looked frozen ("new product shows only after a
+        // refresh"); the background poll still reconciles rev + catalog.
+        void pollOnce();
       },
 
       updateProduct: async (id, p) => {
@@ -359,14 +363,14 @@ export const useStore = create<BillingStore>()(
         const ok = await apiProductPut(merged);
         if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
         set((st) => ({ products: st.products.map((x) => (x.id === id ? { ...x, ...p } : x)) }));
-        await pollOnce();
+        void pollOnce();
       },
 
       deleteProduct: async (id) => {
         const ok = await apiProductDelete(id);
         if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
         set((st) => ({ products: st.products.filter((x) => x.id !== id) }));
-        await pollOnce();
+        void pollOnce();
       },
 
       /* ---------------------------------------------------------- */
