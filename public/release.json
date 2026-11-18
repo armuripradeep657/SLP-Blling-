@@ -1,0 +1,17 @@
+{
+  "version": 45,
+  "notes": {
+    "en": [
+      "App opens reliably on slow internet — login now retries automatically",
+      "App updates ask you first: see what's new, then choose Update now or keep the old version",
+      "Update downloads show a progress bar",
+      "Check for updates anytime in Settings → App updates"
+    ],
+    "te": [
+      "నెట్ స్లో అయినా యాప్ కన్ఫిడెన్షియల్‌గా తెరుచుకుంటుంది — లాగిన్ ఇప్పుడు ఆటోమేటిక్‌గా రిటై అవుతుంది",
+      "యాప్ అప్‌డేట్‌లు ఇప్పుడు ముందు అడుగుతాయి: కొత్త ఫీచర్లు చూసి, అప్‌డేట్ చేయండి లేదా పాత వెర్షన్‌లో కొనసాగండి",
+      "అప్‌డేట్ డౌన్‌లోడ్ అయినప్పుడు ప్రోగ్రెస్ బార్ కనిపిస్తుంది",
+      "సెట్టింగ్స్ → యాప్ అప్‌డేట్స్‌లో ఎప్పుడైనా తనిఖీ చేయండి"
+    ]
+  }
+}

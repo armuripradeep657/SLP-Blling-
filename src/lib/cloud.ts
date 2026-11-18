@@ -103,6 +103,36 @@ async function postJson(url: string, body?: unknown): Promise<{ status: number; 
   }
 }
 
+/**
+ * v45: auth-critical calls (MPIN setup/unlock, the public state probe) retry
+ * AUTOMATICALLY — on the shop's slow/flaky link a single 20s attempt often
+ * dies ("Cannot reach the server" with full bars). 3 attempts × 25s with a
+ * short backoff. Only for auth: bill POSTs stay single-shot (never double-bill).
+ */
+async function postJsonAuth(
+  url: string,
+  body?: unknown
+): Promise<{ status: number; data: Record<string, unknown> }> {
+  let last = { status: 0, data: { error: 'network' } as Record<string, unknown> };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.timeout(25000),
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (res.status === 200 || (res.status >= 400 && res.status < 500)) return { status: res.status, data };
+      last = { status: res.status, data }; // 5xx — try again
+    } catch {
+      last = { status: 0, data: { error: 'network' } };
+    }
+    if (attempt < 3) await new Promise((r) => setTimeout(r, 1200 * attempt));
+  }
+  return last;
+}
+
 export async function authedFetch(
   url: string,
   method: 'GET' | 'PUT' | 'POST' | 'PATCH' | 'DELETE',
@@ -141,25 +171,33 @@ export async function apiAuthState(): Promise<{
   ownerPasswordIsDefault?: boolean;
   error?: string;
 }> {
-  try {
-    const res = await fetch('/api/auth/state', { signal: AbortSignal.timeout(15000) });
-    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    if (res.status === 200) {
-      return {
-        ok: true,
-        hasMpin: Boolean(data.hasMpin),
-        dekSalt: (data.dekSalt as string) ?? null,
-        legacy: Boolean(data.legacy),
-        dekWrapped: (data.dekWrapped as string) ?? null,
-        hasOwnerPassword: Boolean(data.hasOwnerPassword),
-        ownerUsername: (data.ownerUsername as string) ?? null,
-        ownerPasswordIsDefault: Boolean(data.ownerPasswordIsDefault),
-      };
+  // v45: the FIRST probe the lock screen makes — retry it, otherwise a slow
+  // link shows "Cannot reach the server" before the app even offers a login
+  let lastData: Record<string, unknown> = {};
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch('/api/auth/state', { signal: AbortSignal.timeout(20000) });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (res.status === 200) {
+        return {
+          ok: true,
+          hasMpin: Boolean(data.hasMpin),
+          dekSalt: (data.dekSalt as string) ?? null,
+          legacy: Boolean(data.legacy),
+          dekWrapped: (data.dekWrapped as string) ?? null,
+          hasOwnerPassword: Boolean(data.hasOwnerPassword),
+          ownerUsername: (data.ownerUsername as string) ?? null,
+          ownerPasswordIsDefault: Boolean(data.ownerPasswordIsDefault),
+        };
+      }
+      if (res.status >= 400 && res.status < 500) return { ok: false, error: (data.error as string) ?? 'network' };
+      lastData = data; // 5xx — try again
+    } catch {
+      lastData = { error: 'network' };
     }
-    return { ok: false, error: (data.error as string) ?? 'network' };
-  } catch {
-    return { ok: false, error: 'network' };
+    if (attempt < 3) await new Promise((r) => setTimeout(r, 1200 * attempt));
   }
+  return { ok: false, error: (lastData.error as string) ?? 'network' };
 }
 
 export interface MpinResult {
@@ -174,14 +212,14 @@ export async function apiMpinSetup(
   dekSalt: string,
   kekProof: string
 ): Promise<MpinResult> {
-  const { status, data } = await postJson('/api/auth/setup', { dekWrapped, dekSalt, kekProof });
+  const { status, data } = await postJsonAuth('/api/auth/setup', { dekWrapped, dekSalt, kekProof });
   if (status === 200) return { ok: true, token: data.token as string };
   return { ok: false, error: (data.error as string) ?? 'network' };
 }
 
 /** Every later login: prove the MPIN → long-lived session */
 export async function apiMpinUnlock(kekProof: string): Promise<MpinResult> {
-  const { status, data } = await postJson('/api/auth/unlock', { kekProof });
+  const { status, data } = await postJsonAuth('/api/auth/unlock', { kekProof });
   if (status === 200) return { ok: true, token: data.token as string };
   return { ok: false, error: (data.error as string) ?? 'network' };
 }

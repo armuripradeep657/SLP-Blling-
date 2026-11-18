@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Toaster } from '@/components/ui/toaster';
 import { ChunkGuard } from '@/components/ChunkGuard';
+import { UpdateManager } from '@/components/UpdateManager';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -41,6 +42,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased bg-background text-foreground">
         <ChunkGuard />
+        <UpdateManager />
         {children}
         <Toaster />
       </body>
