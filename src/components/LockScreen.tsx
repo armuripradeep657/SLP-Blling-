@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Camera, Eye, EyeOff, KeyRound, Lock, RefreshCw, ScanFace, ScanLine, ShieldCheck, UserRound, UserCog } from 'lucide-react';
+import { ArrowLeft, Camera, Eye, EyeOff, KeyRound, Lock, RefreshCw, ScanLine, ShieldCheck, UserRound, UserCog } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useT } from '@/hooks/use-app-lang';
 import {
@@ -23,7 +23,6 @@ import {
   setRecoverMaterial,
   lockApp,
 } from '@/lib/cloud';
-import { FaceCameraError, getFaceProfile, matchFace, openFaceCamera } from '@/lib/face';
 import { fileToSmallDataUrl } from '@/lib/photo';
 import { hasFreshUnlockSession } from '@/lib/idle-lock';
 import {
@@ -629,80 +628,6 @@ export default function LockScreen({
     onUnlocked();
   };
 
-  /* ---------------- FACE UNLOCK (v40) ----------------
-     Device-local convenience gate: when the owner enrolled their face in
-     Settings, the unlock step auto-opens the camera and matches. A match
-     reuses the session token already stored on THIS device — the exact
-     same "opened" state a correct MPIN produces. The MPIN stays below it
-     (fallback + root of security). */
-  const faceVideoRef = useRef<HTMLDivElement | null>(null);
-  const faceStopRef = useRef<(() => void) | null>(null);
-  const faceBusyRef = useRef(false);
-  const [faceEnabled] = useState(() => getFaceProfile()?.enabled === true);
-  const [faceState, setFaceState] = useState<'idle' | 'scanning' | 'matched' | 'denied'>('idle');
-
-  const stopFaceCam = useCallback(() => {
-    faceStopRef.current?.();
-    faceStopRef.current = null;
-  }, []);
-
-  const runFaceUnlock = useCallback(async () => {
-    if (faceBusyRef.current || busy) return;
-    const profile = getFaceProfile();
-    if (!profile?.enabled) return;
-    faceBusyRef.current = true;
-    setError(null);
-    setFaceState('scanning');
-    try {
-      // v41: the video element attaches to the card BEFORE play (detached
-      // elements refuse to play in several WebViews) and the FRONT camera is
-      // requested explicitly, with a typed error when permission is missing
-      const cam = await openFaceCamera(faceVideoRef.current);
-      faceStopRef.current = cam.stop;
-      const res = await matchFace(cam.video, profile);
-      if (!res.ok) {
-        setFaceState('denied');
-        setError(t('face.errNoMatch'));
-        return;
-      }
-      const auth = getAuth();
-      if (!auth?.token) {
-        setFaceState('denied');
-        setError(t('face.errNoSession'));
-        return;
-      }
-      // an EXPIRED session must not open the app — verify when reachable
-      try {
-        const st = await apiAuthState();
-        if (st && st.ok === false) {
-          lockApp();
-          setFaceState('denied');
-          setError(t('face.errExpired'));
-          return;
-        }
-      } catch {
-        /* server unreachable — reuse the stored session (offline unlock) */
-      }
-      setFaceState('matched');
-      finishOwner();
-    } catch (e) {
-      setFaceState('denied');
-      setError(e instanceof FaceCameraError && e.kind === 'denied' ? t('face.errPerm') : t('face.errCamera'));
-    } finally {
-      faceBusyRef.current = false;
-      stopFaceCam();
-    }
-  }, [busy, t, stopFaceCam]);
-
-  // auto-attempt on every appearance of the MPIN step; camera dies with it.
-  // Runs through a ref so busy/language changes never re-open the camera mid-scan.
-  const runFaceUnlockRef = useRef(runFaceUnlock);
-  runFaceUnlockRef.current = runFaceUnlock;
-  useEffect(() => {
-    if (step === 'unlock' && faceEnabled) void runFaceUnlockRef.current?.();
-    return () => stopFaceCam();
-  }, [step, faceEnabled, stopFaceCam]);
-
   /** Explicit retry is the only thing that wipes the form */
   const retryProbe = () => {
     setMpin('');
@@ -820,39 +745,6 @@ export default function LockScreen({
                 ? t('reauth.btn')
                 : t('lock.unlockBtn')}
           </Button>
-          {step === 'unlock' && faceEnabled && (
-            <div className="space-y-2 rounded-xl border border-blue-200 bg-blue-50/70 p-3">
-              <p className="flex items-center justify-center gap-1.5 text-xs font-bold text-blue-900">
-                <ScanFace className="size-4" />
-                {t('face.title')}
-              </p>
-              <div
-                ref={faceVideoRef}
-                className="mx-auto h-28 w-44 overflow-hidden rounded-lg bg-slate-900"
-                aria-label="Face camera"
-              />
-              <p className="text-center text-[11px] text-muted-foreground">
-                {faceState === 'scanning'
-                  ? t('face.scanning')
-                  : faceState === 'matched'
-                    ? t('face.matched')
-                    : faceState === 'denied'
-                      ? t('face.denied')
-                      : t('face.hint')}
-              </p>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void runFaceUnlock()}
-                disabled={busy || faceState === 'scanning'}
-                className="h-9 w-full"
-                aria-label={t('face.tryBtn')}
-              >
-                <ScanFace className="size-4" />
-                {faceState === 'scanning' ? t('face.scanning') : t('face.tryBtn')}
-              </Button>
-            </div>
-          )}
           {step === 'unlock' && (
             <button
               type="button"

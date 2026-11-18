@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,7 +26,9 @@ import {
 import { Pencil, Plus, Search, Trash2, X, Camera, ImageUp } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { fileToResizedDataUrl } from '@/lib/imageResize';
+import { CameraError, grabCameraFrame, openDeviceCamera } from '@/lib/photo';
 import { useT } from '@/hooks/use-app-lang';
+import { useToast } from '@/hooks/use-toast';
 import { PRODUCT_CATEGORIES } from '@/lib/defaultData';
 import { fmtShort } from '@/lib/billing';
 import type { Product } from '@/lib/types';
@@ -149,9 +151,9 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
   const [sizes, setSizes] = useState<string[]>([]);
   const [sizeInput, setSizeInput] = useState('');
   const [sizePrices, setSizePrices] = useState<Record<string, number>>({});
-  const [image, setImage] = useState<string | undefined>(undefined);
+  const [image, setImage] = useState<string | null | undefined>(undefined);
   const fileRef = useRef<HTMLInputElement>(null);
-  const cameraRef = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   // sync form state when target changes
   const [loadedId, setLoadedId] = useState<string | null>(null);
@@ -198,10 +200,17 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
     });
   };
 
+  const { toast } = useToast();
+
   const onFile = async (f: File | undefined) => {
     if (!f) return;
-    const dataUrl = await fileToResizedDataUrl(f);
-    setImage(dataUrl);
+    try {
+      const dataUrl = await fileToResizedDataUrl(f);
+      setImage(dataUrl);
+    } catch {
+      // corrupt file / canvas failure — say so instead of failing silently
+      toast({ title: t('products.photoError'), variant: 'destructive' });
+    }
   };
 
   const submit = () => {
@@ -214,7 +223,10 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
       price: Number(price),
       sizes: sizes.length ? sizes : ['Standard'],
       sizePrices: { ...sizePrices },
-      image,
+      // v42 fix: send null EXPLICITLY when the photo was removed —
+      // JSON.stringify drops `undefined` keys, so the server kept the old
+      // image and the next poll brought it back (photos could not be removed)
+      image: image ?? null,
       stock: stock !== '' ? Number(stock) : undefined,
     };
     if (p) updateProduct(p.id, payload);
@@ -223,7 +235,8 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
   };
 
   return (
-    <Dialog open onOpenChange={onOpenChange}>
+    <>
+      <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="w-[calc(100%-2rem)] max-w-sm max-h-[90dvh] overflow-y-auto overflow-x-hidden [&>*]:min-w-0">
         <DialogHeader>
           <DialogTitle>{p ? t('products.editProduct') : t('products.addProduct')}</DialogTitle>
@@ -246,27 +259,23 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => onFile(e.target.files?.[0])}
-              />
-              {/* capture=environment opens the phone camera directly */}
-              <input
-                ref={cameraRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={(e) => onFile(e.target.files?.[0])}
+                onChange={(e) => {
+                  onFile(e.target.files?.[0]);
+                  e.target.value = ''; // v42: allow re-picking the SAME file
+                }}
               />
               <div className="grid grid-cols-2 gap-1.5">
                 <Button variant="outline" size="sm" className="w-full" onClick={() => fileRef.current?.click()}>
                   <ImageUp className="size-3.5" /> {t('products.uploadPhoto')}
                 </Button>
-                <Button variant="outline" size="sm" className="w-full" onClick={() => cameraRef.current?.click()}>
+                {/* v42: real live-camera preview instead of the unreliable
+                    OS handoff (capture= did nothing on several devices) */}
+                <Button variant="outline" size="sm" className="w-full" onClick={() => setCameraOpen(true)}>
                   <Camera className="size-3.5" /> {t('products.takePhoto')}
                 </Button>
               </div>
               {image && (
-                <Button variant="ghost" size="sm" className="w-full text-destructive" onClick={() => setImage(undefined)}>
+                <Button variant="ghost" size="sm" className="w-full text-destructive" onClick={() => setImage(null)}>
                   <X className="size-3.5" /> {t('products.removePhoto')}
                 </Button>
               )}
@@ -388,6 +397,110 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
         <DialogFooter>
           <Button onClick={submit} className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white">
             {p ? t('products.saveChanges') : t('products.addProduct')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+      </Dialog>
+
+      <LiveCameraDialog
+        open={cameraOpen}
+        onOpenChange={setCameraOpen}
+        onCapture={(dataUrl) => setImage(dataUrl)}
+      />
+    </>
+  );
+}
+
+/**
+ * v42: LIVE camera capture — a rear-camera preview with a shutter button.
+ * Replaces the old capture="environment" input handoff, which silently did
+ * nothing on several phones and inside the APK WebView: now the camera opens
+ * inside the app, shows exactly what will be saved, and one tap captures the
+ * frame (resized/compressed like any upload).
+ */
+function LiveCameraDialog({
+  open,
+  onOpenChange,
+  onCapture,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onCapture: (dataUrl: string) => void;
+}) {
+  const t = useT();
+  const { toast } = useToast();
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const stopRef = useRef<(() => void) | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setBusy(true);
+    void (async () => {
+      try {
+        // let the dialog card mount first — the video must attach to the
+        // page BEFORE play() (detached elements refuse to play)
+        await new Promise((r) => setTimeout(r, 80));
+        if (cancelled) return;
+        const cam = await openDeviceCamera('environment', hostRef.current);
+        if (cancelled) {
+          cam.stop();
+          return;
+        }
+        stopRef.current = cam.stop;
+      } catch (e) {
+        toast({
+          title: t('products.takePhoto'),
+          description:
+            e instanceof CameraError && e.kind === 'denied' ? t('products.cameraPerm') : t('products.photoError'),
+          variant: 'destructive',
+        });
+        onOpenChange(false);
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      stopRef.current?.();
+      stopRef.current = null;
+    };
+  }, [open, onOpenChange, t, toast]);
+
+  const shoot = () => {
+    const video = hostRef.current?.querySelector('video');
+    if (!video) return;
+    const dataUrl = grabCameraFrame(video);
+    if (!dataUrl) {
+      toast({ title: t('products.photoError'), variant: 'destructive' });
+      return;
+    }
+    onCapture(dataUrl);
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[calc(100%-2rem)] max-w-sm [&>*]:min-w-0">
+        <DialogHeader>
+          <DialogTitle>{t('products.takePhoto')}</DialogTitle>
+          <DialogDescription>{t('products.cameraHint')}</DialogDescription>
+        </DialogHeader>
+        <div
+          ref={hostRef}
+          className="aspect-[4/3] w-full overflow-hidden rounded-lg bg-slate-900"
+          aria-label="Live camera"
+        />
+        <DialogFooter>
+          <Button
+            onClick={shoot}
+            disabled={busy}
+            className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white"
+            aria-label={t('products.shutter')}
+          >
+            <Camera className="size-4" />
+            {t('products.shutter')}
           </Button>
         </DialogFooter>
       </DialogContent>

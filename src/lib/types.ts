@@ -32,7 +32,7 @@ export interface Product {
   price: number; // default unit price
   sizes: string[];
   sizePrices?: Record<string, number>; // optional per-size override
-  image?: string; // path under /products or base64 data URL
+  image?: string | null; // path under /products, base64 data URL, or null = photo removed
   stock?: number;
 }
 
