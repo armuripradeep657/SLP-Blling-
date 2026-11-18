@@ -1,0 +1,280 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// One app = one owner (admin) account. Login is the owner's MPIN or
+/// username + password. The server issues session tokens (SHA-256-hashed
+/// at rest). The vault/DEK fields below are legacy from the old
+/// offline-first design and are no longer used — all business data now
+/// lives in the central Biz* tables (online-only).
+model SyncAccount {
+  id        String  @id @default(cuid())
+  /// Fixed singleton slot — this deployment belongs to one owner
+  slot      String  @unique @default("owner")
+  /// legacy vault fields (unused since the online-only refactor)
+  dekWrapped String?
+  dekSalt   String?
+  pinVerifier String?
+  /// ---- Owner (Admin) username + password login ----
+  /// login name for the username+password gate (default "Pradeep")
+  ownerUsername String? @unique
+  /// scrypt hash of the owner password — the password itself is never stored
+  ownerPasswordHash String?
+  ownerDekWrapped String?
+  ownerDekIv      String?
+  ownerDekSalt    String?
+  /// true until the owner changes the seeded default password — the app nags
+  ownerPasswordIsDefault Boolean @default(false)
+  /// legacy encrypted snapshot (unused since the online-only refactor)
+  ciphertext  String?
+  dataIv      String?
+  dataVersion Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  sessions    Session[]
+}
+
+/// Server-authoritative configuration. Every device agrees on these
+/// fields without waiting for anything else: UPI ID (payment QRs), GST
+/// rate (server recomputes bill totals), and the atomic bill-number
+/// counter (two devices billing at the same moment can never print the
+/// same bill number). Admin-only writes.
+model AppConfig {
+  id        String   @id @default(cuid())
+  slot      String   @unique @default("owner")
+  upiId     String   @default("")
+  gstPercent Float  @default(0)
+  /// atomic bill-number counter — every device RESERVES its bill number
+  /// here before printing, so two devices billing at the same moment can
+  /// never print the same bill number
+  nextBillNo Int @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+/// The global revision counter for the central database. Every write
+/// bumps it; devices poll GET /api/state?rev=N and pull the full
+/// snapshot when it moves — every authorized device sees every change
+/// within seconds, no manual refresh.
+model BizState {
+  id        String   @id @default("owner")
+  rev       Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+/// Central shop settings (singleton) — business info, invoice prefix,
+/// slip width, notes, language and the owner's appearance choices.
+model BizSettings {
+  id             String   @id @default("owner")
+  settingsJson   String
+  appearanceJson String   @default("{}")
+  dataUpdatedAt  Int      @default(0)
+  updatedAt      DateTime @updatedAt
+}
+
+/// Central product catalog — products, prices (incl. per-size overrides),
+/// stock and images. Admin-only writes; every device reads.
+model BizProduct {
+  id             String   @id
+  name           String
+  nameTe         String?
+  category       String   @default("")
+  price          Float    @default(0)
+  sizesJson      String   @default("[]")
+  sizePricesJson String   @default("{}")
+  image          String?
+  stock          Int?
+  updatedAt      DateTime @updatedAt
+}
+
+/// Central bill store — every saved bill with its FULL payload (items,
+/// payments, delivery). A bill exists here ONLY after the server
+/// confirmed it (bills are never shown as saved before this row exists).
+model BizInvoice {
+  id            String   @id
+  no            String   @unique
+  dateISO       DateTime
+  customerName  String   @default("")
+  customerPhone String   @default("")
+  total         Float    @default(0)
+  paid          Float    @default(0)
+  balance       Float    @default(0)
+  status        String   @default("Due")
+  paymentMode   String   @default("Cash")
+  verifyCode    String?
+  cancelled     Boolean  @default(false)
+  createdBy     String   @default("Owner")
+  payloadJson   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([dateISO])
+  @@index([status])
+}
+
+/// Central ledger expenses (money out)
+model BizExpense {
+  id          String   @id
+  dateISO     DateTime
+  payloadJson String
+  updatedAt   DateTime @updatedAt
+}
+
+/// Central ledger manual incomes (money in outside a bill)
+model BizIncome {
+  id          String   @id
+  dateISO     DateTime
+  payloadJson String
+  updatedAt   DateTime @updatedAt
+}
+
+/// Central labour work register (who worked, what, money)
+model BizLabourWork {
+  id          String   @id
+  dateISO     DateTime
+  payloadJson String
+  updatedAt   DateTime @updatedAt
+}
+
+/// Central labourer notebook (saved workers)
+model BizLabourWorker {
+  id          String   @id
+  name        String
+  payloadJson String
+  updatedAt   DateTime @updatedAt
+}
+
+/// UPI payment confirmations. The server records "billRef paid ₹X at T"
+/// events; the owner's device matches them against pending UPI bills.
+model PaymentEvent {
+  id        String   @id @default(cuid())
+  /// matches the UPI QR payment note (e.g. SLP-1731…), set by the bill screen
+  billRef   String   @unique
+  amount    Float
+  /// UPI / Card / Cash — how the money actually arrived
+  method    String   @default("UPI")
+  /// who reported it: webhook (payment gateway) / owner (manual confirm)
+  provider  String   @default("webhook")
+  /// WhatsApp dispatch result for the customer notification
+  waStatus  String   @default("pending")
+  /// SMS dispatch result for the customer notification
+  smsStatus String   @default("pending")
+  createdAt DateTime @default(now())
+}
+
+/// The barcode bill registry — the source of truth for Code 128 bill
+/// verification. Every confirmed bill registers exactly ONE verification
+/// code here (one code per bill, one bill per code — duplicates and reuse
+/// are rejected at the database level). Verification ALWAYS reads this
+/// table: nothing is trusted from the barcode itself.
+model VerifiedBill {
+  id            String   @id @default(cuid())
+  /// the unique unpredictable verification ID the Code 128 barcode encodes
+  code          String   @unique
+  /// one code per bill, one bill per code — prevents reuse across bills
+  billNo        String   @unique
+  slot          String   @default("owner")
+  /// company snapshot at bill time
+  companyName   String
+  billDateISO   DateTime
+  /// display name only — the phone/address are NEVER stored here
+  customerName  String
+  gstPercent    Float    @default(0)
+  gstAmount     Float    @default(0)
+  discount      Float    @default(0)
+  labourCharge  Float    @default(0)
+  autoCharge    Float    @default(0)
+  subtotal      Float
+  total         Float
+  paid          Float    @default(0)
+  balance       Float    @default(0)
+  paymentMode   String   @default("Cash")
+  paymentStatus String   @default("Due")
+  /// who billed it — always "Owner" (admin-only app)
+  createdBy     String   @default("Owner")
+  /// cancelled bills fail verification with the CANCELLED message
+  cancelled     Boolean  @default(false)
+  /// bill line items as JSON [{name, size, qty, price, discount}]
+  itemsJson     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// Every barcode verification attempt — genuine, cancelled or unknown —
+/// is logged here so the admin can see a bill's verification history.
+model VerificationLog {
+  id     String   @id @default(cuid())
+  /// the scanned or typed code — may not exist (not_found)
+  code   String
+  /// valid | cancelled | not_found
+  result String
+  ip     String?
+  at     DateTime @default(now())
+
+  @@index([code])
+}
+
+model Session {
+  id        String      @id @default(cuid())
+  tokenHash String      @unique
+  slot      String
+  expiresAt DateTime
+  createdAt DateTime    @default(now())
+  account   SyncAccount @relation(fields: [slot], references: [slot], onDelete: Cascade)
+}
+
+/// A staff login (v39). Staff bill customers on the SAME central database but
+/// see only Bill + History + their own Profile — money and settings stay with
+/// the owner. Passwords and MPINs are scrypt-hashed at rest.
+model StaffAccount {
+  id                 String   @id @default(cuid())
+  /// short login id the owner assigns, e.g. "MDN"
+  userId             String   @unique
+  name               String
+  passwordHash       String
+  /// optional quick PIN (digits) — hashed the same way, "" = not set
+  mpinHash           String   @default("")
+  /// profile photo as a small base64 data-URL ("" = none yet)
+  photoData          String   @default("")
+  /// first login (or after an owner/forgot reset) asks for a password change
+  mustChangePassword Boolean  @default(true)
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  sessions           StaffSession[]
+}
+
+/// Staff session tokens — separate table so the owner's Session model and
+/// every owner route stay exactly as they were.
+model StaffSession {
+  id        String       @id @default(cuid())
+  tokenHash String       @unique
+  staffId   String
+  staff     StaffAccount @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime     @default(now())
+}
+
+/// Audit trail of "Forgot password" resets: who, when, and the identity photo
+/// the staff member captured — visible to the owner (Settings → Staff).
+model PasswordResetLog {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  photoData String   @default("")
+  createdAt DateTime @default(now())
+}
+
+/// Tombstones of deleted bills (v40): a bill the owner deleted can NEVER
+/// come back — a stale device or an old backup re-importing it is blocked
+/// here, matched on both the bill id and the bill number.
+model DeletedBill {
+  id        String   @id
+  no        String
+  deletedAt DateTime @default(now())
+
+  @@index([no])
+}
