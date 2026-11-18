@@ -401,6 +401,8 @@ export const APP_EN = {
   'lock.forgotNoOwnerPwd': 'Admin password is not set up, so the MPIN cannot be recovered automatically',
   'net.required': 'Internet connection required.',
   'net.saveFailed': 'Could not save — the server did not confirm. Please try again.',
+  'net.saving': 'Saving…',
+  'products.nameTeAuto': 'Auto-filled from the English name — edit freely',
   // common bill panel
   'bill.customer': 'Customer',
   'bill.customerName': 'Customer name',
@@ -935,6 +937,8 @@ export const APP_TE: Record<AppLangKey, string> = {
   'lock.forgotNoOwnerPwd': 'అడ్మిన్ పాస్‌వర్డ్ సెట్ చేయబడలేదు — MPIN ను ఆటోమేటిక్‌గా రికవర్ చేయడం సాధ్యం కాదు',
   'net.required': 'ఇంటర్నెట్ కనెక్షన్ అవసరం.',
   'net.saveFailed': 'సేవ్ చేయడం సాధ్యం కాలేదు — సర్వర్ నిర్ధారణ రాలేదు. దయచేసి మళ్ళీ ప్రయత్నించండి.',
+  'net.saving': 'సేవ్ చేస్తోంది…',
+  'products.nameTeAuto': 'ఇంగ్లీష్ పేరు నుండి ఆటోమేటిక్‌గా నింపబడింది — మార్చుకోవచ్చు',
   'bill.customer': 'కస్టమర్',
   'bill.customerName': 'కస్టమర్ పేరు',
   'bill.mobile': 'మొబైల్ / WhatsApp',

@@ -27,6 +27,7 @@ import { Pencil, Plus, Search, Trash2, X, Camera, ImageUp } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { fileToResizedDataUrl } from '@/lib/imageResize';
 import { CameraError, grabCameraFrame, openDeviceCamera } from '@/lib/photo';
+import { teluguFromEnglish } from '@/lib/telugu';
 import { useT } from '@/hooks/use-app-lang';
 import { useToast } from '@/hooks/use-toast';
 import { PRODUCT_CATEGORIES } from '@/lib/defaultData';
@@ -154,6 +155,23 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
   const [image, setImage] = useState<string | null | undefined>(undefined);
   const fileRef = useRef<HTMLInputElement>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // v44: Telugu name auto-fills from the English name as the owner types —
+  // until they edit the Telugu field themselves (or it's cleared), then the
+  // auto-fill pauses/resumes so the owner's correction always wins
+  const teAutoRef = useRef(false);
+  const teTimerRef = useRef<number | undefined>(undefined);
+  const scheduleTelugu = (english: string) => {
+    window.clearTimeout(teTimerRef.current);
+    teTimerRef.current = window.setTimeout(() => {
+      if (!teAutoRef.current) return;
+      const te = teluguFromEnglish(english);
+      if (te) {
+        setNameTe(te);
+        setNameTeAuto(true);
+      }
+    }, 350);
+  };
+  const [nameTeAuto, setNameTeAuto] = useState(false);
 
   // sync form state when target changes
   const [loadedId, setLoadedId] = useState<string | null>(null);
@@ -163,6 +181,10 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
     if (p) {
       setName(p.name);
       setNameTe(p.nameTe ?? '');
+      // existing Telugu name → owner wrote it, don't auto-fill over it;
+      // empty → auto-fill resumes as they type the English name
+      teAutoRef.current = !p.nameTe;
+      setNameTeAuto(false);
       setCategory(p.category);
       setPrice(String(p.price));
       setStock(p.stock !== undefined ? String(p.stock) : '');
@@ -172,6 +194,8 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
     } else if (isNew) {
       setName('');
       setNameTe('');
+      teAutoRef.current = true;
+      setNameTeAuto(false);
       setCategory('Custom');
       setPrice('');
       setStock('');
@@ -213,7 +237,12 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
     }
   };
 
-  const submit = () => {
+  const [saving, setSaving] = useState(false);
+  /** v44: the save is now AWAITED — the dialog stays open with a clear toast
+   *  if the save fails (offline / server error) instead of silently closing
+   *  and losing what the owner typed (the "error while adding/editing" bug) */
+  const submit = async () => {
+    if (saving) return;
     if (!name.trim() || !Number(price)) return;
     const payload: Product = {
       id: p?.id ?? `p-${Date.now()}`,
@@ -229,9 +258,20 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
       image: image ?? null,
       stock: stock !== '' ? Number(stock) : undefined,
     };
-    if (p) updateProduct(p.id, payload);
-    else addProduct(payload);
-    onOpenChange(false);
+    setSaving(true);
+    try {
+      if (p) await updateProduct(p.id, payload);
+      else await addProduct(payload);
+      onOpenChange(false);
+    } catch (e) {
+      toast({
+        title: e instanceof Error && e.message === 'offline' ? t('net.required') : t('net.saveFailed'),
+        variant: 'destructive',
+      });
+      // dialog stays OPEN — the entered product is not lost
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -299,16 +339,32 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
             </div>
           </div>
 
-          <Input placeholder={t('products.name')} value={name} onChange={(e) => setName(e.target.value)} className="h-11 min-w-0" />
+          <Input
+            placeholder={t('products.name')}
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              scheduleTelugu(e.target.value);
+            }}
+            className="h-11 min-w-0"
+          />
 
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">{t('products.nameTe')}</Label>
             <Input
               placeholder="ఉదా: గగులు (బావి రింగ్)"
               value={nameTe}
-              onChange={(e) => setNameTe(e.target.value)}
+              onChange={(e) => {
+                setNameTe(e.target.value);
+                // a manual edit (or clearing the field) stops/resumes auto-fill
+                teAutoRef.current = e.target.value === '';
+                setNameTeAuto(false);
+              }}
               className="h-11 min-w-0"
             />
+            {nameTeAuto && nameTe && (
+              <p className="text-[10px] leading-tight text-emerald-700">{t('products.nameTeAuto')}</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-2">
@@ -395,8 +451,12 @@ function ProductFormDialog({ product, onOpenChange }: { product: Product | 'new'
         </div>
 
         <DialogFooter>
-          <Button onClick={submit} className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white">
-            {p ? t('products.saveChanges') : t('products.addProduct')}
+          <Button
+            onClick={() => void submit()}
+            disabled={saving}
+            className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {saving ? t('net.saving') : p ? t('products.saveChanges') : t('products.addProduct')}
           </Button>
         </DialogFooter>
       </DialogContent>
