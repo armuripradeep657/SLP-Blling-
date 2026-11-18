@@ -258,7 +258,9 @@ export function productToRow(p: Product) {
     nameTe: p.nameTe ? String(p.nameTe).slice(0, 80) : null,
     category: String(p.category ?? '').slice(0, 40),
     price: num(p.price),
-    sizesJson: JSON.stringify(Array.isArray(p.sizes) ? p.sizes.slice(0, 20) : []),
+    // v50: raised 20 -> 60 — the owner's Selupu Ralu line alone needs 23
+    // sizes (2ft/18in/14in/9in/1ft widths); the old cap silently truncated it
+    sizesJson: JSON.stringify(Array.isArray(p.sizes) ? p.sizes.slice(0, 60) : []),
     sizePricesJson: JSON.stringify(p.sizePrices ?? {}),
     image: typeof p.image === 'string' ? p.image.slice(0, 3_000_000) : null,
     stock: typeof p.stock === 'number' ? Math.round(p.stock) : null,

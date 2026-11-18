@@ -1,17 +1,15 @@
 {
-  "version": 49,
+  "version": 50,
   "notes": {
     "en": [
-      "Catalogue order is now stable: editing a product (name, photo, sizes, price) no longer moves it to the top — the list stays exactly as you arranged it",
-      "New products appear at the top; everything else keeps its place",
-      "Product edits save straight into the central database — no repeated refreshes needed",
-      "Bill items always appear in the order you entered them"
+      "Full size list added across the catalogue: Selupu Ralu now has all 23 sizes (2ft, 18in, 14in, 9in, 1ft widths), poles start from 6FT, ventilators and ketikilu frames completed",
+      "New products added: Kodada Ketikilu, Darwaja, Kodada Darwaja, Tulasikota, Adjust Fan, Machine Ventilator — each with a photo",
+      "Telugu names filled in for every product; new sizes carry estimated prices — please review and adjust them in Edit"
     ],
     "te": [
-      "కేటలాగ్ క్రమం ఇప్పుడు స్థిరంగా ఉంటుంది: ప్రొడక్ట్‌ను ఎడిట్ చేసినా (పేరు, ఫోటో, సైజులు, ధర) అది పైకి కదలదు — జాబితా మీరు ఏర్పాటు చేసిన క్రమంలోనే ఉంటుంది",
-      "కొత్త ప్రొడక్ట్స్ పైన కనిపిస్తాయి; మిగతావి అలాగే ఉంటాయి",
-      "ప్రొడక్ట్ ఎడిట్స్ నేరుగా సెంట్రల్ డేటాబేస్‌లో సేవ్ అవుతాయి — బారీగా రిఫ్రెష్ చేయాల్సిన అవసరం లేదు",
-      "బిల్లులో ఐటమ్స్ ఎల్లప్పుడూ మీరు ఎంటర్ చేసిన క్రమంలోనే కనిపిస్తాయి"
+      "కేటలాగ్‌లో పూర్తి సైజుల జాబితా జోడించబడింది: సెలుపు రాళ్లకు 23 సైజులు (2ft, 18in, 14in, 9in, 1ft), పోళ్లు 6FT నుండి, వెంటిలేటర్, కెటికిలు ఫ్రేమ్‌లు పూర్తయ్యాయి",
+      "కొత్త ప్రొడక్ట్స్: కొడద కెటికిలు, దర్వాజా, కొడద దర్వాజా, తులసికోట, అజస్ట్ ఫ్యాన్, మెషిన్ వెంటిలేటర్ — ప్రతి దానికీ ఫోటోతో",
+      "ప్రతి ప్రొడక్ట్‌కు తెలుగు పేర్లు నింపబడ్డాయి; కొత్త సైజులకు అంచనా ధరలు ఉన్నాయి — ఎడిట్‌లో సరిచూసి సర్దుకోండి"
     ]
   }
 }
