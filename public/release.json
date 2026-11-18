@@ -1,17 +1,17 @@
 {
-  "version": 45,
+  "version": 46,
   "notes": {
     "en": [
-      "App opens reliably on slow internet — login now retries automatically",
-      "App updates ask you first: see what's new, then choose Update now or keep the old version",
-      "Update downloads show a progress bar",
-      "Check for updates anytime in Settings → App updates"
+      "Opening fix: the app no longer sits on the spinner — you see connection progress while it retries (attempt 1/3, 2/3…)",
+      "Product add/edit with a photo now completes on slow internet (longer upload window + automatic retry)",
+      "Update fix: 'Update now' now truly applies the new version on every phone (an old-cache bug kept phones on the old version forever)",
+      "Update downloads keep moving on slow connections — small batches, live progress"
     ],
     "te": [
-      "నెట్ స్లో అయినా యాప్ కన్ఫిడెన్షియల్‌గా తెరుచుకుంటుంది — లాగిన్ ఇప్పుడు ఆటోమేటిక్‌గా రిటై అవుతుంది",
-      "యాప్ అప్‌డేట్‌లు ఇప్పుడు ముందు అడుగుతాయి: కొత్త ఫీచర్లు చూసి, అప్‌డేట్ చేయండి లేదా పాత వెర్షన్‌లో కొనసాగండి",
-      "అప్‌డేట్ డౌన్‌లోడ్ అయినప్పుడు ప్రోగ్రెస్ బార్ కనిపిస్తుంది",
-      "సెట్టింగ్స్ → యాప్ అప్‌డేట్స్‌లో ఎప్పుడైనా తనిఖీ చేయండి"
+      "తెరిచే ఫిక్స్: యాప్ ఇకపై స్పిన్నర్‌లో స్తంభించదు — రిటై అవుతున్నప్పుడు కనెక్షన్ ప్రోగ్రెస్ కనిపిస్తుంది (ప్రయత్నం 1/3, 2/3…)",
+      "ఫోటోతో ప్రొడక్ట్ సేవ్ స్లో ఇంటర్నెట్‌లో కూడా పూర్తవుతుంది (ఎక్కువ సమయం + ఆటోమేటిక్ రిటై)",
+      "అప్‌డేట్ ఫిక్స్: 'ఇప్పుడే అప్‌డేట్ చేయండి' ఇప్పుడు ప్రతి ఫోన్‌లో కొత్త వెర్షన్‌ను నిజంగా వర్తింపజేస్తుంది",
+      "స్లో కనెక్షన్‌లలో కూడా అప్‌డేట్ డౌన్‌లోడ్ కొనసాగుతుంది — చిన్న బ్యాచ్‌లు, లైవ్ ప్రోగ్రెస్"
     ]
   }
 }

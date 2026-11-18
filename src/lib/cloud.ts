@@ -108,13 +108,17 @@ async function postJson(url: string, body?: unknown): Promise<{ status: number; 
  * AUTOMATICALLY — on the shop's slow/flaky link a single 20s attempt often
  * dies ("Cannot reach the server" with full bars). 3 attempts × 25s with a
  * short backoff. Only for auth: bill POSTs stay single-shot (never double-bill).
+ * v46: onAttempt reports each try so the lock screen can SHOW the retry
+ * progress — a silent 75s spinner read as "stuck on the animation".
  */
 async function postJsonAuth(
   url: string,
-  body?: unknown
+  body?: unknown,
+  onAttempt?: (attempt: number, max: number) => void
 ): Promise<{ status: number; data: Record<string, unknown> }> {
   let last = { status: 0, data: { error: 'network' } as Record<string, unknown> };
   for (let attempt = 1; attempt <= 3; attempt++) {
+    onAttempt?.(attempt, 3);
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -133,34 +137,51 @@ async function postJsonAuth(
   return last;
 }
 
+/**
+ * v46: optional per-call timeout + safe retries. DEFAULTS UNCHANGED (20s,
+ * no retry) — bill POSTs stay single-shot; only idempotent calls (product
+ * upsert) opt into a longer window and one retry, because a ~150KB photo
+ * PUT cannot finish inside 20s at the shop's 11 KB/s upload speed.
+ */
 export async function authedFetch(
   url: string,
   method: 'GET' | 'PUT' | 'POST' | 'PATCH' | 'DELETE',
-  body?: unknown
+  body?: unknown,
+  opts?: { timeoutMs?: number; retries?: number }
 ): Promise<{ status: number; data: Record<string, unknown> }> {
   const auth = getAuth();
   if (!auth) return { status: 401, data: { error: 'unauthorized' } };
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${auth.token}`,
-      },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-      signal: AbortSignal.timeout(20000),
-    });
-    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    return { status: res.status, data };
-  } catch {
-    return { status: 0, data: { error: 'network' } };
+  const timeoutMs = opts?.timeoutMs ?? 20000;
+  const retries = opts?.retries ?? 0;
+  let last = { status: 0, data: { error: 'network' } as Record<string, unknown> };
+  for (let attempt = 1; attempt <= retries + 1; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${auth.token}`,
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (res.status !== 0) return { status: res.status, data };
+      last = { status: res.status, data };
+    } catch {
+      last = { status: 0, data: { error: 'network' } };
+    }
+    if (attempt <= retries) await new Promise((r) => setTimeout(r, 1500));
   }
+  return last;
 }
 
 /* ------------------------------ AUTH ------------------------------ */
 
 /** Public probe: has the MPIN been created yet? Carries the public salt. */
-export async function apiAuthState(): Promise<{
+export async function apiAuthState(
+  onAttempt?: (attempt: number, max: number) => void
+): Promise<{
   ok: boolean;
   hasMpin?: boolean;
   dekSalt?: string | null;
@@ -175,6 +196,7 @@ export async function apiAuthState(): Promise<{
   // link shows "Cannot reach the server" before the app even offers a login
   let lastData: Record<string, unknown> = {};
   for (let attempt = 1; attempt <= 3; attempt++) {
+    onAttempt?.(attempt, 3);
     try {
       const res = await fetch('/api/auth/state', { signal: AbortSignal.timeout(20000) });
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -210,16 +232,20 @@ export interface MpinResult {
 export async function apiMpinSetup(
   dekWrapped: string,
   dekSalt: string,
-  kekProof: string
+  kekProof: string,
+  onAttempt?: (attempt: number, max: number) => void
 ): Promise<MpinResult> {
-  const { status, data } = await postJsonAuth('/api/auth/setup', { dekWrapped, dekSalt, kekProof });
+  const { status, data } = await postJsonAuth('/api/auth/setup', { dekWrapped, dekSalt, kekProof }, onAttempt);
   if (status === 200) return { ok: true, token: data.token as string };
   return { ok: false, error: (data.error as string) ?? 'network' };
 }
 
 /** Every later login: prove the MPIN → long-lived session */
-export async function apiMpinUnlock(kekProof: string): Promise<MpinResult> {
-  const { status, data } = await postJsonAuth('/api/auth/unlock', { kekProof });
+export async function apiMpinUnlock(
+  kekProof: string,
+  onAttempt?: (attempt: number, max: number) => void
+): Promise<MpinResult> {
+  const { status, data } = await postJsonAuth('/api/auth/unlock', { kekProof }, onAttempt);
   if (status === 200) return { ok: true, token: data.token as string };
   return { ok: false, error: (data.error as string) ?? 'network' };
 }
@@ -388,7 +414,11 @@ export async function apiReserveNo(floor: number): Promise<number | null> {
 /* ----------------------------- PRODUCTS ---------------------------- */
 
 export async function apiProductPut(product: Product): Promise<{ ok: boolean; error?: string }> {
-  const res = await authedFetch('/api/products', 'PUT', { product });
+  // v46: a product save with a photo is a ~150KB PUT — at the shop's slow
+  // upload speed it cannot finish inside the 20s default and every add/edit
+  // looked like an error. 45s window + ONE retry (upsert is idempotent —
+  // the same payload sent twice stores the same row, unlike bill POSTs).
+  const res = await authedFetch('/api/products', 'PUT', { product }, { timeoutMs: 45000, retries: 1 });
   if (res.status === 200) return { ok: true };
   if (res.status === 0) return { ok: false, error: 'offline' };
   return { ok: false, error: String(res.data.error ?? 'saveFailed') };

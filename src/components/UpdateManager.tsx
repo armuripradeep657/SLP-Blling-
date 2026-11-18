@@ -85,11 +85,19 @@ export function UpdateManager() {
     setPhase('downloading');
     setProgress({ done: 0, total: 0 });
     const sw = navigator.serviceWorker;
-    if (sw?.controller) sw.controller.postMessage({ type: 'APPLY_UPDATE' });
-    else {
-      // no SW (first visit / unsupported): a plain reload fetches the new build
-      setTimeout(() => location.reload(), 300);
-    }
+    // v46: prefer the ACTIVE worker (reg.active) — the controlling worker can
+    // still be an OLD version (its postMessage would vanish into a handler
+    // that does not exist, leaving the dialog downloading forever)
+    void (async () => {
+      try {
+        const reg = await navigator.serviceWorker?.ready;
+        const target = reg?.active ?? sw?.controller;
+        if (target) target.postMessage({ type: 'APPLY_UPDATE' });
+        else setTimeout(() => location.reload(), 300); // no SW: reload fetches fresh
+      } catch {
+        setTimeout(() => location.reload(), 300);
+      }
+    })();
   };
 
   const keepOld = () => {

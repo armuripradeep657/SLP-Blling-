@@ -15,22 +15,22 @@ echo "== release.json served =="
 curl -s "$B/release.json" | python3 -c "
 import sys, json
 r = json.load(sys.stdin)
-assert r['version'] == 45, r['version']
+assert r['version'] == 46, r['version']
 assert len(r['notes']['en']) >= 3 and len(r['notes']['te']) >= 3
 print('release.json OK — version', r['version'], '| en notes:', len(r['notes']['en']), '| te notes:', len(r['notes']['te']))
 "
 
-echo "== sw.js is v45 + consent flow =="
+echo "== sw.js is v46 + consent flow =="
 SW=$(curl -s "$B/sw.js")
-echo "$SW" | grep -q "slp-billing-v45" && echo "cache v45 OK"
+echo "$SW" | grep -q "slp-billing-v46" && echo "cache v46 OK"
 echo "$SW" | grep -q "APPLY_UPDATE" && echo "APPLY_UPDATE handler OK"
 echo "$SW" | grep -q "UPDATE_PROGRESS" && echo "progress messages OK"
-echo "$SW" | grep -q "req.mode === 'navigate'" && echo "navigation handler OK"
-# cache-first navigations: navigate branch must NOT contain the old SWR refresh
-if echo "$SW" | sed -n "/req.mode === 'navigate'/,/^  }/p" | grep -q "refresh"; then
-  echo "FAIL: navigation still does background revalidate"
+echo "$SW" | grep -q "AbortSignal.timeout(30000)" && echo "per-asset 30s timeout OK (slow-link batches)"
+# v46 fix: navigations must match the CURRENT cache by name, not caches.match('/')
+if echo "$SW" | sed -n "/req.mode === 'navigate'/,/^  }/p" | grep -q "caches.open(CACHE)"; then
+  echo "navigation matches CURRENT cache only OK (no stale-cache collision loop)"
 else
-  echo "navigations CACHE-FIRST OK (shell changes only via APPLY_UPDATE)"
+  echo "FAIL: navigation still uses cross-cache match"
 fi
 
 echo "== APPLY_UPDATE dry-run: collect assets from '/', fetch each =="

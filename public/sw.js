@@ -1,5 +1,5 @@
 /* Service worker for SLP Cement Works Billing PWA */
-const CACHE = 'slp-billing-v45';
+const CACHE = 'slp-billing-v46';
 
 const PRECACHE = [
   '/',
@@ -79,26 +79,34 @@ self.addEventListener('message', (event) => {
         }
         const list = [...urls];
         const cache = await caches.open(CACHE);
+        // v46: download in small batches with a hard per-asset timeout — on
+        // the shop's slow link 13 parallel TLS fetches stall and the progress
+        // bar looks frozen at 5% forever
+        const BATCH = 4;
         let done = 0;
-        const results = await Promise.all(
-          list.map(async (u) => {
-            try {
-              const r = await fetch(u, { cache: 'reload' });
-              if (r.ok) {
-                await cache.put(u, r.clone());
-                done += 1;
-                await reply({ type: 'UPDATE_PROGRESS', done, total: list.length });
-                return true;
+        let allOk = true;
+        for (let i = 0; i < list.length && allOk; i += BATCH) {
+          const results = await Promise.all(
+            list.slice(i, i + BATCH).map(async (u) => {
+              try {
+                const r = await fetch(u, { cache: 'reload', signal: AbortSignal.timeout(30000) });
+                if (r.ok) {
+                  await cache.put(u, r.clone());
+                  done += 1;
+                  await reply({ type: 'UPDATE_PROGRESS', done, total: list.length });
+                  return true;
+                }
+                return false;
+              } catch {
+                return false;
               }
-              return false;
-            } catch {
-              return false;
-            }
-          })
-        );
+            })
+          );
+          if (!results.every(Boolean)) allOk = false;
+        }
         // swap the shell ONLY when every asset made it — a half-downloaded
         // update must never leave the phone with a new shell and no chunks
-        if (results.every(Boolean)) {
+        if (allOk) {
           await cache.put('/', new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } }));
           await reply({ type: 'UPDATE_READY', done: list.length, total: list.length });
           await self.skipWaiting();
@@ -122,21 +130,27 @@ self.addEventListener('fetch', (event) => {
   // API calls ALWAYS hit the network — never cached, never stalled by the SW
   if (url.pathname.startsWith('/api/')) return;
 
-  // Navigations: CACHE-FIRST. The cached shell answers instantly (even on a
-  // dying network) and stays a self-consistent pair with its own chunks.
-  // It changes only via APPLY_UPDATE — a user who declined keeps the old
-  // version for as long as they want ("continue old version only").
+  // Navigations: CACHE-FIRST **from the CURRENT cache only**.
+  // v46 fix: caches.match('/') searches ALL caches OLDEST first — the
+  // previous version's cache kept winning, so a phone booted the OLD shell
+  // forever: the update dialog appeared, "Update now" completed, the reload
+  // booted the old shell again — an endless loop the owner read as
+  // "stuck on the animation". Matching the current cache by name fixes it;
+  // the older caches remain a chunk backstop for a mid-session old shell.
   if (req.mode === 'navigate') {
     event.respondWith(
-      caches.match('/').then(
-        (cached) =>
-          cached ||
-          fetch(req).then((res) => {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put('/', copy)).catch(() => undefined);
-            return res;
-          })
-      )
+      caches
+        .open(CACHE)
+        .then((c) => c.match('/'))
+        .then(
+          (cached) =>
+            cached ||
+            fetch(req).then((res) => {
+              const copy = res.clone();
+              caches.open(CACHE).then((c2) => c2.put('/', copy)).catch(() => undefined);
+              return res;
+            })
+        )
     );
     return;
   }
@@ -153,15 +167,20 @@ self.addEventListener('fetch', (event) => {
 
   if (isStatic) {
     event.respondWith(
-      caches.match(req).then(
-        (cached) =>
-          cached ||
-          fetch(req).then((res) => {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => undefined);
-            return res;
-          })
-      )
+      (async () => {
+        const c = await caches.open(CACHE);
+        const hit = await c.match(req);
+        if (hit) return hit;
+        // older caches are a backstop for the previous shell's hashed chunks
+        const backstop = await caches.match(req);
+        if (backstop) return backstop;
+        const res = await fetch(req);
+        if (res.ok) {
+          const copy = res.clone();
+          c.put(req, copy).catch(() => undefined);
+        }
+        return res;
+      })()
     );
   }
 });

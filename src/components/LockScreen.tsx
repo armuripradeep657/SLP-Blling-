@@ -156,6 +156,10 @@ export default function LockScreen({
   const [mpin, setMpin] = useState('');
   const [mpin2, setMpin2] = useState('');
   const [busy, setBusy] = useState(false);
+  // v46: the network calls retry up to 3 times on a slow link — SHOW the
+  // progress ("Connecting… 2/3"), a silent spinner for 75s read as "stuck"
+  const [attempt, setAttempt] = useState<{ n: number; max: number } | null>(null);
+  const onAttempt = useCallback((n: number, max: number) => setAttempt({ n, max }), []);
   const [error, setError] = useState<string | null>(null);
   /** digits are hidden while typing (owner's request); the eye reveals them */
   const [showPin, setShowPin] = useState(false);
@@ -193,7 +197,7 @@ export default function LockScreen({
     probingRef.current = true;
     setError(null);
     setBusyBoth(true);
-    const res = await apiAuthState();
+    const res = await apiAuthState(onAttempt).finally(() => setAttempt(null));
     setBusyBoth(false);
     probingRef.current = false;
     if (!res.ok) {
@@ -307,7 +311,7 @@ export default function LockScreen({
         const dek = existing ?? (await generateDek());
         const { kek, proof } = await deriveKek(mpin, newSalt);
         const { wrapped, iv } = await wrapDek(dek, kek);
-        const saved = await apiMpinSetup(`${iv}.${wrapped}`, newSalt, proof);
+        const saved = await apiMpinSetup(`${iv}.${wrapped}`, newSalt, proof, onAttempt).finally(() => setAttempt(null));
         if (!saved.ok) {
           setBusyBoth(false);
           if (saved.error === 'exists') {
@@ -362,7 +366,7 @@ export default function LockScreen({
         const dek = await importDek(dekB64);
         const { kek, proof } = await deriveKek(mpin, newSalt);
         const { wrapped, iv } = await wrapDek(dek, kek);
-        const saved = await apiMpinSetup(`${iv}.${wrapped}`, newSalt, proof);
+        const saved = await apiMpinSetup(`${iv}.${wrapped}`, newSalt, proof, onAttempt).finally(() => setAttempt(null));
         if (!saved.ok) {
           setBusyBoth(false);
           if (saved.error === 'exists') {
@@ -435,7 +439,7 @@ export default function LockScreen({
       setBusyBoth(true);
       try {
         const { proof } = await deriveKek(mpin, salt);
-        const res = await apiMpinUnlock(proof);
+        const res = await apiMpinUnlock(proof, onAttempt).finally(() => setAttempt(null));
         if (!res.ok || !res.token) {
           setBusyBoth(false);
           if (res.error === 'noMpin') {
@@ -745,6 +749,11 @@ export default function LockScreen({
                 ? t('reauth.btn')
                 : t('lock.unlockBtn')}
           </Button>
+          {busy && attempt && attempt.n > 1 && (
+            <p role="status" className="text-center text-xs font-medium text-muted-foreground">
+              {t('lock.connecting')} {attempt.n}/{attempt.max}
+            </p>
+          )}
           {step === 'unlock' && (
             <button
               type="button"
