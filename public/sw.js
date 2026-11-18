@@ -1,5 +1,5 @@
 /* Service worker for SLP Cement Works Billing PWA */
-const CACHE = 'slp-billing-v42';
+const CACHE = 'slp-billing-v43';
 
 const PRECACHE = [
   '/',
@@ -36,7 +36,18 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => {
+        // v43: keep the CURRENT cache AND the one before it. A phone that
+        // booted the old shell still needs the old chunks (they are hashed
+        // per build); deleting the previous cache mid-flight is exactly how
+        // a slow connection ends up with a new shell and no JS — the white
+        // "Application error" screen after every deploy.
+        const num = (k) => parseInt((k.match(/-v(\d+)$/) || [])[1] || '0', 10);
+        const keep = Math.max(...keys.map(num));
+        return Promise.all(
+          keys.filter((k) => num(k) > 0 && num(k) < keep - 1).map((k) => caches.delete(k))
+        );
+      })
       .then(() => self.clients.claim())
   );
 });
@@ -51,16 +62,23 @@ self.addEventListener('fetch', (event) => {
   // API calls ALWAYS hit the network — never cached, never stalled by the SW
   if (url.pathname.startsWith('/api/')) return;
 
-  // Navigations: network first, fall back to cached shell (offline support)
+  // Navigations: stale-while-revalidate. The cached shell answers INSTANTLY
+  // (even on a dying network), and the fresh copy updates the cache in the
+  // background for the next boot. The old HTML + old chunks in the same
+  // cache stay a self-consistent pair, so the app always boots — then the
+  // chunk-error guard reloads once when the new build is fully fetched.
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put('/', copy)).catch(() => undefined);
-          return res;
-        })
-        .catch(() => caches.match('/').then((r) => r || Response.error()))
+      caches.match('/').then((cached) => {
+        const refresh = fetch(req)
+          .then((res) => {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put('/', copy)).catch(() => undefined);
+            return res;
+          })
+          .catch(() => cached || Response.error());
+        return cached || refresh;
+      })
     );
     return;
   }

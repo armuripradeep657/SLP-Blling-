@@ -432,6 +432,13 @@ function LiveCameraDialog({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const [busy, setBusy] = useState(false);
+  // v43: callbacks/values flow through REFS — the parent form re-renders on
+  // every keystroke AND on every 4s store poll, and a changing identity in
+  // the deps re-ran this effect, whose cleanup KILLED the camera stream
+  // mid-use (the "camera dies while taking a photo" bug). The effect now
+  // depends only on `open`.
+  const cbRef = useRef({ onOpenChange, onCapture, t, toast });
+  cbRef.current = { onOpenChange, onCapture, t, toast };
 
   useEffect(() => {
     if (!open) return;
@@ -439,24 +446,33 @@ function LiveCameraDialog({
     setBusy(true);
     void (async () => {
       try {
-        // let the dialog card mount first — the video must attach to the
-        // page BEFORE play() (detached elements refuse to play)
-        await new Promise((r) => setTimeout(r, 80));
-        if (cancelled) return;
+        // wait for the dialog card to actually mount (Radix mounts through a
+        // portal + animation — up to ~2s on a slow phone), then attach the
+        // video to the page BEFORE play() (detached elements refuse to play)
+        for (let i = 0; i < 20 && !hostRef.current; i++) {
+          await new Promise((r) => setTimeout(r, 100));
+          if (cancelled) return;
+        }
         const cam = await openDeviceCamera('environment', hostRef.current);
         if (cancelled) {
           cam.stop();
           return;
         }
         stopRef.current = cam.stop;
+        // re-attach if the host rendered after the camera opened
+        if (hostRef.current && cam.video.parentElement !== hostRef.current) {
+          hostRef.current.replaceChildren(cam.video);
+        }
       } catch (e) {
-        toast({
-          title: t('products.takePhoto'),
+        if (cancelled) return;
+        const { onOpenChange: close, t: tt, toast: tst } = cbRef.current;
+        tst({
+          title: tt('products.takePhoto'),
           description:
-            e instanceof CameraError && e.kind === 'denied' ? t('products.cameraPerm') : t('products.photoError'),
+            e instanceof CameraError && e.kind === 'denied' ? tt('products.cameraPerm') : tt('products.photoError'),
           variant: 'destructive',
         });
-        onOpenChange(false);
+        close(false);
       } finally {
         if (!cancelled) setBusy(false);
       }
@@ -466,18 +482,18 @@ function LiveCameraDialog({
       stopRef.current?.();
       stopRef.current = null;
     };
-  }, [open, onOpenChange, t, toast]);
+  }, [open]);
 
   const shoot = () => {
     const video = hostRef.current?.querySelector('video');
     if (!video) return;
     const dataUrl = grabCameraFrame(video);
     if (!dataUrl) {
-      toast({ title: t('products.photoError'), variant: 'destructive' });
+      cbRef.current.toast({ title: cbRef.current.t('products.photoError'), variant: 'destructive' });
       return;
     }
-    onCapture(dataUrl);
-    onOpenChange(false);
+    cbRef.current.onCapture(dataUrl);
+    cbRef.current.onOpenChange(false);
   };
 
   return (
