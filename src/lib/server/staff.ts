@@ -36,6 +36,15 @@ export function staffProfile(s: {
   name: string;
   photoData: string;
   mustChangePassword: boolean;
+  phone?: string;
 }) {
-  return { id: s.id, userId: s.userId, name: s.name, photoData: s.photoData, mustChangePassword: s.mustChangePassword };
+  return {
+    id: s.id,
+    userId: s.userId,
+    name: s.name,
+    photoData: s.photoData,
+    mustChangePassword: s.mustChangePassword,
+    // v53: staff mobile number — additive, "" when not set
+    phone: s.phone ?? '',
+  };
 }

@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   const rows = await db.staffAccount.findMany({ orderBy: { createdAt: 'asc' } });
   return Response.json({
     ok: true,
-    staff: rows.map((s) => ({ id: s.id, userId: s.userId, name: s.name, photoData: s.photoData, mustChangePassword: s.mustChangePassword, active: s.active, createdAt: s.createdAt })),
+    staff: rows.map((s) => ({ id: s.id, userId: s.userId, name: s.name, photoData: s.photoData, mustChangePassword: s.mustChangePassword, active: s.active, phone: s.phone, createdAt: s.createdAt })),
   });
 }
 

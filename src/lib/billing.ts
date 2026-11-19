@@ -94,10 +94,13 @@ export function waChatLink(phone: string): string {
 export function smsLink(phone: string, message: string): string {
   const p = normalizePhone(phone);
   const body = encodeURIComponent(message);
+  // v53: +91 country code on the recipient — bare 10-digit numbers fail to
+  // resolve on several stock SMS apps and on iOS when the contact is unsaved
+  const num = p ? `+91${p}` : '';
   if (typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-    return p ? `sms:${p}&body=${body}` : `sms:&body=${body}`;
+    return num ? `sms:${num}&body=${body}` : `sms:&body=${body}`;
   }
-  return p ? `sms:${p}?body=${body}` : `sms:?body=${body}`;
+  return num ? `sms:${num}?body=${body}` : `sms:?body=${body}`;
 }
 
 /** A UPI ID looks like name@bank — validated BEFORE any payment QR is built

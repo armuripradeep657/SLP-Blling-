@@ -244,6 +244,9 @@ model StaffAccount {
   mpinHash           String   @default("")
   /// profile photo as a small base64 data-URL ("" = none yet)
   photoData          String   @default("")
+  /// v53: staff mobile number — shown on their profile, edited by the staff
+  /// member themselves (owner sees it in the staff list); additive, "" = not set
+  phone              String   @default("")
   /// first login (or after an owner/forgot reset) asks for a password change
   mustChangePassword Boolean  @default(true)
   active             Boolean  @default(true)

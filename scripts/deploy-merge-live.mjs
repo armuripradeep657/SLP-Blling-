@@ -67,7 +67,7 @@ const liveIds = {
 
 const db = new DatabaseSync(DB);
 const now = new Date().toISOString();
-const stats = { billsInserted: 0, tombstones: 0, verified: 0, productsNew: 0, productsUpdated: 0, repoProductsRemoved: 0, removedDeleted: 0 };
+const stats = { billsInserted: 0, tombstones: 0, verified: 0, productsNew: 0, productsUpdated: 0, repoProductsRemoved: 0, removedDeleted: 0, staffNew: 0, staffUpd: 0 };
 
 /* ---------- 4. bills: the LIVE snapshot is authoritative ---------- */
 /* Live rows were saved through the API (which enforces numbering + the
@@ -140,6 +140,30 @@ if (!Array.isArray(live.verifiedBills)) {
       JSON.stringify(i.items ?? []), i.dateISO, now
     );
     stats.verified++;
+  }
+}
+
+/* ---------- 5c. staff accounts: never lose a login the owner created ---------- */
+/* The state carries staff rows WITHOUT secrets (no hashes/photo — the hash
+   never leaves the server). Staff ids missing from the repo are re-created
+   with mustChangePassword=true so the owner's forgot-password flow can set
+   their password; existing rows only get name/active flag updates. */
+const getStaff = db.prepare(`SELECT id FROM StaffAccount WHERE id = ?`);
+const updStaff = db.prepare(`UPDATE StaffAccount SET name = ?, active = ? WHERE id = ?`);
+const insStaff = db.prepare(
+  `INSERT INTO StaffAccount (id, userId, name, passwordHash, mpinHash, photoData, phone, mustChangePassword, active, createdAt)
+   VALUES (?, ?, ?, ?, '', '', '', 1, ?, ?)`
+);
+const insStaffSessionCleanup = db.prepare(`DELETE FROM StaffSession WHERE staffId = ?`);
+for (const s of live.staff ?? []) {
+  if (!getStaff.get(s.id)) {
+    // crypto-safe throwaway hash: the row exists, the owner resets the password
+    insStaff.run(s.id, s.userId, s.name, `reset-${s.id}-${now}`, s.active === false ? 0 : 1, s.createdAt ?? now);
+    insStaffSessionCleanup.run(s.id);
+    stats.staffNew++;
+  } else {
+    updStaff.run(s.name, s.active === false ? 0 : 1, s.id);
+    stats.staffUpd++;
   }
 }
 
@@ -224,6 +248,6 @@ db.prepare(`UPDATE BizState SET rev = ? WHERE id = 'owner'`).run(newRev);
 writeFileSync(BASELINE, JSON.stringify(liveIds, null, 1));
 db.close();
 
-console.log(`✓ merged: +${stats.billsInserted} bill rows, ${stats.tombstones} tombstones, ${stats.verified} registry rows, ${stats.productsNew} new products, ${stats.productsUpdated} products took the live (newer) version, ${stats.removedDeleted} owner-deleted products removed, ledger/labour deletions applied: ${stats.repoRemovedLedger}`);
+console.log(`✓ merged: +${stats.billsInserted} bill rows, ${stats.tombstones} tombstones, ${stats.verified} registry rows, ${stats.productsNew} new products, ${stats.productsUpdated} products took the live (newer) version, ${stats.removedDeleted} owner-deleted products removed, ledger/labour deletions applied: ${stats.repoRemovedLedger}, staff: +${stats.staffNew} new / ${stats.staffUpd} updated`);
 console.log(`✓ nextBillNo=${nextBillNo} (max of both sides) | rev → ${newRev} | baseline saved`);
 console.log('DONE — the deploy will now ship the UNION of repo + live. Nothing is reset.');

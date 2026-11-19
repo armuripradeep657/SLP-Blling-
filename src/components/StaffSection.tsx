@@ -12,7 +12,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useT } from '@/hooks/use-app-lang';
 import { apiStaffList, apiStaffCreate, apiStaffDelete, apiStaffResets, type StaffRow, type ResetRow } from '@/lib/cloud';
-import { KeyRound, Plus, ShieldAlert, Trash2, UserRound } from 'lucide-react';
+import { KeyRound, Phone, Plus, ShieldAlert, Trash2, UserRound } from 'lucide-react';
 
 /**
  * OWNER → Settings → Staff (v39). Manage who can sign in: create staff
@@ -130,6 +130,12 @@ export default function StaffSection() {
                 {!s.active && ' · inactive'}
                 {s.mustChangePassword && <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">{t('settings.staffMustChange')}</span>}
               </p>
+              {s.phone && (
+                <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-neutral-600">
+                  <Phone className="size-3 text-blue-700" />
+                  {s.phone}
+                </p>
+              )}
             </div>
             <AlertDialog>
               <AlertDialogTrigger asChild>

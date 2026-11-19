@@ -30,7 +30,7 @@ import InvoiceDoc from './InvoiceDoc';
 import DriverSlip from './DriverSlip';
 import { useStore } from '@/lib/store';
 import { captureSlipPng, downloadBlob, printImage, slipFileName } from '@/lib/invoiceImage';
-import { normalizePhone, smsLink, waChatLink } from '@/lib/billing';
+import { normalizePhone, smsLink, waChatLink, waLink } from '@/lib/billing';
 import { smsMessage, whatsappCaption, whatsappMessage } from '@/lib/messages';
 import { BILL_LANGUAGES } from '@/lib/i18n';
 import type { BillLanguage, Invoice } from '@/lib/types';
@@ -109,18 +109,68 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
     return captureSlipPng(node, pixelRatio);
   };
 
+  /** v53 — capture that NEVER blocks sharing: on phones where html-to-image
+   *  fails (font inlining, canvas memory, blocked asset fetch), it retries
+   *  lighter and finally gives up with null so the TEXT path can take over.
+   *  The customer always receives the bill one way or another. */
+  const captureBestEffort = async (): Promise<Blob | null> => {
+    try {
+      return await capture(3);
+    } catch (e) {
+      console.warn('capture r1 failed — retrying lighter', e);
+    }
+    try {
+      const node = getCaptureTarget();
+      if (!node) return null;
+      return await captureSlipPng(node, 2, { skipFonts: true, cacheBust: false });
+    } catch (e) {
+      console.warn('capture r2 failed — falling back to text share', e);
+    }
+    return null;
+  };
+
+  /** v53 — open an external URL even when window.open is popup-blocked
+   *  (PWAs and in-app browsers block popups; the anchor click still navigates) */
+  const openExternal = (url: string) => {
+    const w = window.open(url, '_blank');
+    if (w) return;
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
   const onShare = () =>
     guard('share', async () => {
-      const blob = await capture();
-      const file = new File([blob], fileName, { type: 'image/png' });
-      // Direct native share WITH the image attached (WhatsApp, SMS, etc.)
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          text: waCaption,
-          title: `Bill ${invoice.no}`,
+      const blob = await captureBestEffort();
+      if (!blob) {
+        // capture failed on this phone — the bill still goes out as TEXT
+        openExternal(waLink(invoice.customer.phone, waMsg));
+        toast({
+          title: 'Bill sent as text',
+          description: 'The image could not be processed on this phone — the full bill was sent as a WhatsApp message instead.',
         });
         return;
+      }
+      const file = new File([blob], fileName, { type: 'image/png' });
+      // Direct native share WITH the image attached (WhatsApp, SMS, etc.)
+      try {
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            text: waCaption,
+            title: `Bill ${invoice.no}`,
+          });
+          return;
+        }
+      } catch (e) {
+        // user cancelled — stop silently; a REAL share rejection falls through
+        // to the helper below instead of dead-ending with "Action failed"
+        if ((e as DOMException)?.name === 'AbortError') return;
+        console.warn('native share rejected — falling back', e);
       }
       // Fallback: download + open WhatsApp chat, guide the user to attach
       downloadBlob(blob, fileName);
@@ -130,40 +180,58 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
   /**
    * DIRECT send: opens the customer's own WhatsApp chat using the number typed
    * in the bill — click-to-chat works even when the customer is brand new and
-   * not saved in contacts. The chat opens EMPTY (no text) so the bill goes as
-   * IMAGE only: the slip is on the clipboard AND saved to the gallery.
+   * not saved in contacts. v53: every failure path still delivers the bill —
+   * clipboard blocked → chat opens with the bill TEXT pre-filled; image
+   * capture failed → text-only message; popup blocked → anchor navigation.
    */
   const onWhatsAppDirect = () =>
     guard('wa', async () => {
-      const blob = await capture();
+      const phone = invoice.customer.phone;
+      const blob = await captureBestEffort();
 
       // 1) Put the bill image on the clipboard — paste straight into the chat
       let copied = false;
-      try {
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-        copied = true;
-      } catch {
-        /* clipboard blocked — gallery copy below still works */
+      if (blob) {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          copied = true;
+        } catch {
+          /* clipboard blocked — gallery copy below still works */
+        }
+        // 2) Save to gallery — reliable attach fallback on every phone
+        downloadBlob(blob, fileName);
       }
 
-      // 2) Save to gallery — reliable attach fallback on every phone
-      downloadBlob(blob, fileName);
-
-      // 3) Open the customer's chat DIRECTLY — no text pre-filled, image only
-      window.open(waChatLink(invoice.customer.phone), '_blank');
+      // 3) Open the customer's chat DIRECTLY. With the image on the clipboard
+      //    the chat opens EMPTY (image-only send); without a clipboard image
+      //    the bill TEXT is pre-filled so the customer still receives it.
+      const chatUrl = copied ? waChatLink(phone) : waLink(phone, waMsg);
+      openExternal(chatUrl);
 
       toast({
-        title: `Chat opened for ${invoice.customer.name || normalizePhone(invoice.customer.phone)}`,
+        title: blob && !invoice.customer.phone
+          ? 'No customer number on the bill — pick a chat'
+          : `Chat opened for ${invoice.customer.name || normalizePhone(phone)}`,
         description: copied
           ? 'Bill image copied — long-press the WhatsApp message box, Paste, and Send. (Image also saved to gallery.)'
-          : `Bill image ${fileName} saved to gallery — tap 📎 in the chat, attach it, and Send.`,
+          : blob
+            ? `Bill image ${fileName} saved to gallery — tap 📎 in the chat, attach it, and Send. The bill text is pre-filled in the message box.`
+            : 'The image could not be processed — the full bill was placed in the message box as text. Just press Send.',
       });
     });
 
   /** Share-sheet send (used when no customer number is on the bill) */
   const onWhatsApp = () =>
     guard('wa', async () => {
-      const blob = await capture();
+      const blob = await captureBestEffort();
+      if (!blob) {
+        openExternal(waLink(invoice.customer.phone, waMsg));
+        toast({
+          title: 'Bill sent as text',
+          description: 'The image could not be processed on this phone — the full bill was placed in WhatsApp as a message.',
+        });
+        return;
+      }
       const file = new File([blob], fileName, { type: 'image/png' });
       // 1st choice: share sheet WITH the bill image attached — user picks WhatsApp
       try {
@@ -177,6 +245,7 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
         }
       } catch (e) {
         if ((e as DOMException)?.name === 'AbortError') return;
+        console.warn('native share rejected — falling back', e);
       }
       // 2nd choice: save the image + show step-by-step helper with preview
       downloadBlob(blob, fileName);
@@ -184,14 +253,20 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
     });
 
   const openWaChat = () => {
-    window.open(waChatLink(invoice.customer.phone), '_blank');
+    openExternal(waChatLink(invoice.customer.phone));
     setWaFallback(null);
   };
 
   const onSMS = () =>
     guard('sms', () => {
+      // v53: sms:+91… so the recipient resolves on every device/carrier
       window.location.href = smsLink(invoice.customer.phone, smsMsg);
-      toast({ title: 'Opening SMS app…', description: 'SMS carries text — the bill image can be MMS-attached by your messaging app.' });
+      toast({
+        title: 'Opening SMS app…',
+        description: invoice.customer.phone
+          ? 'SMS carries text — the bill image can be MMS-attached by your messaging app.'
+          : 'No customer number on the bill — pick a recipient, the bill text is ready.',
+      });
     });
 
   const onDownload = () =>

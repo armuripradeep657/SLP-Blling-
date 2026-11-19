@@ -1,17 +1,17 @@
 {
-  "version": 52,
+  "version": 53,
   "notes": {
     "en": [
-      "Permanent data storage hardened: the central online database is the single source of truth — everything you save stays saved across refresh, restart, logout and devices",
-      "Edits now update ONLY the field you change (partial PATCH) — nothing else on the record is touched, and deleted bills/products stay deleted",
-      "New save status in the header: Saving… / Saved / Not saved — retry (your typed information is kept, one tap retries)",
-      "Application updates can no longer reset the database: every deploy now merges the live data first (bills, products, labour, ledger) and takes a backup"
+      "Staff login can now open the Scan (Verify) tab and check any bill's barcode — same scanner as the owner",
+      "Staff profile now has a Mobile number field — staff save their own number, the owner sees it in the staff list",
+      "WhatsApp & SMS bill sharing hardened: if the image cannot be processed on a phone, the full bill is sent as a WhatsApp text message automatically — the customer always receives the bill",
+      "WhatsApp opens the customer's chat directly with the +91 number; SMS now carries the +91 prefix so the recipient always resolves"
     ],
     "te": [
-      "శాశ్వత డేటా నిల్వ మెరుగుపరచబడింది: సెంట్రల్ ఆన్‌లైన్ డేటాబేస్ మాత్రమే అసలు — మీరు సేవ్ చేసినదంతా రిఫ్రెష్, రీస్టార్ట్, లాగ్అవుట్, ఇతర ఫోన్లలో కూడా ఉంటుంది",
-      "మీరు మార్చిన ఫీల్డ్ మాత్రమే అప్‌డేట్ అవుతుంది (పాక్షిక PATCH) — మిగతా వివరాలు అలాగే ఉంటాయి; డిలీట్ చేసిన బిల్లులు/ప్రొడక్ట్స్ తిరిగి రావు",
-      "హెడర్‌లో కొత్త సేవ్ స్టేటస్: సేవ్ చేస్తోంది / సేవ్ అయింది / సేవ్ కాలేదు — మళ్ళీ (టైప్ చేసిన సమాచారం ఉంటుంది, ఒక్క ట్యాప్‌తో రిట్రై)",
-      "యాప్ అప్‌డేట్ వల్ల డేటాబేస్ రీసెట్ కాకూడదు: ప్రతి డిప్లాయ్‌కి ముందు లైవ్ డేటా (బిల్లులు, ప్రొడక్ట్స్, లేబర్, లెడ్జర్) మర్జ్ చేసి, బ్యాకప్ తీసుకుంటాము"
+      "స్టాఫ్ లాగిన్‌లో ఇప్పుడు స్కాన్ (Verify) ట్యాబ్ తెరుచుకుంటుంది — ఏ బిల్ బార్‌కోడ్ అయినా తనిఖీ చేయవచ్చు",
+      "స్టాఫ్ ప్రొఫైల్‌లో మొబైల్ నంబర్ ఫీల్డ్ ఉంది — స్టాఫ్ తమ నంబర్ సేవ్ చేయగలరు, ఓనర్ స్టాఫ్ లిస్ట్‌లో చూడవచ్చు",
+      "WhatsApp & SMS బిల్ షేరింగ్ బలపరచబడింది: ఫోన్‌లో ఇమేజ్ ప్రాసెస్ కాకపోతే పూర్తి బిల్ టెక్స్ట్ మెసేజ్‌గా వెళ్తుంది — కస్టమర్‌కు బిల్ తప్పకుండా అందుతుంది",
+      "WhatsApp +91 నంబర్‌తో కస్టమర్ చాట్ నేరుగా తెరుచుకుంటుంది; SMS లో +91 ప్రిఫిక్స్ — నంబర్ తప్పకుండా రిజాల్వ్ అవుతుంది"
     ]
   }
 }

@@ -216,11 +216,15 @@ export default function Home() {
   }, [mounted, activeTab, setActiveTab]);
 
   // staff mode: owner-only tabs bounce to Bill; a first login opens the
-  // "set your own password" prompt (change it or keep it — owner's flow)
+  // "set your own password" prompt (change it or keep it — owner's flow).
+  // v53: 'verify' is NOT bounced any more — the scanner is staff-accessible
+  // (the nav already shows the Verify tab to staff and the lookup API is
+  // public; the old bounce made the tab visible but untappable, which read
+  // as "staff cannot scan").
   useEffect(() => {
     if (!mounted || !staff) return;
     const id = setTimeout(() => {
-      if (['products', 'ledger', 'verify', 'settings', 'dashboard'].includes(activeTab)) setActiveTab('bill');
+      if (['products', 'ledger', 'settings', 'dashboard'].includes(activeTab)) setActiveTab('bill');
       if (staff.mustChangePassword) setFirstLoginOpen(true);
     }, 0);
     return () => clearTimeout(id);

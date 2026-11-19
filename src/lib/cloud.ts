@@ -637,6 +637,8 @@ export type StaffMe = {
   name: string;
   photoData: string;
   mustChangePassword: boolean;
+  /** v53: staff mobile number ("" when not set) — edited on their profile */
+  phone?: string;
 };
 
 /** Staff sign-in: `secret` is the password OR the numeric MPIN */
@@ -658,6 +660,14 @@ export async function apiStaffMe(): Promise<{ ok: boolean; staff?: StaffMe; erro
 
 export async function apiStaffSetPhoto(photo: string): Promise<{ ok: boolean; staff?: StaffMe; error?: string }> {
   const res = await authedFetch('/api/staff/me', 'PATCH', { photo });
+  if (res.status === 200) return res.data as { ok: boolean; staff: StaffMe };
+  return { ok: false, error: String(res.data?.error ?? 'saveFailed') };
+}
+
+/** v53: the staff member saves their OWN mobile number (partial PATCH —
+ *  nothing else on the account is touched) */
+export async function apiStaffSetPhone(phone: string): Promise<{ ok: boolean; staff?: StaffMe; error?: string }> {
+  const res = await authedFetch('/api/staff/me', 'PATCH', { phone });
   if (res.status === 200) return res.data as { ok: boolean; staff: StaffMe };
   return { ok: false, error: String(res.data?.error ?? 'saveFailed') };
 }

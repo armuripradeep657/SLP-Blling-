@@ -331,8 +331,12 @@ export async function snapshot(): Promise<{
   /** v52: the barcode-verification registry — mirrors into the repo DB at
    *  deploy-merge so verification keeps working after an application update */
   verifiedBills: Record<string, unknown>[];
+  /** v53: staff accounts WITHOUT secrets (no hashes/photo) — the deploy-merge
+   *  tool re-creates staff rows added on phones so an application update can
+   *  never remove a staff login; hashes stay server-side only */
+  staff: { id: string; userId: string; name: string; active: boolean; mustChangePassword: boolean; createdAt: string }[];
 }> {
-  const [settings, appearance, products, invoices, expenses, incomes, labourWorks, labourWorkers, cfg, tombstones, verified] =
+  const [settings, appearance, products, invoices, expenses, incomes, labourWorks, labourWorkers, cfg, tombstones, verified, staffRows] =
     await Promise.all([
       readSettings(),
       readAppearance(),
@@ -350,6 +354,7 @@ export async function snapshot(): Promise<{
       db.appConfig.findUnique({ where: { slot: 'owner' } }),
       db.deletedBill.findMany({ orderBy: { deletedAt: 'desc' } }),
       db.verifiedBill.findMany({ orderBy: { createdAt: 'desc' } }),
+      db.staffAccount.findMany({ orderBy: { createdAt: 'asc' } }),
     ]);
   return {
     settings,
@@ -369,6 +374,10 @@ export async function snapshot(): Promise<{
       subtotal: v.subtotal, total: v.total, paid: v.paid, balance: v.balance, paymentMode: v.paymentMode,
       paymentStatus: v.paymentStatus, createdBy: v.createdBy, cancelled: v.cancelled, itemsJson: v.itemsJson,
       createdAt: v.createdAt.toISOString(),
+    })),
+    staff: staffRows.map((r) => ({
+      id: r.id, userId: r.userId, name: r.name, active: r.active,
+      mustChangePassword: r.mustChangePassword, createdAt: r.createdAt.toISOString(),
     })),
   };
 }

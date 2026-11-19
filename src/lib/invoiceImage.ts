@@ -5,13 +5,20 @@ import { toPng } from 'html-to-image';
 /**
  * Capture a DOM node (thermal slip) into a high-res PNG blob.
  * pixelRatio 3 gives crisp result on mobile screens & WhatsApp.
+ * v53: `opts` lets the caller retry LIGHTER when the first attempt fails on
+ * a real phone (font inlining and cacheBust re-fetches are the usual
+ * html-to-image killers) — sharing must never dead-end on a capture error.
  */
-export async function captureSlipPng(node: HTMLElement, pixelRatio = 3): Promise<Blob> {
+export async function captureSlipPng(
+  node: HTMLElement,
+  pixelRatio = 3,
+  opts?: { skipFonts?: boolean; cacheBust?: boolean }
+): Promise<Blob> {
   const dataUrl = await toPng(node, {
     pixelRatio,
     backgroundColor: '#ffffff',
-    cacheBust: true,
-    skipFonts: false,
+    cacheBust: opts?.cacheBust ?? true,
+    skipFonts: opts?.skipFonts ?? false,
   });
   const res = await fetch(dataUrl);
   return await res.blob();

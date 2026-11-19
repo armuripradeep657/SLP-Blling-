@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Camera, KeyRound, LogOut, ShieldCheck, UserRound } from 'lucide-react';
+import { Camera, KeyRound, Loader2, LogOut, Phone, ShieldCheck, UserRound } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useT } from '@/hooks/use-app-lang';
 import { useToast } from '@/hooks/use-toast';
 import { fileToSmallDataUrl } from '@/lib/photo';
-import { apiStaffSetPhoto, authRole } from '@/lib/cloud';
+import { apiStaffSetPhoto, apiStaffSetPhone, authRole } from '@/lib/cloud';
 import { lockApp } from '@/lib/cloud';
 
 /**
@@ -27,6 +27,9 @@ export default function StaffProfile() {
   const [newPass, setNewPass] = useState('');
   const [currentPass, setCurrentPass] = useState('');
   const [busy, setBusy] = useState(false);
+  // v53: staff mobile number — the staff member saves their own number here
+  const [phone, setPhone] = useState<string | null>(null); // null = untouched (shows saved value)
+  const [phoneBusy, setPhoneBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // session-only fallback: the store is hydrated before this view mounts
@@ -76,6 +79,27 @@ export default function StaffProfile() {
     window.dispatchEvent(new Event('slp-lock'));
   };
 
+  /** v53 — save the staff mobile number: PATCH /api/staff/me writes ONLY the
+   *  phone field (the account, photo and password stay untouched) */
+  const savePhone = async () => {
+    if (phoneBusy || phone === null) return;
+    setPhoneBusy(true);
+    try {
+      const res = await apiStaffSetPhone(phone.trim());
+      if (res.ok && res.staff) {
+        await refreshStaff();
+        setPhone(null); // back to "shows the saved value" state
+        toast({ title: t('staff.phoneSaved') });
+      } else {
+        toast({ title: res.error === 'badPhone' ? t('staff.phoneBad') : t('net.saveFailed'), variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: t('net.saveFailed'), variant: 'destructive' });
+    } finally {
+      setPhoneBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* identity card */}
@@ -107,6 +131,36 @@ export default function StaffProfile() {
             {t('staff.photoChange')}
           </Button>
         </div>
+      </div>
+
+      {/* v53: mobile number — visible and editable by the staff member */}
+      <div className="space-y-2.5 rounded-2xl border bg-card p-4 shadow-sm">
+        <p className="flex items-center gap-1.5 text-sm font-bold text-neutral-800">
+          <Phone className="size-4 text-blue-700" />
+          {t('staff.phone')}
+        </p>
+        <div className="flex items-center gap-2">
+          <Input
+            id="sp-phone"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            value={phone ?? staff.phone ?? ''}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="98765 43210"
+            aria-label="Mobile number"
+            className="h-11 text-sm"
+          />
+          <Button
+            onClick={() => void savePhone()}
+            disabled={phoneBusy || phone === null || phone.trim() === (staff.phone ?? '')}
+            className="h-11 shrink-0 bg-blue-600 px-4 text-white hover:bg-blue-700"
+            aria-label="Save mobile number"
+          >
+            {phoneBusy ? <Loader2 className="size-4 animate-spin" /> : t('staff.phoneSave')}
+          </Button>
+        </div>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">{t('staff.phoneHint')}</p>
       </div>
 
       {/* password */}
