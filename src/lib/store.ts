@@ -375,12 +375,15 @@ export const useStore = create<BillingStore>()(
       setActiveTab: (t) => set({ activeTab: t }),
 
       saveSettings: async (s) => {
-        // resetBillNo is a transient command (v41) — never stored as a setting
+        // resetBillNo is a transient COMMAND (v41) — the server consumes it and
+        // never stores it. v54 FIX: it must actually REACH the server — the old
+        // code stripped it from the PUT, so "Start bills from 1" silently did
+        // nothing and the counter stayed where it was.
         const { resetBillNo, ...persist } = s as Partial<BusinessSettings> & { resetBillNo?: boolean };
         // v41/v52: the settings route MERGES this patch over the stored
         // settings — only the fields the owner changed are rewritten
         await runSave(async () => {
-          const ok = await apiSettingsPut(persist);
+          const ok = await apiSettingsPut(resetBillNo ? { ...persist, resetBillNo: true } : persist);
           if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
           set((st) => ({ settings: { ...st.settings, ...persist } }));
         });

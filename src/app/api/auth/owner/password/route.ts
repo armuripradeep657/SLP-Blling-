@@ -48,14 +48,15 @@ export async function POST(req: Request) {
   const account = await db.syncAccount.findUnique({ where: { slot: 'owner' } });
   if (!account) return Response.json({ error: 'notFound' }, { status: 404 });
 
-  if (account.ownerPasswordHash && !account.ownerPasswordIsDefault) {
-    // CHANGE from a real password — proving the current one is mandatory
+  // v54: the CURRENT password is ALWAYS mandatory when one exists — the
+  // seeded default included (the owner types the old PIN/password in Settings
+  // and only then may it change). Seeding a fresh account (no hash yet) still
+  // needs only the owner session, exactly as before.
+  if (account.ownerPasswordHash) {
     if (!current || !verifyPassword(current, account.ownerPasswordHash)) {
       return Response.json({ error: 'badCredentials' }, { status: 401 });
     }
   }
-  // moving OFF the seeded default password needs only the owner session
-  // (the owner proved themselves with the MPIN / current login already)
 
   const updated = await db.syncAccount.update({
     where: { slot: 'owner' },

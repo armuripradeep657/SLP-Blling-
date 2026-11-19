@@ -561,8 +561,11 @@ function SecuritySection() {
       toast({ title: t('settings.changePasswordBtn'), description: t('lock.staffErr'), variant: 'destructive' });
       return;
     }
-    if (isDefault && current.length === 0 && false) {
-      // (default password IS the current one — no need to retype it)
+    // v54: the OLD password/PIN is always mandatory — even when the account is
+    // still on the seeded default (the owner proves the current one first)
+    if (current.length === 0) {
+      toast({ title: t('settings.changePasswordBtn'), description: t('settings.needCurrent'), variant: 'destructive' });
+      return;
     }
     setBusy(true);
     try {
@@ -579,7 +582,7 @@ function SecuritySection() {
       const res = await apiOwnerPassword({
         username: username.trim() || 'Pradeep',
         password: next,
-        currentPassword: current || undefined,
+        currentPassword: current,
         dekSalt: salt,
         dekIv: iv,
         dekWrapped: wrapped,
@@ -616,15 +619,13 @@ function SecuritySection() {
         value={username}
         onChange={setUsername}
       />
-      {!isDefault && (
-        <Field
-          ariaLabel="Current password"
-          label={t('settings.currentPassword')}
-          value={current}
-          onChange={setCurrent}
-          type="password"
-        />
-      )}
+      <Field
+        ariaLabel="Current password"
+        label={t('settings.currentPassword')}
+        value={current}
+        onChange={setCurrent}
+        type="password"
+      />
       <Field
         ariaLabel="New password"
         label={t('settings.newPassword')}
@@ -634,7 +635,7 @@ function SecuritySection() {
       />
       <Button
         onClick={() => void change()}
-        disabled={busy || next.length < 4}
+        disabled={busy || next.length < 4 || current.length === 0}
         className="h-11 w-full bg-blue-600 text-white hover:bg-blue-700"
         aria-label="Change owner password"
       >

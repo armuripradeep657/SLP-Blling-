@@ -1,17 +1,17 @@
 {
-  "version": 53,
+  "version": 54,
   "notes": {
     "en": [
-      "Staff login can now open the Scan (Verify) tab and check any bill's barcode — same scanner as the owner",
-      "Staff profile now has a Mobile number field — staff save their own number, the owner sees it in the staff list",
-      "WhatsApp & SMS bill sharing hardened: if the image cannot be processed on a phone, the full bill is sent as a WhatsApp text message automatically — the customer always receives the bill",
-      "WhatsApp opens the customer's chat directly with the +91 number; SMS now carries the +91 prefix so the recipient always resolves"
+      "Bill numbering RESET now really works — 'Start bills from 1' (Settings → Billing & Slip) restarts the counter; saved bills and products are never touched",
+      "Owner password change in Settings now always asks for the CURRENT password/PIN first — wrong or empty old password is rejected",
+      "WhatsApp bill sharing is IMAGE-first: the bill picture goes straight into WhatsApp (clipboard paste or the share sheet carries the image file); text only as the last resort when no image can be captured",
+      "Owner name ARMURI PRASAD and UPI ID armuripradeep@bpunity set in Settings — bills and the payment QR use them"
     ],
     "te": [
-      "స్టాఫ్ లాగిన్‌లో ఇప్పుడు స్కాన్ (Verify) ట్యాబ్ తెరుచుకుంటుంది — ఏ బిల్ బార్‌కోడ్ అయినా తనిఖీ చేయవచ్చు",
-      "స్టాఫ్ ప్రొఫైల్‌లో మొబైల్ నంబర్ ఫీల్డ్ ఉంది — స్టాఫ్ తమ నంబర్ సేవ్ చేయగలరు, ఓనర్ స్టాఫ్ లిస్ట్‌లో చూడవచ్చు",
-      "WhatsApp & SMS బిల్ షేరింగ్ బలపరచబడింది: ఫోన్‌లో ఇమేజ్ ప్రాసెస్ కాకపోతే పూర్తి బిల్ టెక్స్ట్ మెసేజ్‌గా వెళ్తుంది — కస్టమర్‌కు బిల్ తప్పకుండా అందుతుంది",
-      "WhatsApp +91 నంబర్‌తో కస్టమర్ చాట్ నేరుగా తెరుచుకుంటుంది; SMS లో +91 ప్రిఫిక్స్ — నంబర్ తప్పకుండా రిజాల్వ్ అవుతుంది"
+      "బిల్ నంబరింగ్ రీసెట్ ఇప్పుడు నిజంగా పనిచేస్తుంది — 'బిల్లు 1 నుండి ప్రారంభించండి' (Settings → Billing & Slip); సేవ్ చేసిన బిల్లులు, ప్రొడక్ట్స్ ఏవీ తాకబడవు",
+      "Settings లో ఓనర్ పాస్‌వర్డ్ మార్చడానికి ఇప్పుడు ఎప్పుడూ ప్రస్తుత పాస్‌వర్డ్/PIN అడుగుతారు — తప్పు పాతది వదిలితే మార్చబడదు",
+      "WhatsApp బిల్ షేరింగ్ ఇప్పుడు IMAGE మొదట: బిల్ పిక్చర్ నేరుగా WhatsApp లోకి వెళ్తుంది; ఇమేజ్ అస్సలు కాకపోతే మాత్రమే టెక్స్ట్",
+      "ఓనర్ పేరు ARMURI PRASAD, UPI ID armuripradeep@bpunity Settings లో సెట్ — బిల్లులు, పేమెంట్ QR వాటిని వాడతాయి"
     ]
   }
 }

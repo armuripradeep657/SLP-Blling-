@@ -178,45 +178,74 @@ export default function InvoiceModal({ invoice: invoiceProp, open, onOpenChange,
     });
 
   /**
-   * DIRECT send: opens the customer's own WhatsApp chat using the number typed
-   * in the bill — click-to-chat works even when the customer is brand new and
-   * not saved in contacts. v53: every failure path still delivers the bill —
-   * clipboard blocked → chat opens with the bill TEXT pre-filled; image
-   * capture failed → text-only message; popup blocked → anchor navigation.
+   * DIRECT send — v54 IMAGE-FIRST: the bill goes to WhatsApp as the PICTURE.
+   * 1) clipboard image → the customer's chat opens ready to Paste+Send;
+   * 2) clipboard blocked → the native share sheet carries the IMAGE FILE —
+   *    WhatsApp receives the picture itself, you just pick the customer;
+   * 3) neither works → the image is saved to the gallery and the chat opens
+   *    (bill text pre-filled) — attach the picture from 📎/gallery;
+   * 4) only when no image can be captured at all → text-only bill.
    */
   const onWhatsAppDirect = () =>
     guard('wa', async () => {
       const phone = invoice.customer.phone;
       const blob = await captureBestEffort();
 
-      // 1) Put the bill image on the clipboard — paste straight into the chat
-      let copied = false;
-      if (blob) {
-        try {
-          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-          copied = true;
-        } catch {
-          /* clipboard blocked — gallery copy below still works */
-        }
-        // 2) Save to gallery — reliable attach fallback on every phone
-        downloadBlob(blob, fileName);
+      // no image possible on this phone — the text bill is the last resort
+      if (!blob) {
+        openExternal(waLink(phone, waMsg));
+        toast({
+          title: 'Bill sent as text',
+          description: 'The image could not be processed on this phone — the full bill was placed in WhatsApp as a message.',
+        });
+        return;
       }
 
-      // 3) Open the customer's chat DIRECTLY. With the image on the clipboard
-      //    the chat opens EMPTY (image-only send); without a clipboard image
-      //    the bill TEXT is pre-filled so the customer still receives it.
-      const chatUrl = copied ? waChatLink(phone) : waLink(phone, waMsg);
-      openExternal(chatUrl);
+      const file = new File([blob], fileName, { type: 'image/png' });
 
+      // 1) Put the bill image on the clipboard — paste straight into the chat
+      let copied = false;
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        copied = true;
+      } catch {
+        /* clipboard blocked — the share sheet below carries the image instead */
+      }
+
+      if (copied) {
+        // image is ON the clipboard — open the customer's chat directly and
+        // the bill goes as the PICTURE (long-press → Paste → Send)
+        downloadBlob(blob, fileName); // gallery copy too — belt and braces
+        openExternal(waChatLink(phone));
+        toast({
+          title: invoice.customer.phone
+            ? `Chat opened for ${invoice.customer.name || normalizePhone(phone)}`
+            : 'No customer number on the bill — pick a chat',
+          description: 'Bill image copied — long-press the WhatsApp message box, Paste, and Send. (Image also saved to gallery.)',
+        });
+        return;
+      }
+
+      // 2) clipboard blocked → share the IMAGE FILE itself: WhatsApp receives
+      //    the picture with the bill caption; you pick the customer chat
+      try {
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({ files: [file], text: waCaption, title: `Bill ${invoice.no}` });
+          return;
+        }
+      } catch (e) {
+        if ((e as DOMException)?.name === 'AbortError') return;
+        console.warn('share-sheet image rejected — opening chat with attach guidance', e);
+      }
+
+      // 3) image saved to the gallery + chat opens — attach with 📎
+      downloadBlob(blob, fileName);
+      openExternal(waLink(phone, waMsg));
       toast({
-        title: blob && !invoice.customer.phone
-          ? 'No customer number on the bill — pick a chat'
-          : `Chat opened for ${invoice.customer.name || normalizePhone(phone)}`,
-        description: copied
-          ? 'Bill image copied — long-press the WhatsApp message box, Paste, and Send. (Image also saved to gallery.)'
-          : blob
-            ? `Bill image ${fileName} saved to gallery — tap 📎 in the chat, attach it, and Send. The bill text is pre-filled in the message box.`
-            : 'The image could not be processed — the full bill was placed in the message box as text. Just press Send.',
+        title: invoice.customer.phone
+          ? `Chat opened for ${invoice.customer.name || normalizePhone(phone)}`
+          : 'No customer number on the bill — pick a chat',
+        description: `Bill image ${fileName} saved to gallery — tap 📎 in the chat, attach it, and Send. The bill text is pre-filled too.`,
       });
     });
 
