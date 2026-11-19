@@ -1,17 +1,15 @@
 {
-  "version": 55,
+  "version": 56,
   "notes": {
     "en": [
-      "Staff quick MPIN: each staff member creates a 4-8 digit MPIN on their Profile — after that, Staff ID + MPIN opens the staff portal (password not needed)",
-      "Next bill number is now real: set it in Settings → Billing & Slip and the very next bill gets that number, counting continues from there (up or down)",
-      "The Next bill no. field now always shows the true next number; untouched saves (GST, slip width) never move the sequence",
-      "Everything from the previous update is kept: owner name/UPI, bill reset, old-PIN password change, image-first WhatsApp sharing"
+      "Privacy Policy, License and Copyright added — open 'Privacy & License' in Settings, or the link on the login screen / staff Profile",
+      "The legal page works in English and Telugu, and is available offline after the first open",
+      "Everything from the previous update (staff MPIN, next bill number) is unchanged"
     ],
     "te": [
-      "స్టాఫ్ క్విక్ MPIN: ప్రతి స్టాఫ్ తమ ప్రొఫైల్‌లో 4-8 అంకెల MPIN పెట్టుకోవచ్చు — తర్వాత స్టాఫ్ ID + MPIN తో స్టాఫ్ పోర్టల్ తెరుచుకుంటుంది (పాస్‌వర్డ్ అవసరం లేదు)",
-      "తర్వాతి బిల్లు నంబర్ ఇప్పుడు నిజం: Settings → Billing & Slip లో పెట్టండి — తర్వాతి బిల్లు ఆ నంబర్‌తోనే వస్తుంది, అక్కడి నుండి కొనసాగుతుంది",
-      "Next bill no. ఫీల్డ్ ఎప్పుడూ నిజమైన తర్వాతి నంబర్ చూపిస్తుంది; మార్చని సేవ్స్ (GST, స్లిప్) సీక్వెన్స్‌ని కదిలించవు",
-      "పాత అప్‌డేట్‌లోని అంతా ఉంది: ఓనర్ పేరు/UPI, బిల్ రీసెట్, పాత PIN తో పాస్‌వర్డ్ మార్పు, WhatsApp ఇమేజ్ షేరింగ్"
+      "గోప్యతా విధానం, లైసెన్స్, కాపీరైట్ జోడించబడ్డాయి — Settings లో 'గోప్యతా విధానం & లైసెన్స్', లేదా లాగిన్ స్క్రీన్ / స్టాఫ్ ప్రొఫైల్‌లోని లింక్ నొక్కండి",
+      "చట్టపరమైన పేజీ ఇంగ్లీష్ మరియు తెలుగులో పనిచేస్తుంది; ఒకసారి తెరిచాక ఆఫ్‌లైన్‌లో కూడా అందుబాటులో ఉంటుంది",
+      "పాత అప్‌డేట్‌లోని అంతా (స్టాఫ్ MPIN, తర్వాతి బిల్లు నంబర్) అలాగే ఉంది"
     ]
   }
 }

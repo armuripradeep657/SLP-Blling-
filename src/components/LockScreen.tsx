@@ -1086,6 +1086,14 @@ export default function LockScreen({
           <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
           {t('lock.secureNote')}
         </p>
+
+        {/* v56: Privacy Policy / License / Copyright */}
+        <p className="px-2 text-center text-[10px] leading-relaxed text-muted-foreground">
+          © 2026 {companyName}. All rights reserved.{' '}
+          <a href="/legal" target="_blank" rel="noopener" className="font-bold text-blue-700 hover:underline">
+            {t('legal.link')}
+          </a>
+        </p>
       </div>
     </div>
   );

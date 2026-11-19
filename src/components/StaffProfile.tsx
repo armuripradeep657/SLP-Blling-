@@ -276,6 +276,14 @@ export default function StaffProfile() {
         <LogOut className="size-4" />
         {t('staff.logout')}
       </Button>
+
+      {/* v56: Privacy Policy / License / Copyright */}
+      <p className="text-center text-[10px] leading-relaxed text-muted-foreground">
+        © 2026 Sri Lakshmi Penchil Narasimha Swamy Cement Works. All rights reserved.{' '}
+        <a href="/legal" target="_blank" rel="noopener" className="font-bold text-blue-700 hover:underline">
+          {t('legal.link')}
+        </a>
+      </p>
     </div>
   );
 }

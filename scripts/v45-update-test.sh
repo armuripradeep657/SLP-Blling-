@@ -15,7 +15,7 @@ echo "== release.json served =="
 curl -s "$B/release.json" | python3 -c "
 import sys, json
 r = json.load(sys.stdin)
-assert r['version'] == 55, r['version']
+assert r['version'] == 56, r['version']
 assert len(r['notes']['en']) >= 3 and len(r['notes']['te']) >= 3
 print('release.json OK — version', r['version'], '| en notes:', len(r['notes']['en']), '| te notes:', len(r['notes']['te']))
 "
