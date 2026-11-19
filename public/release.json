@@ -1,15 +1,15 @@
 {
-  "version": 50,
+  "version": 51,
   "notes": {
     "en": [
-      "Full size list added across the catalogue: Selupu Ralu now has all 23 sizes (2ft, 18in, 14in, 9in, 1ft widths), poles start from 6FT, ventilators and ketikilu frames completed",
-      "New products added: Kodada Ketikilu, Darwaja, Kodada Darwaja, Tulasikota, Adjust Fan, Machine Ventilator — each with a photo",
-      "Telugu names filled in for every product; new sizes carry estimated prices — please review and adjust them in Edit"
+      "Selupu Ralu sizes are now separate items: Kitchen Slab keeps the 2ft sizes; new items for 14 inch, 18 inch, 9 inch and 1 FT slabs — each with its own prices",
+      "You can edit every product (name, photo, sizes, prices) — changes save to the database and stay; deleted products stay deleted",
+      "No manual refresh needed — the app updates itself"
     ],
     "te": [
-      "కేటలాగ్‌లో పూర్తి సైజుల జాబితా జోడించబడింది: సెలుపు రాళ్లకు 23 సైజులు (2ft, 18in, 14in, 9in, 1ft), పోళ్లు 6FT నుండి, వెంటిలేటర్, కెటికిలు ఫ్రేమ్‌లు పూర్తయ్యాయి",
-      "కొత్త ప్రొడక్ట్స్: కొడద కెటికిలు, దర్వాజా, కొడద దర్వాజా, తులసికోట, అజస్ట్ ఫ్యాన్, మెషిన్ వెంటిలేటర్ — ప్రతి దానికీ ఫోటోతో",
-      "ప్రతి ప్రొడక్ట్‌కు తెలుగు పేర్లు నింపబడ్డాయి; కొత్త సైజులకు అంచనా ధరలు ఉన్నాయి — ఎడిట్‌లో సరిచూసి సర్దుకోండి"
+      "సెలుపు రాళ్ల సైజులు ఇప్పుడు వేరు వేరు ఐటమ్స్: కిచెన్ స్లాబ్‌లో 2ft సైజులు; 14 ఇంచ్, 18 ఇంచ్, 9 ఇంచ్, 1 FT స్లాబ్స్ కొత్త ఐటమ్స్ — ప్రతి దానికీ వేరు ధరలు",
+      "ప్రతి ప్రొడక్ట్ ఎడిట్ చేయవచ్చు (పేరు, ఫోటో, సైజులు, ధరలు) — మార్పులు డేటాబేస్‌లో సేవ్ అవుతాయి; డిలీట్ చేసినవి తిరిగి రావు",
+      "బారీగా రిఫ్రెష్ చేయాల్సిన అవసరం లేదు — యాప్ దానంతట అదే అప్‌డేట్ అవుతుంది"
     ]
   }
 }
