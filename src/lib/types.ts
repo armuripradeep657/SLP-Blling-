@@ -14,6 +14,10 @@ export interface BusinessSettings {
   /** v41 transient COMMAND (never persisted): "Start from 1" — the settings
    *  PUT consumes it to reset the central bill counter to nextInvoiceNo-1 */
   resetBillNo?: boolean;
+  /** v55 transient COMMAND (never persisted): "Next bill no." edit — the
+   *  settings PUT sets the central counter to nextInvoiceNo-1 EXACTLY (up or
+   *  down); every bill from the next one onward counts from there */
+  setNextBillNo?: boolean;
   slipWidthMm: 58 | 80;
   thankYouNote: string;
   returnPolicy: string;

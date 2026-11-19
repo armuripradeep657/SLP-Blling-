@@ -639,6 +639,8 @@ export type StaffMe = {
   mustChangePassword: boolean;
   /** v53: staff mobile number ("" when not set) — edited on their profile */
   phone?: string;
+  /** v55: a quick MPIN is set — the lock screen accepts Staff ID + MPIN */
+  hasMpin?: boolean;
 };
 
 /** Staff sign-in: `secret` is the password OR the numeric MPIN */
@@ -668,6 +670,14 @@ export async function apiStaffSetPhoto(photo: string): Promise<{ ok: boolean; st
  *  nothing else on the account is touched) */
 export async function apiStaffSetPhone(phone: string): Promise<{ ok: boolean; staff?: StaffMe; error?: string }> {
   const res = await authedFetch('/api/staff/me', 'PATCH', { phone });
+  if (res.status === 200) return res.data as { ok: boolean; staff: StaffMe };
+  return { ok: false, error: String(res.data?.error ?? 'saveFailed') };
+}
+
+/** v55: the staff member creates/changes their OWN quick MPIN (4-8 digits).
+ *  After it is set, sign-in accepts Staff ID + MPIN instead of the password. */
+export async function apiStaffSetMpin(mpin: string): Promise<{ ok: boolean; staff?: StaffMe; error?: string }> {
+  const res = await authedFetch('/api/staff/me', 'PATCH', { mpin });
   if (res.status === 200) return res.data as { ok: boolean; staff: StaffMe };
   return { ok: false, error: String(res.data?.error ?? 'saveFailed') };
 }

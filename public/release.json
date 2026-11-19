@@ -1,17 +1,17 @@
 {
-  "version": 54,
+  "version": 55,
   "notes": {
     "en": [
-      "Bill numbering RESET now really works — 'Start bills from 1' (Settings → Billing & Slip) restarts the counter; saved bills and products are never touched",
-      "Owner password change in Settings now always asks for the CURRENT password/PIN first — wrong or empty old password is rejected",
-      "WhatsApp bill sharing is IMAGE-first: the bill picture goes straight into WhatsApp (clipboard paste or the share sheet carries the image file); text only as the last resort when no image can be captured",
-      "Owner name ARMURI PRASAD and UPI ID armuripradeep@bpunity set in Settings — bills and the payment QR use them"
+      "Staff quick MPIN: each staff member creates a 4-8 digit MPIN on their Profile — after that, Staff ID + MPIN opens the staff portal (password not needed)",
+      "Next bill number is now real: set it in Settings → Billing & Slip and the very next bill gets that number, counting continues from there (up or down)",
+      "The Next bill no. field now always shows the true next number; untouched saves (GST, slip width) never move the sequence",
+      "Everything from the previous update is kept: owner name/UPI, bill reset, old-PIN password change, image-first WhatsApp sharing"
     ],
     "te": [
-      "బిల్ నంబరింగ్ రీసెట్ ఇప్పుడు నిజంగా పనిచేస్తుంది — 'బిల్లు 1 నుండి ప్రారంభించండి' (Settings → Billing & Slip); సేవ్ చేసిన బిల్లులు, ప్రొడక్ట్స్ ఏవీ తాకబడవు",
-      "Settings లో ఓనర్ పాస్‌వర్డ్ మార్చడానికి ఇప్పుడు ఎప్పుడూ ప్రస్తుత పాస్‌వర్డ్/PIN అడుగుతారు — తప్పు పాతది వదిలితే మార్చబడదు",
-      "WhatsApp బిల్ షేరింగ్ ఇప్పుడు IMAGE మొదట: బిల్ పిక్చర్ నేరుగా WhatsApp లోకి వెళ్తుంది; ఇమేజ్ అస్సలు కాకపోతే మాత్రమే టెక్స్ట్",
-      "ఓనర్ పేరు ARMURI PRASAD, UPI ID armuripradeep@bpunity Settings లో సెట్ — బిల్లులు, పేమెంట్ QR వాటిని వాడతాయి"
+      "స్టాఫ్ క్విక్ MPIN: ప్రతి స్టాఫ్ తమ ప్రొఫైల్‌లో 4-8 అంకెల MPIN పెట్టుకోవచ్చు — తర్వాత స్టాఫ్ ID + MPIN తో స్టాఫ్ పోర్టల్ తెరుచుకుంటుంది (పాస్‌వర్డ్ అవసరం లేదు)",
+      "తర్వాతి బిల్లు నంబర్ ఇప్పుడు నిజం: Settings → Billing & Slip లో పెట్టండి — తర్వాతి బిల్లు ఆ నంబర్‌తోనే వస్తుంది, అక్కడి నుండి కొనసాగుతుంది",
+      "Next bill no. ఫీల్డ్ ఎప్పుడూ నిజమైన తర్వాతి నంబర్ చూపిస్తుంది; మార్చని సేవ్స్ (GST, స్లిప్) సీక్వెన్స్‌ని కదిలించవు",
+      "పాత అప్‌డేట్‌లోని అంతా ఉంది: ఓనర్ పేరు/UPI, బిల్ రీసెట్, పాత PIN తో పాస్‌వర్డ్ మార్పు, WhatsApp ఇమేజ్ షేరింగ్"
     ]
   }
 }

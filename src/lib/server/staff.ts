@@ -37,6 +37,7 @@ export function staffProfile(s: {
   photoData: string;
   mustChangePassword: boolean;
   phone?: string;
+  mpinHash?: string;
 }) {
   return {
     id: s.id,
@@ -46,5 +47,7 @@ export function staffProfile(s: {
     mustChangePassword: s.mustChangePassword,
     // v53: staff mobile number — additive, "" when not set
     phone: s.phone ?? '',
+    // v55: whether a quick MPIN is set (never the hash itself)
+    hasMpin: Boolean(s.mpinHash),
   };
 }

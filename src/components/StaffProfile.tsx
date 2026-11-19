@@ -9,7 +9,7 @@ import { useStore } from '@/lib/store';
 import { useT } from '@/hooks/use-app-lang';
 import { useToast } from '@/hooks/use-toast';
 import { fileToSmallDataUrl } from '@/lib/photo';
-import { apiStaffSetPhoto, apiStaffSetPhone, authRole } from '@/lib/cloud';
+import { apiStaffSetMpin, apiStaffSetPhoto, apiStaffSetPhone, authRole } from '@/lib/cloud';
 import { lockApp } from '@/lib/cloud';
 
 /**
@@ -30,6 +30,10 @@ export default function StaffProfile() {
   // v53: staff mobile number — the staff member saves their own number here
   const [phone, setPhone] = useState<string | null>(null); // null = untouched (shows saved value)
   const [phoneBusy, setPhoneBusy] = useState(false);
+  // v55: quick MPIN — the staff member creates their own 4-8 digit PIN; the
+  // lock screen then accepts Staff ID + MPIN instead of the password
+  const [mpin, setMpin] = useState('');
+  const [mpinBusy, setMpinBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // session-only fallback: the store is hydrated before this view mounts
@@ -70,6 +74,33 @@ export default function StaffProfile() {
       });
     } finally {
       setBusy(false);
+    }
+  };
+
+  /** v55 — create/change the quick MPIN: PATCH /api/staff/me writes ONLY the
+   *  mpinHash (4-8 digits, hashed server-side); after it is set, sign-in with
+   *  Staff ID + this MPIN opens the staff portal without the password */
+  const saveMpin = async () => {
+    if (mpinBusy) return;
+    const pin = mpin.trim();
+    if (!/^\d{4,8}$/.test(pin)) {
+      toast({ title: t('staff.mpinBad'), variant: 'destructive' });
+      return;
+    }
+    setMpinBusy(true);
+    try {
+      const res = await apiStaffSetMpin(pin);
+      if (res.ok && res.staff) {
+        await refreshStaff();
+        setMpin('');
+        toast({ title: t('staff.mpinSaved') });
+      } else {
+        toast({ title: res.error === 'badMpin' ? t('staff.mpinBad') : t('net.saveFailed'), variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: t('net.saveFailed'), variant: 'destructive' });
+    } finally {
+      setMpinBusy(false);
     }
   };
 
@@ -161,6 +192,41 @@ export default function StaffProfile() {
           </Button>
         </div>
         <p className="text-[11px] leading-relaxed text-muted-foreground">{t('staff.phoneHint')}</p>
+      </div>
+
+      {/* v55: quick MPIN — create it here, sign in with Staff ID + MPIN */}
+      <div className="space-y-2.5 rounded-2xl border bg-card p-4 shadow-sm">
+        <p className="flex items-center gap-1.5 text-sm font-bold text-neutral-800">
+          <KeyRound className="size-4 text-blue-700" />
+          {t('staff.mpin')}
+          {staff.hasMpin && (
+            <span className="ml-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+              ✓ {t('staff.mpinSet')}
+            </span>
+          )}
+        </p>
+        <div className="flex items-center gap-2">
+          <Input
+            id="sp-mpin"
+            type="password"
+            inputMode="numeric"
+            autoComplete="off"
+            value={mpin}
+            onChange={(e) => setMpin(e.target.value.replace(/[^\d]/g, '').slice(0, 8))}
+            placeholder="••••"
+            aria-label="Quick MPIN"
+            className="h-11 text-sm tracking-[0.3em]"
+          />
+          <Button
+            onClick={() => void saveMpin()}
+            disabled={mpinBusy || mpin.trim().length === 0}
+            className="h-11 shrink-0 bg-blue-600 px-4 text-white hover:bg-blue-700"
+            aria-label="Save MPIN"
+          >
+            {mpinBusy ? <Loader2 className="size-4 animate-spin" /> : t('staff.phoneSave')}
+          </Button>
+        </div>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">{t('staff.mpinHint')}</p>
       </div>
 
       {/* password */}

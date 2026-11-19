@@ -375,24 +375,35 @@ export const useStore = create<BillingStore>()(
       setActiveTab: (t) => set({ activeTab: t }),
 
       saveSettings: async (s) => {
-        // resetBillNo is a transient COMMAND (v41) — the server consumes it and
-        // never stores it. v54 FIX: it must actually REACH the server — the old
-        // code stripped it from the PUT, so "Start bills from 1" silently did
-        // nothing and the counter stayed where it was.
-        const { resetBillNo, ...persist } = s as Partial<BusinessSettings> & { resetBillNo?: boolean };
+        // resetBillNo (v41) + setNextBillNo (v55) are transient COMMANDS — the
+        // server consumes them and never stores them. v54 FIX: they must
+        // actually REACH the server — the old code stripped resetBillNo from
+        // the PUT, so "Start bills from 1" silently did nothing.
+        const { resetBillNo, setNextBillNo, ...persist } = s as Partial<BusinessSettings> & {
+          resetBillNo?: boolean;
+          setNextBillNo?: boolean;
+        };
         // v41/v52: the settings route MERGES this patch over the stored
         // settings — only the fields the owner changed are rewritten
         await runSave(async () => {
-          const ok = await apiSettingsPut(resetBillNo ? { ...persist, resetBillNo: true } : persist);
+          const ok = await apiSettingsPut(
+            resetBillNo || setNextBillNo
+              ? { ...persist, ...(resetBillNo ? { resetBillNo: true } : {}), ...(setNextBillNo ? { setNextBillNo: true } : {}) }
+              : persist
+          );
           if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
           set((st) => ({ settings: { ...st.settings, ...persist } }));
         });
         // the owner's "next invoice no" lifts the central counter — reflect it
         // on the billing screen INSTANTLY (the poll confirms the same value);
-        // the "Start from 1" reset is the one path allowed to go DOWN
+        // the "Start from 1" reset is the one path allowed to go DOWN.
+        // v55: an explicit "Next bill no." edit points the sequence at ANY
+        // number (up or down) — the next bill gets exactly that number.
         const entered = Math.round(Number(s.nextInvoiceNo ?? 0));
         if (resetBillNo) {
           set((st) => ({ srvConfig: { ...st.srvConfig, nextBillNo: Math.max(0, entered - 1) } }));
+        } else if (setNextBillNo && Number.isFinite(entered) && entered > 0) {
+          set((st) => ({ srvConfig: { ...st.srvConfig, nextBillNo: entered - 1 } }));
         } else if (Number.isFinite(entered) && entered > 1) {
           set((st) => ({ srvConfig: { ...st.srvConfig, nextBillNo: Math.max(st.srvConfig.nextBillNo, entered - 1) } }));
         }

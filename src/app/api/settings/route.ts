@@ -25,10 +25,16 @@ export async function PUT(req: Request) {
   const prevSettings: Partial<BusinessSettings> = prev ? safeParse(prev.settingsJson) : {};
   const prevAppearance: Partial<Appearance> = prev ? safeParse(prev.appearanceJson) : {};
   /* v41: resetBillNo is a transient COMMAND, never a stored setting — consume
-     it here and strip it so it can't re-trigger on a later settings save */
+     it here and strip it so it can't re-trigger on a later settings save.
+     v55: setNextBillNo is the same kind of command for the "Next bill no."
+     field — the owner points the sequence at ANY number and every bill from
+     the next one onward counts from there (up OR down; taken numbers are
+     still skipped at bill-save time). */
   const bodySettings = { ...(body.settings ?? {}) } as Record<string, unknown>;
   const resetBillNo = bodySettings.resetBillNo === true;
   delete bodySettings.resetBillNo;
+  const setNextBillNo = bodySettings.setNextBillNo === true;
+  delete bodySettings.setNextBillNo;
   const settings = { ...prevSettings, ...bodySettings };
   const appearance = { ...prevAppearance, ...(body.appearance ?? {}) };
   // store in SECONDS — the Int column cannot hold Date.now() ms
@@ -46,6 +52,9 @@ export async function PUT(req: Request) {
   // EXCEPTION (v41): the explicit "Start from 1" reset — the counter goes
   // exactly where the owner points it (next bill = nextInvoiceNo), and the
   // bill-save collision check still skips any number an old bill holds.
+  // EXCEPTION (v55): the explicit "Next bill no." edit — the same authority
+  // as the reset, to ANY number: the very next bill gets that number and the
+  // sequence continues firmly from there (down as well as up).
   const nextInv = Math.round(Number((settings as { nextInvoiceNo?: number }).nextInvoiceNo ?? 0));
   const prevCfg = await db.appConfig.findUnique({ where: { slot: 'owner' } });
   const lifted = Math.max(
@@ -53,7 +62,11 @@ export async function PUT(req: Request) {
     Number.isFinite(nextInv) && nextInv > 1 ? nextInv - 1 : 0
   );
   const resetTo = Number.isFinite(nextInv) && nextInv > 0 ? nextInv - 1 : 0;
-  const counterVal = resetBillNo ? Math.min(lifted, resetTo) : lifted;
+  const counterVal = resetBillNo
+    ? Math.min(lifted, resetTo)
+    : setNextBillNo && Number.isFinite(nextInv) && nextInv > 0
+      ? nextInv - 1
+      : lifted;
   await db.appConfig.upsert({
     where: { slot: 'owner' },
     update: { upiId: String(settings.upiId ?? ''), gstPercent: Number.isFinite(gst) ? gst : 0, nextBillNo: counterVal },

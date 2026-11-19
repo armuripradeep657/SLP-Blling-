@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { bearerToken, requireStaff } from '@/lib/server/auth';
+import { bearerToken, hashPassword, requireStaff } from '@/lib/server/auth';
 import { staffProfile } from '@/lib/server/staff';
 
 /** Max profile-photo payload (~200 KB base64 keeps SQLite rows small) */
@@ -43,6 +43,19 @@ export async function PATCH(req: Request) {
     const row = await db.staffAccount.update({
       where: { id: staff.id },
       data: { phone: body.phone.trim() === '' ? '' : phone },
+    });
+    return Response.json({ ok: true, staff: staffProfile(row) });
+  }
+  // v55: staff quick MPIN — the staff member creates/changes their OWN 4-8
+  // digit PIN here; the lock screen then accepts Staff ID + this MPIN instead
+  // of the password. Hashed like every other secret; "" clears the MPIN.
+  if (body.mpin !== undefined) {
+    if (typeof body.mpin !== 'string') return Response.json({ error: 'badRequest' }, { status: 400 });
+    const mpin = body.mpin.trim();
+    if (mpin !== '' && !/^\d{4,8}$/.test(mpin)) return Response.json({ error: 'badMpin' }, { status: 400 });
+    const row = await db.staffAccount.update({
+      where: { id: staff.id },
+      data: { mpinHash: mpin === '' ? '' : hashPassword(mpin) },
     });
     return Response.json({ ok: true, staff: staffProfile(row) });
   }

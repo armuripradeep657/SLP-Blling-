@@ -395,20 +395,35 @@ function BillingSlipSection() {
   const t = useT();
   const settings = useStore((s) => s.settings);
   const saveSettings = useStore((s) => s.saveSettings);
+  const srvNext = useStore((s) => s.srvConfig.nextBillNo);
   const { toast } = useToast();
 
-  const [draft, setDraft] = useState<BillingDraft>(() => billingOf(settings));
+  // v55: the "Next bill no." field always shows the LIVE central counter
+  // (srvNext + 1) — what the next bill will really get — not a stale stored
+  // copy. The live counter is authoritative; the stored setting only matters
+  // when the owner edits the number (then it is sent with setNextBillNo).
+  const liveNext = String(srvNext + 1);
+  const billingDraftOf = () => ({ ...billingOf(settings), nextInvoiceNo: liveNext });
+  const [draft, setDraft] = useState<BillingDraft>(billingDraftOf);
   // same guard as the identity section: object-identity poll updates must not
   // discard an in-progress GST/slip edit (the disabled Save bug)
   const [serverBilling, setServerBilling] = useState(() => JSON.stringify(billingOf(settings)));
   const [billingSync, setBillingSync] = useState(settings);
+  const [servedNext, setServedNext] = useState(liveNext);
   if (billingSync !== settings) {
     setBillingSync(settings);
     const now = JSON.stringify(billingOf(settings));
     if (now !== serverBilling) {
       setServerBilling(now);
-      setDraft(billingOf(settings));
+      setDraft(billingDraftOf());
+      setServedNext(liveNext);
     }
+  }
+  if (liveNext !== servedNext) {
+    // the counter moved (a bill was saved / a reset) — an UNTOUCHED field
+    // follows the live number; something the owner typed stays as typed
+    setServedNext(liveNext);
+    setDraft((d) => (d.nextInvoiceNo === servedNext ? { ...d, nextInvoiceNo: liveNext } : d));
   }
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(billingOf(settings));
@@ -433,14 +448,25 @@ function BillingSlipSection() {
 
   const save = () => {
     const gstPercent = Math.min(Math.max(Number(draft.gstPercent.replace(/[^\d.]/g, '')) || 0, 0), 28);
-    saveSettings({
+    const entered = Math.max(1, Number(draft.nextInvoiceNo.replace(/\D/g, '')) || 1);
+    // v55: the number goes to the server ONLY when the owner actually changed
+    // it — then it is AUTHORITATIVE: the very next bill gets exactly that
+    // number and the sequence continues firmly from there (up or down; taken
+    // numbers are still skipped at bill-save). An untouched field never
+    // touches the counter, so an unrelated save (GST, slip width…) can never
+    // move the sequence by accident.
+    const patch: Parameters<typeof saveSettings>[0] = {
       invoicePrefix: draft.invoicePrefix.trim() || 'SLP-INV-',
-      nextInvoiceNo: Math.max(1, Number(draft.nextInvoiceNo.replace(/\D/g, '')) || 1),
       slipWidthMm: draft.slipWidthMm,
       thankYouNote: draft.thankYouNote,
       returnPolicy: draft.returnPolicy,
       gstPercent,
-    })
+    };
+    if (entered !== srvNext + 1) {
+      patch.nextInvoiceNo = entered;
+      patch.setNextBillNo = true;
+    }
+    saveSettings(patch)
       .then(() => toast({ title: t('settings.billingUpdatedToast') }))
       .catch((e: unknown) =>
         toast({
