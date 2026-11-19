@@ -2,7 +2,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { WifiOff, ReceiptText, Package, History, Settings, BookText, Languages, ScanLine, UserRound } from 'lucide-react';
+import { WifiOff, ReceiptText, Package, History, Settings, BookText, Languages, ScanLine, UserRound, Loader2, Check, RotateCcw } from 'lucide-react';
 import { useSyncExternalStore, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useAppLang, useT } from '@/hooks/use-app-lang';
@@ -40,6 +40,10 @@ export function Header() {
   // (store.online=false) counts as offline even if the browser has a link
   const storeOnline = useStore((s) => s.online);
   const online = browserOnline && storeOnline;
+  // v52 save status — the owner always sees whether their change reached the
+  // central database (Saving… / Saved / Failed — tap to retry)
+  const saveState = useStore((s) => s.saveState);
+  const retrySave = useStore((s) => s.retrySave);
 
   // company name follows the app language — Telugu name in Telugu mode
   const companyName = appLang === 'te' && settings.companyNameTe ? settings.companyNameTe : settings.companyName;
@@ -82,6 +86,27 @@ export function Header() {
             <Languages className="size-3.5" />
             {appLang === 'te' ? 'English' : 'తెలుగు'}
           </button>
+          {saveState === 'saving' && (
+            <Badge variant="secondary" className="shrink-0 gap-1 bg-white/20 text-white" data-save-state="saving">
+              <Loader2 className="size-3 animate-spin" /> {t('net.saving')}
+            </Badge>
+          )}
+          {saveState === 'saved' && (
+            <Badge variant="secondary" className="shrink-0 gap-1 bg-emerald-600 text-white" data-save-state="saved">
+              <Check className="size-3" /> {t('net.saved')}
+            </Badge>
+          )}
+          {saveState === 'failed' && (
+            <button
+              type="button"
+              data-save-state="failed"
+              onClick={() => void retrySave?.().catch(() => undefined)}
+              title={t('net.failedRetry')}
+              className="flex shrink-0 items-center gap-1 rounded-full bg-red-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-red-500"
+            >
+              <RotateCcw className="size-3" /> {t('net.failedRetry')}
+            </button>
+          )}
           {!online && (
             <Badge variant="secondary" className="shrink-0 gap-1 bg-white/20 text-white">
               <WifiOff className="size-3" /> {t('header.offline')}

@@ -10,6 +10,7 @@ import {
   apiBillPatch,
   apiBillDelete,
   apiProductPut,
+  apiProductPatch,
   apiProductDelete,
   apiSettingsPut,
   apiLabourPut,
@@ -98,6 +99,10 @@ interface BillingStore {
   online: boolean;
   /** the server revision this device has already applied */
   rev: number;
+  /** v52 save-status for the header chip: idle → saving → saved / failed */
+  saveState: 'idle' | 'saving' | 'saved' | 'failed';
+  /** re-runs the last failed IDEMPOTENT save — set while saveState='failed' */
+  retrySave: (() => Promise<void>) | null;
 
   settings: BusinessSettings;
   products: Product[];
@@ -220,10 +225,50 @@ const DEFAULT_CONFIG: BillConfig = {
 
 export const useStore = create<BillingStore>()(
   persist(
-    (set, get) => ({
+    (set, get) => {
+      /* v52 SAVE STATUS — every idempotent save flows through runSave: the
+         header chip shows Saving… / Saved / Failed, and a failed save keeps
+         a RETRY closure (the dialogs also stay open, so nothing the owner
+         typed is ever lost). Non-idempotent flows (bill save, dues payment)
+         keep their own confirmation UX — a blind retry there could print a
+         bill twice. */
+      let savedTimer: number | undefined;
+      const markSaved = () => {
+        set({ saveState: 'saved', retrySave: null });
+        if (typeof window !== 'undefined') {
+          if (savedTimer) window.clearTimeout(savedTimer);
+          savedTimer = window.setTimeout(() => set({ saveState: 'idle' }), 2500);
+        }
+      };
+      const runSave = (fn: () => Promise<void>): Promise<void> => {
+        set({ saveState: 'saving' });
+        const p = (async () => {
+          await fn();
+          markSaved();
+        })();
+        p.catch(() => {
+          set({
+            saveState: 'failed',
+            retrySave: async () => {
+              set({ saveState: 'saving' });
+              try {
+                await fn();
+                markSaved();
+              } catch {
+                set({ saveState: 'failed' });
+              }
+            },
+          });
+        });
+        return p;
+      };
+
+      return ({
       synced: false,
       online: true,
       rev: -1,
+      saveState: 'idle',
+      retrySave: null,
 
       settings: DEFAULT_SETTINGS,
       products: DEFAULT_PRODUCTS,
@@ -332,9 +377,13 @@ export const useStore = create<BillingStore>()(
       saveSettings: async (s) => {
         // resetBillNo is a transient command (v41) — never stored as a setting
         const { resetBillNo, ...persist } = s as Partial<BusinessSettings> & { resetBillNo?: boolean };
-        const ok = await apiSettingsPut(persist);
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ settings: { ...st.settings, ...persist } }));
+        // v41/v52: the settings route MERGES this patch over the stored
+        // settings — only the fields the owner changed are rewritten
+        await runSave(async () => {
+          const ok = await apiSettingsPut(persist);
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ settings: { ...st.settings, ...persist } }));
+        });
         // the owner's "next invoice no" lifts the central counter — reflect it
         // on the billing screen INSTANTLY (the poll confirms the same value);
         // the "Start from 1" reset is the one path allowed to go DOWN
@@ -347,31 +396,56 @@ export const useStore = create<BillingStore>()(
         await pollOnce();
       },
 
-      addProduct: async (p) => {
-        const ok = await apiProductPut(p);
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ products: [p, ...st.products.filter((x) => x.id !== p.id)] }));
-        // v47: the product is saved AND shown — do NOT await the state poll
-        // here. On the shop's slow link the 20s poll blocked the dialog close
-        // and the catalogue looked frozen ("new product shows only after a
-        // refresh"); the background poll still reconciles rev + catalog.
-        void pollOnce();
-      },
+      addProduct: (p) =>
+        runSave(async () => {
+          const ok = await apiProductPut(p);
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ products: [p, ...st.products.filter((x) => x.id !== p.id)] }));
+          // v47: the product is saved AND shown — do NOT await the state poll
+          // here. On the shop's slow link the 20s poll blocked the dialog close
+          // and the catalogue looked frozen ("new product shows only after a
+          // refresh"); the background poll still reconciles rev + catalog.
+          void pollOnce();
+        }),
 
       updateProduct: async (id, p) => {
-        const merged = { ...get().products.find((x) => x.id === id), ...p, id } as Product;
-        const ok = await apiProductPut(merged);
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ products: st.products.map((x) => (x.id === id ? { ...x, ...p } : x)) }));
+        // v52 — "update only what I change": diff the form against the SAVED
+        // record and PATCH only the differing fields. Cleared optional fields
+        // go out as explicit nulls (JSON.stringify would otherwise drop them
+        // and the server would keep the old value). Fields the owner did not
+        // touch are never sent, so the server leaves them byte-identical.
+        await runSave(async () => {
+          const cur = get().products.find((x) => x.id === id);
+          let patch: Record<string, unknown> = {};
+          if (cur) {
+            const keys = ['name', 'nameTe', 'category', 'price', 'sizes', 'sizePrices', 'image', 'stock'] as const;
+            for (const k of keys) {
+              const nv = p[k];
+              const cv = cur[k];
+              const same = JSON.stringify(nv ?? null) === JSON.stringify(cv ?? null);
+              if (!same) {
+                // cleared optional field (undefined now, had a value) → explicit null
+                patch[k] = nv === undefined && cv !== undefined ? null : nv;
+              }
+            }
+          } else {
+            patch = { ...p };
+          }
+          if (Object.keys(patch).length === 0) return; // nothing actually changed
+          const ok = await apiProductPatch(id, patch);
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ products: st.products.map((x) => (x.id === id ? { ...x, ...p } : x)) }));
+        });
         void pollOnce();
       },
 
-      deleteProduct: async (id) => {
-        const ok = await apiProductDelete(id);
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ products: st.products.filter((x) => x.id !== id) }));
-        void pollOnce();
-      },
+      deleteProduct: (id) =>
+        runSave(async () => {
+          const ok = await apiProductDelete(id);
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ products: st.products.filter((x) => x.id !== id) }));
+          void pollOnce();
+        }),
 
       /* ---------------------------------------------------------- */
       /* CART — device-local by design (a bill half-typed on this    */
@@ -619,27 +693,29 @@ export const useStore = create<BillingStore>()(
         set({ staff: res.staff });
       },
 
-      deleteInvoice: async (id) => {
-        const ok = await apiBillDelete(id);
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({
-          invoices: st.invoices.filter((i) => i.id !== id),
-          // a deleted bill is gone EVERYWHERE — including the "last bill" banner
-          lastInvoice: st.lastInvoice && st.lastInvoice.id === id ? null : st.lastInvoice,
-        }));
-        await pollOnce();
-      },
+      deleteInvoice: (id) =>
+        runSave(async () => {
+          const ok = await apiBillDelete(id);
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({
+            invoices: st.invoices.filter((i) => i.id !== id),
+            // a deleted bill is gone EVERYWHERE — including the "last bill" banner
+            lastInvoice: st.lastInvoice && st.lastInvoice.id === id ? null : st.lastInvoice,
+          }));
+          await pollOnce();
+        }),
 
-      cancelInvoice: async (id) => {
-        const res = await apiBillPatch(id, { action: 'cancel' });
-        if (!res.ok || !res.invoice) throw new StoreError(res.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({
-          invoices: st.invoices.map((i) => (i.id === id ? res.invoice! : i)),
-          lastInvoice: st.lastInvoice && st.lastInvoice.id === id ? res.invoice! : st.lastInvoice,
-          rev: res.rev ?? st.rev,
-        }));
-        await pollOnce();
-      },
+      cancelInvoice: (id) =>
+        runSave(async () => {
+          const res = await apiBillPatch(id, { action: 'cancel' });
+          if (!res.ok || !res.invoice) throw new StoreError(res.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({
+            invoices: st.invoices.map((i) => (i.id === id ? res.invoice! : i)),
+            lastInvoice: st.lastInvoice && st.lastInvoice.id === id ? res.invoice! : st.lastInvoice,
+            rev: res.rev ?? st.rev,
+          }));
+          await pollOnce();
+        }),
 
       updateInvoiceStatus: async (id, paidAmount) => {
         const inv = get().invoices.find((i) => i.id === id);
@@ -688,132 +764,145 @@ export const useStore = create<BillingStore>()(
       /* LEDGER — money out / money in, centrally                    */
       /* ---------------------------------------------------------- */
 
-      addExpense: async (e) => {
-        const entry = { ...e, id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` } as Expense;
-        const ok = await apiLedgerPut('expense', entry);
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ expenses: [entry, ...st.expenses] }));
-        await pollOnce();
-      },
+      addExpense: (e) =>
+        runSave(async () => {
+          const entry = { ...e, id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` } as Expense;
+          const ok = await apiLedgerPut('expense', entry);
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ expenses: [entry, ...st.expenses] }));
+          await pollOnce();
+        }),
 
-      deleteExpense: async (id) => {
-        const ok = await apiLedgerDelete('expense', id);
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ expenses: st.expenses.filter((x) => x.id !== id) }));
-        await pollOnce();
-      },
+      deleteExpense: (id) =>
+        runSave(async () => {
+          const ok = await apiLedgerDelete('expense', id);
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ expenses: st.expenses.filter((x) => x.id !== id) }));
+          await pollOnce();
+        }),
 
-      addIncome: async (e) => {
-        const entry = { ...e, id: `inc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` } as IncomeEntry;
-        const ok = await apiLedgerPut('income', entry);
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ incomes: [entry, ...st.incomes] }));
-        await pollOnce();
-      },
+      addIncome: (e) =>
+        runSave(async () => {
+          const entry = { ...e, id: `inc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` } as IncomeEntry;
+          const ok = await apiLedgerPut('income', entry);
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ incomes: [entry, ...st.incomes] }));
+          await pollOnce();
+        }),
 
-      deleteIncome: async (id) => {
-        const ok = await apiLedgerDelete('income', id);
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ incomes: st.incomes.filter((x) => x.id !== id) }));
-        await pollOnce();
-      },
+      deleteIncome: (id) =>
+        runSave(async () => {
+          const ok = await apiLedgerDelete('income', id);
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ incomes: st.incomes.filter((x) => x.id !== id) }));
+          await pollOnce();
+        }),
 
       /* ---------------------------------------------------------- */
       /* LABOUR — the work register + the labourer notebook          */
       /* ---------------------------------------------------------- */
 
-      addLabourWork: async (e) => {
-        const name = e.name.trim();
-        const entry = normalizeLabourWork({ ...e, id: `lw-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` } as LabourWork);
-        const ok = await apiLabourPut({ work: entry });
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({
-          labourWorks: [entry, ...st.labourWorks],
-          labourWorkers:
-            name && !st.labourWorkers.some((w) => w.name.toLowerCase() === name.toLowerCase())
-              ? [{ id: `worker-${Date.now()}`, name }, ...st.labourWorkers]
-              : st.labourWorkers,
-        }));
-        await pollOnce();
-      },
+      addLabourWork: (e) =>
+        runSave(async () => {
+          const name = e.name.trim();
+          const entry = normalizeLabourWork({ ...e, id: `lw-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` } as LabourWork);
+          const ok = await apiLabourPut({ work: entry });
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({
+            labourWorks: [entry, ...st.labourWorks],
+            labourWorkers:
+              name && !st.labourWorkers.some((w) => w.name.toLowerCase() === name.toLowerCase())
+                ? [{ id: `worker-${Date.now()}`, name }, ...st.labourWorkers]
+                : st.labourWorkers,
+          }));
+          await pollOnce();
+        }),
 
-      addLabourWorker: async (name, nameTe, phone) => {
-        const trimmed = name.trim();
-        if (!trimmed || get().labourWorkers.some((w) => w.name.toLowerCase() === trimmed.toLowerCase())) return;
-        const worker: LabourWorker = { id: `worker-${Date.now()}`, name: trimmed, nameTe, phone };
-        const ok = await apiLabourPut({ worker });
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ labourWorkers: [worker, ...st.labourWorkers] }));
-        await pollOnce();
-      },
+      addLabourWorker: (name, nameTe, phone) =>
+        runSave(async () => {
+          const trimmed = name.trim();
+          if (!trimmed || get().labourWorkers.some((w) => w.name.toLowerCase() === trimmed.toLowerCase())) return;
+          const worker: LabourWorker = { id: `worker-${Date.now()}`, name: trimmed, nameTe, phone };
+          const ok = await apiLabourPut({ worker });
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ labourWorkers: [worker, ...st.labourWorkers] }));
+          await pollOnce();
+        }),
 
-      deleteLabourWorker: async (id) => {
-        const ok = await apiLabourDelete(id, true);
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ labourWorkers: st.labourWorkers.filter((w) => w.id !== id) }));
-        await pollOnce();
-      },
+      deleteLabourWorker: (id) =>
+        runSave(async () => {
+          const ok = await apiLabourDelete(id, true);
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ labourWorkers: st.labourWorkers.filter((w) => w.id !== id) }));
+          await pollOnce();
+        }),
 
-      deleteLabourWork: async (id) => {
-        const ok = await apiLabourDelete(id);
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ labourWorks: st.labourWorks.filter((x) => x.id !== id) }));
-        await pollOnce();
-      },
+      deleteLabourWork: (id) =>
+        runSave(async () => {
+          const ok = await apiLabourDelete(id);
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ labourWorks: st.labourWorks.filter((x) => x.id !== id) }));
+          await pollOnce();
+        }),
 
-      updateLabourWork: async (id, patch) => {
-        const current = get().labourWorks.find((x) => x.id === id);
-        if (!current) return;
-        const entry = normalizeLabourWork({ ...current, ...patch });
-        const ok = await apiLabourPut({ work: entry });
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ labourWorks: st.labourWorks.map((x) => (x.id === id ? entry : x)) }));
-        await pollOnce();
-      },
+      updateLabourWork: (id, patch) =>
+        runSave(async () => {
+          const current = get().labourWorks.find((x) => x.id === id);
+          if (!current) return;
+          const entry = normalizeLabourWork({ ...current, ...patch });
+          const ok = await apiLabourPut({ work: entry });
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ labourWorks: st.labourWorks.map((x) => (x.id === id ? entry : x)) }));
+          await pollOnce();
+        }),
 
-      addLabourPayment: async (id, p) => {
-        const current = get().labourWorks.find((x) => x.id === id);
-        if (!current) return;
-        const base = normalizeLabourWork(current);
-        const pay: LabourPayment = {
-          id: `lwp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          dateISO: p.dateISO ?? new Date().toISOString(),
-          amount: p.amount,
-          mode: p.mode,
-          note: p.note,
-        };
-        const entry = normalizeLabourWork({ ...base, payments: [...(base.payments ?? []), pay] });
-        const ok = await apiLabourPut({ work: entry });
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ labourWorks: st.labourWorks.map((x) => (x.id === id ? entry : x)) }));
-        await pollOnce();
-      },
+      addLabourPayment: (id, p) =>
+        runSave(async () => {
+          const current = get().labourWorks.find((x) => x.id === id);
+          if (!current) return;
+          const base = normalizeLabourWork(current);
+          const pay: LabourPayment = {
+            id: `lwp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            dateISO: p.dateISO ?? new Date().toISOString(),
+            amount: p.amount,
+            mode: p.mode,
+            note: p.note,
+          };
+          const entry = normalizeLabourWork({ ...base, payments: [...(base.payments ?? []), pay] });
+          const ok = await apiLabourPut({ work: entry });
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ labourWorks: st.labourWorks.map((x) => (x.id === id ? entry : x)) }));
+          await pollOnce();
+        }),
 
-      deleteLabourPayment: async (id, paymentId) => {
-        const current = get().labourWorks.find((x) => x.id === id);
-        if (!current) return;
-        const base = normalizeLabourWork(current);
-        const entry = normalizeLabourWork({
-          ...base,
-          payments: (base.payments ?? []).filter((p) => p.id !== paymentId),
-        });
-        const ok = await apiLabourPut({ work: entry });
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ labourWorks: st.labourWorks.map((x) => (x.id === id ? entry : x)) }));
-        await pollOnce();
-      },
+      deleteLabourPayment: (id, paymentId) =>
+        runSave(async () => {
+          const current = get().labourWorks.find((x) => x.id === id);
+          if (!current) return;
+          const base = normalizeLabourWork(current);
+          const entry = normalizeLabourWork({
+            ...base,
+            payments: (base.payments ?? []).filter((p) => p.id !== paymentId),
+          });
+          const ok = await apiLabourPut({ work: entry });
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ labourWorks: st.labourWorks.map((x) => (x.id === id ? entry : x)) }));
+          await pollOnce();
+        }),
 
       /* ---------------------------------------------------------- */
       /* APPEARANCE — theme/watermark, saved centrally               */
       /* ---------------------------------------------------------- */
 
-      setAppearance: async (a) => {
-        const ok = await apiSettingsPut({}, a);
-        if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
-        set((st) => ({ appearance: { ...st.appearance, ...a } }));
-        await pollOnce();
-      },
-    }),
+      setAppearance: (a) =>
+        runSave(async () => {
+          const ok = await apiSettingsPut({}, a);
+          if (!ok.ok) throw new StoreError(ok.error === 'offline' ? 'offline' : 'saveFailed');
+          set((st) => ({ appearance: { ...st.appearance, ...a } }));
+          await pollOnce();
+        }),
+      });
+    },
     {
       name: 'slp-device-ui-v1',
       storage: createJSONStorage(() => localStorage),

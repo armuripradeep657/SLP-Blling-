@@ -34,6 +34,9 @@ export interface Product {
   sizePrices?: Record<string, number>; // optional per-size override
   image?: string | null; // path under /products, base64 data URL, or null = photo removed
   stock?: number;
+  /** v52: row timestamp (ISO) — lets the deploy-merge tool compare repo vs
+   *  live rows so an application update never overwrites newer data */
+  updatedAt?: string;
 }
 
 export interface CartItem {

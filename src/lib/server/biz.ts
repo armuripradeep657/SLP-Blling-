@@ -277,6 +277,7 @@ export function rowToProduct(r: {
   sizePricesJson: string;
   image: string | null;
   stock: number | null;
+  updatedAt?: Date;
 }): Product {
   return {
     id: r.id,
@@ -288,6 +289,9 @@ export function rowToProduct(r: {
     sizePrices: safeParseObj(r.sizePricesJson),
     image: r.image ?? undefined,
     stock: r.stock ?? undefined,
+    // v52: row timestamp — the deploy-merge tool compares repo vs live rows
+    // with it so an application update never overwrites newer data
+    updatedAt: r.updatedAt ? r.updatedAt.toISOString() : undefined,
   };
 }
 
@@ -320,8 +324,15 @@ export async function snapshot(): Promise<{
   labourWorks: unknown[];
   labourWorkers: unknown[];
   config: { upiId: string; gstPercent: number; nextBillNo: number };
+  /** v52: tombstones — the deploy-merge tool re-creates deleted-bill rows in
+   *  the repo database so an application update can never resurrect a bill
+   *  the owner deleted (devices ignore the extra field) */
+  deletedBills: { id: string; no: string; deletedAt: string }[];
+  /** v52: the barcode-verification registry — mirrors into the repo DB at
+   *  deploy-merge so verification keeps working after an application update */
+  verifiedBills: Record<string, unknown>[];
 }> {
-  const [settings, appearance, products, invoices, expenses, incomes, labourWorks, labourWorkers, cfg] =
+  const [settings, appearance, products, invoices, expenses, incomes, labourWorks, labourWorkers, cfg, tombstones, verified] =
     await Promise.all([
       readSettings(),
       readAppearance(),
@@ -337,6 +348,8 @@ export async function snapshot(): Promise<{
       db.bizLabourWork.findMany({ orderBy: { dateISO: 'desc' } }),
       db.bizLabourWorker.findMany({ orderBy: { updatedAt: 'desc' } }),
       db.appConfig.findUnique({ where: { slot: 'owner' } }),
+      db.deletedBill.findMany({ orderBy: { deletedAt: 'desc' } }),
+      db.verifiedBill.findMany({ orderBy: { createdAt: 'desc' } }),
     ]);
   return {
     settings,
@@ -348,5 +361,14 @@ export async function snapshot(): Promise<{
     labourWorks: labourWorks.map((r) => JSON.parse(r.payloadJson)),
     labourWorkers: labourWorkers.map((r) => JSON.parse(r.payloadJson)),
     config: { upiId: cfg?.upiId ?? '', gstPercent: cfg?.gstPercent ?? 0, nextBillNo: cfg?.nextBillNo ?? 0 },
+    deletedBills: tombstones.map((t) => ({ id: t.id, no: t.no, deletedAt: t.deletedAt.toISOString() })),
+    verifiedBills: verified.map((v) => ({
+      id: v.id, code: v.code, billNo: v.billNo, slot: v.slot, companyName: v.companyName,
+      billDateISO: v.billDateISO.toISOString(), customerName: v.customerName, gstPercent: v.gstPercent,
+      gstAmount: v.gstAmount, discount: v.discount, labourCharge: v.labourCharge, autoCharge: v.autoCharge,
+      subtotal: v.subtotal, total: v.total, paid: v.paid, balance: v.balance, paymentMode: v.paymentMode,
+      paymentStatus: v.paymentStatus, createdBy: v.createdBy, cancelled: v.cancelled, itemsJson: v.itemsJson,
+      createdAt: v.createdAt.toISOString(),
+    })),
   };
 }

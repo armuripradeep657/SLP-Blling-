@@ -431,6 +431,22 @@ export async function apiProductDelete(id: string): Promise<{ ok: boolean; error
   return { ok: false, error: String(res.data.error ?? 'saveFailed') };
 }
 
+/**
+ * v52 partial product update — sends ONLY the changed fields; the server
+ * patches exactly those columns and leaves everything else untouched
+ * (the owner's rule: one edit never rewrites the whole record).
+ * `null` explicitly clears a field (photo / Telugu name removal).
+ */
+export async function apiProductPatch(
+  id: string,
+  patch: Partial<Omit<Product, 'id' | 'updatedAt'>>
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await authedFetch('/api/products', 'PATCH', { id, ...patch }, { timeoutMs: 45000, retries: 1 });
+  if (res.status === 200) return { ok: true };
+  if (res.status === 0) return { ok: false, error: 'offline' };
+  return { ok: false, error: String(res.data.error ?? 'saveFailed') };
+}
+
 /* ----------------------------- SETTINGS ---------------------------- */
 
 export async function apiSettingsPut(

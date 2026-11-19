@@ -13,7 +13,8 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "db:pg:dump": "node scripts/migrate-sqlite-to-postgres.mjs dump",
-    "db:pg:import": "node scripts/migrate-sqlite-to-postgres.mjs import"
+    "db:pg:import": "node scripts/migrate-sqlite-to-postgres.mjs import",
+    "deploy:merge": "node scripts/deploy-merge-live.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
