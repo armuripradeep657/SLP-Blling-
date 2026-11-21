@@ -1062,16 +1062,22 @@ export default function LockScreen({
   }
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-blue-50 via-white to-blue-100 px-4 py-8">
-      <div className="w-full max-w-sm space-y-5">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-white via-blue-50 to-blue-100 px-4 py-8">
+      {/* v58: soft blue glows behind the welcome — calm white-blue entry */}
+      <div className="pointer-events-none absolute -top-24 left-1/2 size-72 -translate-x-1/2 rounded-full bg-blue-200/50 blur-3xl slp-glow" />
+      <div className="pointer-events-none absolute -bottom-28 -right-16 size-64 rounded-full bg-sky-200/40 blur-3xl slp-glow" style={{ animationDelay: '1.6s' }} />
+      <div className="relative w-full max-w-sm space-y-5">
         {/* logo + name */}
         <div className="flex flex-col items-center gap-3 text-center">
-          <img
-            src={logoSrc}
-            alt="Company logo"
-            className="size-20 rounded-full object-cover shadow-md ring-2 ring-white"
-          />
-          <div>
+          <div className="slp-pop relative">
+            <div className="pointer-events-none absolute -inset-3 rounded-full bg-blue-400/25 blur-xl slp-glow" />
+            <img
+              src={logoSrc}
+              alt="Company logo"
+              className="relative size-20 rounded-full object-cover shadow-lg ring-4 ring-white"
+            />
+          </div>
+          <div className="slp-rise slp-rise-1">
             <h1 className="text-lg font-extrabold leading-snug text-blue-900">{companyName}</h1>
             <p className="mt-1 flex items-center justify-center gap-1.5 text-xs font-semibold text-muted-foreground">
               <Lock className="size-3.5" />
@@ -1080,15 +1086,15 @@ export default function LockScreen({
           </div>
         </div>
 
-        {card}
+        <div className="slp-rise slp-rise-2">{card}</div>
 
-        <p className="flex items-start justify-center gap-1.5 px-2 text-center text-[11px] leading-relaxed text-muted-foreground">
+        <p className="slp-rise slp-rise-3 flex items-start justify-center gap-1.5 px-2 text-center text-[11px] leading-relaxed text-muted-foreground">
           <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
           {t('lock.secureNote')}
         </p>
 
         {/* v56: Privacy Policy / License / Copyright */}
-        <p className="px-2 text-center text-[10px] leading-relaxed text-muted-foreground">
+        <p className="slp-rise slp-rise-4 px-2 text-center text-[10px] leading-relaxed text-muted-foreground">
           © 2026 {companyName}. All rights reserved.{' '}
           <a href="/legal" target="_blank" rel="noopener" className="font-bold text-blue-700 hover:underline">
             {t('legal.link')}
