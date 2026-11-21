@@ -9,7 +9,6 @@ import {
   apiBillSave,
   apiBillPatch,
   apiBillDelete,
-  apiBillsResetAll,
   apiProductPut,
   apiProductPatch,
   apiProductDelete,
@@ -178,7 +177,6 @@ interface BillingStore {
   /** adopt the registry's winning code after a registration race (unused — kept for compat) */
   setInvoiceVerifyCode: (id: string, code: string) => void;
   deleteInvoice: (id: string) => Promise<void>;
-  resetInvoices: () => Promise<void>;
   /** staff session helpers (v39) */
   refreshStaff: () => Promise<StaffMe | null>;
   staffChangePassword: (body: { action?: 'keep'; current?: string; newPassword?: string }) => Promise<void>;
@@ -718,16 +716,6 @@ export const useStore = create<BillingStore>()(
             // a deleted bill is gone EVERYWHERE — including the "last bill" banner
             lastInvoice: st.lastInvoice && st.lastInvoice.id === id ? null : st.lastInvoice,
           }));
-          await pollOnce();
-        }),
-
-      // v57: owner "Reset bills" — every bill tombstoned on the server in one
-      // action; products, settings and the labour register are untouched
-      resetInvoices: () =>
-        runSave(async () => {
-          const res = await apiBillsResetAll();
-          if (!res.ok) throw new StoreError(res.error === 'offline' ? 'offline' : 'saveFailed');
-          set({ invoices: [], lastInvoice: null });
           await pollOnce();
         }),
 

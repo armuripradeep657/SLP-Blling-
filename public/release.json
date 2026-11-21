@@ -1,15 +1,15 @@
 {
-  "version": 57,
+  "version": 56,
   "notes": {
     "en": [
-      "New 'Reset bills' option in Settings → Data: deletes every bill on all devices in one tap, keeps products, settings and labour register (owner only, cannot be undone)",
-      "The old 'Erase all data' button is now 'Clear this device copy' — it honestly says the shop server keeps the data and re-syncs",
-      "All v56 features unchanged: Privacy Policy / License / Copyright page, staff MPIN, WhatsApp & SMS sharing"
+      "Privacy Policy, License and Copyright added — open 'Privacy & License' in Settings, or the link on the login screen / staff Profile",
+      "The legal page works in English and Telugu, and is available offline after the first open",
+      "Everything from the previous update (staff MPIN, next bill number) is unchanged"
     ],
     "te": [
-      "Settings → Data లో కొత్త 'బిల్లులను రీసెట్ చేయు': ఒక్క ట్యాప్‌లో అన్ని బిల్లులు అన్ని ఫోన్లలో తొలగించబడతాయి — ఉత్పత్తులు, సెట్టింగ్‌లు, లేబర్ రిజిస్టర్ ఉంతాయి (యజమాని మాత్రమే, వణుక్కునేది కాదు)",
-      "పాత 'మొత్తం డేటా తొలగించు' ఇప్పుడు 'ఈ ఫోన్ కాపీ క్లియర్ చేయు' — షాప్ సర్వర్‌లో డేటా ఉండి మళ్ళీ సింక్ అవుతుందని స్పష్టంగా చెబుతుంది",
-      "v56 అంతా అలాగే: గోప్యతా విధానం / లైసెన్స్ / కాపీరైట్ పేజీ, స్టాఫ్ MPIN, WhatsApp & SMS షేరింగ్"
+      "గోప్యతా విధానం, లైసెన్స్, కాపీరైట్ జోడించబడ్డాయి — Settings లో 'గోప్యతా విధానం & లైసెన్స్', లేదా లాగిన్ స్క్రీన్ / స్టాఫ్ ప్రొఫైల్‌లోని లింక్ నొక్కండి",
+      "చట్టపరమైన పేజీ ఇంగ్లీష్ మరియు తెలుగులో పనిచేస్తుంది; ఒకసారి తెరిచాక ఆఫ్‌లైన్‌లో కూడా అందుబాటులో ఉంటుంది",
+      "పాత అప్‌డేట్‌లోని అంతా (స్టాఫ్ MPIN, తర్వాతి బిల్లు నంబర్) అలాగే ఉంది"
     ]
   }
 }

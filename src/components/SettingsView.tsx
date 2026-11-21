@@ -127,7 +127,6 @@ export default function SettingsView() {
   const appLang = useAppLang();
   const settings = useStore((s) => s.settings);
   const saveSettings = useStore((s) => s.saveSettings);
-  const resetInvoices = useStore((s) => s.resetInvoices);
   const { toast } = useToast();
 
   const set = (patch: Partial<typeof settings>) => saveSettings(patch);
@@ -248,37 +247,6 @@ export default function SettingsView() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-        {/* v57: real bill reset — every bill tombstoned on the server,
-            products / settings / labour register are kept */}
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="outline" className="w-full text-destructive hover:text-destructive">
-              {t('settings.resetBills')}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent className="max-w-xs">
-            <AlertDialogHeader>
-              <AlertDialogTitle>Reset bills?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Every bill will be permanently deleted on ALL devices and its barcode will stop verifying. Products,
-                settings and the labour register are kept. This cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  resetInvoices()
-                    .then(() => toast({ title: 'All bills deleted — products & settings kept' }))
-                    .catch(() => toast({ title: t('net.saveFailed'), variant: 'destructive' }));
-                }}
-                className="bg-destructive text-white hover:bg-destructive/90"
-              >
-                Delete all bills
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="outline" className="w-full text-destructive hover:text-destructive">
@@ -287,10 +255,9 @@ export default function SettingsView() {
           </AlertDialogTrigger>
           <AlertDialogContent className="max-w-xs">
             <AlertDialogHeader>
-              <AlertDialogTitle>Clear this device copy?</AlertDialogTitle>
+              <AlertDialogTitle>Erase everything?</AlertDialogTitle>
               <AlertDialogDescription>
-                Clears only the saved screen state on THIS phone. The shop&apos;s server keeps all business data and it
-                re-syncs when the app opens again. To delete bills everywhere, use &quot;Reset bills&quot; above.
+                All products, invoices and settings on this device will be permanently deleted.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

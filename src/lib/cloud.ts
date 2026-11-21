@@ -404,14 +404,6 @@ export async function apiBillDelete(id: string): Promise<{ ok: boolean; error?: 
   return { ok: false, error: String(res.data.error ?? 'saveFailed') };
 }
 
-/** v57 owner-only: delete every bill on the server (each one tombstoned) */
-export async function apiBillsResetAll(): Promise<{ ok: boolean; deleted?: number; error?: string }> {
-  const res = await authedFetch('/api/bills/reset-all', 'POST', {});
-  if (res.status === 200 && res.data.ok) return { ok: true, deleted: Number(res.data.deleted ?? 0) };
-  if (res.status === 0) return { ok: false, error: 'offline' };
-  return { ok: false, error: String(res.data.error ?? 'saveFailed') };
-}
-
 /** Atomically reserve the next bill number on the server (race-free) */
 export async function apiReserveNo(floor: number): Promise<number | null> {
   const res = await authedFetch('/api/bills/reserve', 'POST', { floor });
