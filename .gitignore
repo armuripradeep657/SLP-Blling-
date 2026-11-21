@@ -66,3 +66,7 @@ android-app/build/
 # TLS certs (per-deployment, never commit)
 tls/
 public/ca.crt
+
+# db backups + migration artifacts must not ride in the deploy payload
+db/*.backup-*
+db/migration-dump.json
