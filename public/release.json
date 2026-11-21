@@ -1,15 +1,17 @@
 {
-  "version": 56,
+  "version": 57,
   "notes": {
     "en": [
-      "Privacy Policy, License and Copyright added — open 'Privacy & License' in Settings, or the link on the login screen / staff Profile",
-      "The legal page works in English and Telugu, and is available offline after the first open",
-      "Everything from the previous update (staff MPIN, next bill number) is unchanged"
+      "Privacy Policy & License removed everywhere (login footer, Settings card, staff Profile)",
+      "Login logo fixed — no longer cut off on small phones",
+      "Database returned to the shop's own server (Supabase removed)",
+      "Everything else from the previous update (billing, staff MPIN, next bill number) is unchanged"
     ],
     "te": [
-      "గోప్యతా విధానం, లైసెన్స్, కాపీరైట్ జోడించబడ్డాయి — Settings లో 'గోప్యతా విధానం & లైసెన్స్', లేదా లాగిన్ స్క్రీన్ / స్టాఫ్ ప్రొఫైల్‌లోని లింక్ నొక్కండి",
-      "చట్టపరమైన పేజీ ఇంగ్లీష్ మరియు తెలుగులో పనిచేస్తుంది; ఒకసారి తెరిచాక ఆఫ్‌లైన్‌లో కూడా అందుబాటులో ఉంటుంది",
-      "పాత అప్‌డేట్‌లోని అంతా (స్టాఫ్ MPIN, తర్వాతి బిల్లు నంబర్) అలాగే ఉంది"
+      "గోప్యతా విధానం & లైసెన్స్ మొత్తం తీసేశాం (లాగిన్ కింద, సెట్టింగ్స్, స్టాఫ్ ప్రొఫైల్)",
+      "లాగిన్ లోగో సరిచేశాం — చిన్న ఫోన్లలో కట్ కాదు",
+      "డేటాబేస్ మళ్ళీ షాప్ సర్వర్‌లోనే (సుపర్‌బేస్ తీసేశాం)",
+      "బిల్లింగ్, స్టాఫ్ MPIN, బిల్ నంబర్ — మునుపటిలానే పని చేస్తాయి"
     ]
   }
 }

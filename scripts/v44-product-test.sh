@@ -8,7 +8,6 @@ PORT=3113
 B="http://localhost:$PORT"
 J='content-type: application/json'
 
-bash scripts/build-sqlite.sh
 cp db/custom.db /tmp/slp-test/test.db
 DATABASE_URL="file:/tmp/slp-test/test.db" PORT=$PORT node .next/standalone/server.js > /tmp/slp-v44.log 2>&1 &
 SRV=$!

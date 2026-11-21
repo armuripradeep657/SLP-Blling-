@@ -7,7 +7,6 @@ cd /home/z/my-project
 PORT=3114
 B="http://localhost:$PORT"
 
-bash scripts/build-sqlite.sh
 DATABASE_URL="file:/tmp/slp-test/test.db" PORT=$PORT node .next/standalone/server.js > /tmp/slp-v45.log 2>&1 &
 SRV=$!
 sleep 7

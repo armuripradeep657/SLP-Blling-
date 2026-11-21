@@ -11,7 +11,6 @@ J='content-type: application/json'
 mkdir -p /tmp/slp-test
 cp db/custom.db /tmp/slp-test/test.db
 
-bash scripts/build-sqlite.sh
 boot() {
   tail -f /dev/null | DATABASE_URL="file:/tmp/slp-test/test.db" PORT=$PORT node .next/standalone/server.js > /tmp/slp-v52.log 2>&1 &
   SRV=$!

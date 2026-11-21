@@ -1069,7 +1069,7 @@ export default function LockScreen({
           <img
             src={logoSrc}
             alt="Company logo"
-            className="size-20 rounded-full object-cover shadow-md ring-2 ring-white"
+            className="size-20 max-w-full shrink-0 rounded-full object-contain shadow-md ring-2 ring-white sm:size-24"
           />
           <div>
             <h1 className="text-lg font-extrabold leading-snug text-blue-900">{companyName}</h1>
@@ -1085,14 +1085,6 @@ export default function LockScreen({
         <p className="flex items-start justify-center gap-1.5 px-2 text-center text-[11px] leading-relaxed text-muted-foreground">
           <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
           {t('lock.secureNote')}
-        </p>
-
-        {/* v56: Privacy Policy / License / Copyright */}
-        <p className="px-2 text-center text-[10px] leading-relaxed text-muted-foreground">
-          © 2026 {companyName}. All rights reserved.{' '}
-          <a href="/legal" target="_blank" rel="noopener" className="font-bold text-blue-700 hover:underline">
-            {t('legal.link')}
-          </a>
         </p>
       </div>
     </div>

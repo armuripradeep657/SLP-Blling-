@@ -174,22 +174,6 @@ export default function SettingsView() {
 
       <Separator />
 
-      {/* v56: Privacy Policy + License + Copyright — one tap away */}
-      <section aria-label="Privacy and license" className="space-y-2">
-        <h3 className="text-sm font-bold text-blue-800">{t('settings.privacyTitle')}</h3>
-        <p className="text-xs text-muted-foreground">{t('settings.privacyDesc')}</p>
-        <a
-          href="/legal"
-          target="_blank"
-          rel="noopener"
-          className="inline-flex h-10 items-center rounded-lg border bg-white px-4 text-sm font-bold text-blue-700 shadow-sm hover:bg-blue-50"
-        >
-          {t('settings.privacyOpen')}
-        </a>
-      </section>
-
-      <Separator />
-
       <AppearanceSection />
 
       <Separator />
@@ -214,11 +198,7 @@ export default function SettingsView() {
       <section aria-label="Data management" className="space-y-2">
         <h3 className="text-sm font-bold text-blue-800">{t('settings.data')}</h3>
         <p className="text-xs text-muted-foreground">
-          Data is stored on this device and syncs privately to the shop&apos;s own app server — see{' '}
-          <a href="/legal" target="_blank" rel="noopener" className="font-semibold text-blue-700 hover:underline">
-            {t('settings.privacyOpen')}
-          </a>
-          .
+          Data is stored on this device and syncs privately to the shop&apos;s own app server.
         </p>
         <AlertDialog>
           <AlertDialogTrigger asChild>
