@@ -5,9 +5,6 @@ export interface BusinessSettings {
   /** Company name printed on Telugu bills (తెలుగు బిల్లు పేరు) */
   companyNameTe: string;
   ownerName: string;
-  /** v58: owner profile photo as a small base64 data-URL — shown on the
-   *  owner profile header in Settings like a real app avatar */
-  ownerPhoto?: string;
   phone: string;
   whatsappNumber: string;
   address: string;

@@ -32,8 +32,7 @@ import {
   lockApp,
 } from '@/lib/cloud';
 import { deriveKek, exportDek, importDek, randomB64, wrapDek } from '@/lib/crypto';
-import { Camera, CloudUpload, Download, ImageUp, KeyRound, Lock, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, TriangleAlert, Upload, UserRound } from 'lucide-react';
-import { fileToSmallDataUrl } from '@/lib/photo';
+import { CloudUpload, Download, ImageUp, KeyRound, Lock, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, TriangleAlert, Upload, UserRound } from 'lucide-react';
 import type {
   Appearance,
   BgThemeId,
@@ -322,28 +321,6 @@ function BusinessIdentitySection() {
   const settings = useStore((s) => s.settings);
   const saveSettings = useStore((s) => s.saveSettings);
   const { toast } = useToast();
-  const ownerPhotoRef = useRef<HTMLInputElement>(null);
-
-  // v58: owner profile photo — saves INSTANTLY (not via the text draft), like
-  // a real app avatar: tap the camera badge, take/pick a photo, done.
-  const ownerPhoto = settings.ownerPhoto;
-  const pickOwnerPhoto = async (file: File | undefined) => {
-    if (!file) return;
-    try {
-      const dataUrl = await fileToSmallDataUrl(file);
-      saveSettings({ ownerPhoto: dataUrl });
-      toast({ title: t('settings.ownerPhotoSaved') });
-    } catch {
-      toast({ title: t('net.saveFailed'), variant: 'destructive' });
-    }
-  };
-  const initials = (settings.ownerName || 'O')
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
 
   const [draft, setDraft] = useState<IdentityDraft>(() => identityOf(settings));
   // re-sync the draft when the SERVER's identity values actually change —
@@ -393,58 +370,6 @@ function BusinessIdentitySection() {
     <section aria-label="Business identity" className="space-y-3">
       <h3 className="text-sm font-bold text-blue-800">{t('settings.businessIdentity')}</h3>
       <p className="text-xs text-muted-foreground">{t('settings.updateHint')}</p>
-
-      {/* v58: owner profile header — real-app avatar with camera badge */}
-      <div className="flex flex-col items-center gap-2 rounded-2xl border bg-gradient-to-b from-blue-50/60 to-white p-4 pt-5">
-        <div className="relative">
-          {ownerPhoto ? (
-            <img
-              src={ownerPhoto}
-              alt="Owner photo"
-              className="size-24 rounded-full object-cover shadow-md ring-4 ring-white"
-            />
-          ) : (
-            <div className="flex size-24 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-blue-400 text-2xl font-extrabold text-white shadow-md ring-4 ring-white">
-              {initials}
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => ownerPhotoRef.current?.click()}
-            aria-label="Change owner photo"
-            className="absolute -bottom-1 -right-1 flex size-9 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg ring-2 ring-white transition-colors hover:bg-blue-700"
-          >
-            <Camera className="size-4.5" />
-          </button>
-          <input
-            ref={ownerPhotoRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => {
-              void pickOwnerPhoto(e.target.files?.[0]);
-              e.target.value = '';
-            }}
-            aria-label="Take owner photo or choose image"
-          />
-        </div>
-        <p className="text-center text-sm font-bold text-neutral-900">{settings.ownerName}</p>
-        <p className="text-center text-[11px] text-muted-foreground">{t('settings.ownerPhotoHint')}</p>
-        {ownerPhoto && (
-          <button
-            type="button"
-            onClick={() => {
-              saveSettings({ ownerPhoto: '' });
-              toast({ title: t('settings.ownerPhotoSaved') });
-            }}
-            className="text-[11px] font-bold text-destructive hover:underline"
-          >
-            {t('settings.ownerPhotoRemove')}
-          </button>
-        )}
-      </div>
-
       <Field
         ariaLabel="Company name"
         label={t('settings.companyName')}
