@@ -49,7 +49,8 @@ const TABLE_ORDER = [
 ];
 
 /** Prisma DateTime columns → values must become Date objects on import. */
-const isDateCol = (col) => col === 'dateISO' || col.endsWith('At');
+// dataUpdatedAt is unix SECONDS (Int in both schemas) — never Date-ify it
+const isDateCol = (col) => col !== 'dataUpdatedAt' && (col === 'dateISO' || col.endsWith('At'));
 
 /** Prisma Boolean columns (SQLite stores 0/1) → real booleans on import. */
 const BOOL_COLS = new Set([
@@ -98,7 +99,24 @@ async function importData() {
     process.exit(1);
   }
   const { PrismaClient } = await import('@prisma/client');
-  const prisma = new PrismaClient();
+  // Supabase shared pooler (6543) runs PgBouncer — Prisma needs
+  // pgbouncer=true (+ tiny connection limit, TLS). Append when missing.
+  // NOTE: for `db push` and this import prefer the SESSION pooler (port
+  // 5432); the params below keep the pooled 6543 URL working too.
+  const rawUrl = process.env.DATABASE_URL || '';
+  let datasourceUrl;
+  if (rawUrl.startsWith('postgres')) {
+    try {
+      const u = new URL(rawUrl.replace('postgres://', 'postgresql://'));
+      if (!u.searchParams.has('pgbouncer')) u.searchParams.set('pgbouncer', 'true');
+      if (!u.searchParams.has('connection_limit')) u.searchParams.set('connection_limit', '1');
+      if (!u.searchParams.has('sslmode')) u.searchParams.set('sslmode', 'require');
+      datasourceUrl = u.toString();
+    } catch {
+      datasourceUrl = rawUrl;
+    }
+  }
+  const prisma = new PrismaClient(datasourceUrl ? { datasourceUrl } : undefined);
   try {
     const dump = JSON.parse(readFileSync(DUMP_PATH, 'utf8'));
     let total = 0;

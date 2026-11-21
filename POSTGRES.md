@@ -59,3 +59,17 @@ Firebase (Firestore / Firebase Auth) was considered but is **not a drop-in**:
 If you create a Firebase project and share its config, the auth layer can be
 adapted — but PostgreSQL gives the same "always-safe storage" goal with the
 code we already have, so it is the recommended path.
+
+## Supabase is now LIVE (Nov 21, 2026)
+
+- DATABASE_URL in .env points at the Supabase shared pooler (port 6543,
+  PgBouncer): pgbouncer=true & connection_limit=1 & sslmode=require are
+  appended automatically by db.ts when missing — never remove them.
+- Data migrated verbatim from the SQLite repo DB (44 rows, 18 tables;
+  verified scripts/verify-supabase-import.mjs: counts + settings + the
+  atomic bill counter nextBillNo 1003=1003).
+- Owner/staff credentials moved as hashed rows — no re-registration.
+- Because data now lives in Supabase, deploys can no longer reset it:
+  deploy-merge-live.mjs is OBSOLETE (do not run it before deploys).
+- Local regression suites still run on SQLite copies:
+  `bash scripts/build-sqlite.sh` (now called automatically by the suites).
