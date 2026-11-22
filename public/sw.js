@@ -28,6 +28,7 @@ self.addEventListener('install', (event) => {
     caches
       .open(CACHE)
       .then((cache) => cache.addAll(PRECACHE).catch(() => undefined))
+      .then(() => cacheShellWithAssets())
       .then(() => self.skipWaiting())
   );
 });
@@ -47,9 +48,47 @@ self.addEventListener('activate', (event) => {
           keys.filter((k) => num(k) > 0 && num(k) < keep - 1).map((k) => caches.delete(k))
         );
       })
+      .then(() => cacheShellWithAssets())
       .then(() => self.clients.claim())
   );
 });
+
+/* v57: a cached shell WITHOUT its hashed CSS/JS chunks is what turns
+ * "server unreachable" into the unstyled raw-HTML screen (giant overflowing
+ * logo, plain serif text, stuck on Checking…) the owner saw when the host
+ * was down. The old SW cached '/' alone on navigations and at install —
+ * the chunks were fetched only lazily, so one dropped CSS request on a slow
+ * link (or a half-broken server serving HTML but 500 on static files) left
+ * the phone with HTML and no styling. From now on EVERY time the shell is
+ * cached — install, activate (repair pass), navigation fallback, or
+ * APPLY_UPDATE — all the assets the shell references are cached with it.
+ * Best-effort: a failed asset is retried on the next activate/navigation. */
+function collectAssetUrls(html) {
+  const urls = new Set();
+  for (const m of html.matchAll(/(?:src|href)="(\/[^"]+)"/g)) {
+    const u = m[1];
+    if (/^\/_next\//.test(u) || /^\/fonts\//.test(u) || u.endsWith('.js') || u.endsWith('.css')) {
+      urls.add(u);
+    }
+  }
+  return [...urls];
+}
+
+async function cacheShellWithAssets() {
+  try {
+    const res = await fetch('/', { cache: 'reload', signal: AbortSignal.timeout(30000) });
+    if (!res.ok) return;
+    const html = await res.text();
+    const cache = await caches.open(CACHE);
+    for (const u of collectAssetUrls(html)) {
+      try {
+        const r = await fetch(u, { cache: 'reload', signal: AbortSignal.timeout(30000) });
+        if (r.ok) await cache.put(u, r.clone());
+      } catch { /* best-effort — retried on the next activate */ }
+    }
+    await cache.put('/', new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } }));
+  } catch { /* server unreachable — keep whatever we already have */ }
+}
 
 /* v45: the app updates ONLY when the user agrees. The shell is served
  * cache-first — it never changes on its own. The UpdateManager compares
@@ -146,8 +185,9 @@ self.addEventListener('fetch', (event) => {
           (cached) =>
             cached ||
             fetch(req).then((res) => {
-              const copy = res.clone();
-              caches.open(CACHE).then((c2) => c2.put('/', copy)).catch(() => undefined);
+              // v57: never park a half shell — cache the HTML together with
+              // every asset it references (best-effort, background)
+              if (res.ok) event.waitUntil(cacheShellWithAssets());
               return res;
             })
         )
