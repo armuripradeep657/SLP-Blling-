@@ -5,13 +5,15 @@
       "Privacy Policy & License removed everywhere (login footer, Settings card, staff Profile)",
       "Login logo fixed — no longer cut off on small phones",
       "Database returned to the shop's own server (Supabase removed)",
-      "Everything else from the previous update (billing, staff MPIN, next bill number) is unchanged"
+      "Everything else from the previous update (billing, staff MPIN, next bill number) is unchanged",
+      "Lock screen no longer breaks to an unstyled page when the shop server is unreachable — the phone now stores the app styling together with the app."
     ],
     "te": [
       "గోప్యతా విధానం & లైసెన్స్ మొత్తం తీసేశాం (లాగిన్ కింద, సెట్టింగ్స్, స్టాఫ్ ప్రొఫైల్)",
       "లాగిన్ లోగో సరిచేశాం — చిన్న ఫోన్లలో కట్ కాదు",
       "డేటాబేస్ మళ్ళీ షాప్ సర్వర్‌లోనే (సుపర్‌బేస్ తీసేశాం)",
-      "బిల్లింగ్, స్టాఫ్ MPIN, బిల్ నంబర్ — మునుపటిలానే పని చేస్తాయి"
+      "బిల్లింగ్, స్టాఫ్ MPIN, బిల్ నంబర్ — మునుపటిలానే పని చేస్తాయి",
+      "షాప్ సర్వర్ అందుబాటులో లేకపోయినా లాక్ స్క్రీన్ ఇకపై సరిగా తెరచుకుంటుంది — యాప్ స్టైలింగ్ కూడా ఫోన్‌లో భద్రపరచబడుతుంది."
     ]
   }
 }
