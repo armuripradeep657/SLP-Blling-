@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Reduce peak memory during `next build` — hosts with small build
+  // sandboxes can OOM on default webpack settings, which fails every deploy
+  // while the same build passes on a normal machine.
+  experimental: {
+    webpackMemoryOptimizations: true,
+  },
   reactStrictMode: false,
   // Hide the Next.js dev-tools "N" badge that overlays the app UI
   devIndicators: false,
