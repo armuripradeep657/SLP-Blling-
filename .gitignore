@@ -70,3 +70,6 @@ public/ca.crt
 # db backups + migration artifacts must not ride in the deploy payload
 db/*.backup-*
 db/migration-dump.json
+
+# Local Netlify folder
+.netlify

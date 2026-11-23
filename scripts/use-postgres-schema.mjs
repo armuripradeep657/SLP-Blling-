@@ -20,7 +20,10 @@ import { fileURLToPath } from 'node:url';
 const url = process.env.DATABASE_URL || '';
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 
-if (url.startsWith('postgres')) {
+// Netlify builds/runtime always use Netlify Database (Postgres)
+const onNetlify = Boolean(process.env.NETLIFY || process.env.NETLIFY_DB_URL);
+
+if (onNetlify || url.startsWith('postgres')) {
   copyFileSync(here('../prisma/schema.postgres.prisma'), here('../prisma/schema.prisma'));
   console.log('[prisma] DATABASE_URL is PostgreSQL — schema switched to postgresql');
 } else {
